@@ -11,21 +11,23 @@ const SEV_COLORS: Record<string, string> = {
 const MAX_LINES = 500;
 
 export default function LiveTail() {
-  const [logs, setLogs]       = useState<any[]>([]);
-  const [paused, setPaused]   = useState(false);
-  const [filter, setFilter]   = useState('');
-  const [connected, setConn]  = useState(false);
-  const [count, setCount]     = useState(0);
-  const bottomRef             = useRef<HTMLDivElement>(null);
-  const pausedRef             = useRef(false);
-  const wsRef                 = useRef<WebSocket | null>(null);
+  const [logs, setLogs]      = useState<any[]>([]);
+  const [paused, setPaused]  = useState(false);
+  const [filter, setFilter]  = useState('');
+  const [connected, setConn] = useState(false);
+  const [count, setCount]    = useState(0);
+  const bottomRef            = useRef<HTMLDivElement>(null);
+  const pausedRef            = useRef(false);
+  const wsRef                = useRef<WebSocket | null>(null);
 
   pausedRef.current = paused;
 
   useEffect(() => {
+    // Connect directly to the API port — Next.js 16 doesn't proxy WebSocket upgrades
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/live`);
-    wsRef.current = ws;
+    const host     = window.location.hostname;
+    const ws       = new WebSocket(`${protocol}//${host}:3005/ws/live`);
+    wsRef.current  = ws;
 
     ws.onopen  = () => setConn(true);
     ws.onclose = () => setConn(false);
@@ -50,7 +52,8 @@ export default function LiveTail() {
   }, [logs, paused]);
 
   const filtered = filter
-    ? logs.filter(l => l.message?.toLowerCase().includes(filter.toLowerCase()) ||
+    ? logs.filter(l =>
+        l.message?.toLowerCase().includes(filter.toLowerCase()) ||
         l.source_host?.toLowerCase().includes(filter.toLowerCase()))
     : logs;
 
@@ -61,8 +64,7 @@ export default function LiveTail() {
 
         <div style={{ width: 8, height: 8, borderRadius: '50%',
           background: connected ? '#22c55e' : '#ef4444',
-          boxShadow: connected ? '0 0 6px #22c55e' : 'none',
-          animation: connected && !paused ? 'pulse 2s infinite' : 'none' }} />
+          boxShadow: connected ? '0 0 6px #22c55e' : 'none' }} />
         <span style={{ fontSize: 11, color: connected ? '#22c55e' : '#ef4444' }}>
           {connected ? (paused ? 'Paused' : 'Streaming') : 'Disconnected'}
         </span>
@@ -70,9 +72,10 @@ export default function LiveTail() {
         <span style={{ fontSize: 11, color: '#475569' }}>{count.toLocaleString()} received</span>
 
         <input value={filter} onChange={e => setFilter(e.target.value)}
-          placeholder="Filter messages..." style={{ marginLeft: 'auto',
-            background: '#0f1117', border: '1px solid #1e2d40', borderRadius: 6,
-            padding: '6px 12px', color: '#e2e8f0', fontSize: 12, outline: 'none', width: 220 }} />
+          placeholder="Filter messages..."
+          style={{ marginLeft: 'auto', background: '#0f1117', border: '1px solid #1e2d40',
+            borderRadius: 6, padding: '6px 12px', color: '#e2e8f0', fontSize: 12,
+            outline: 'none', width: 220 }} />
 
         <button onClick={() => setPaused(p => !p)}
           style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid',
@@ -89,8 +92,6 @@ export default function LiveTail() {
           Clear
         </button>
       </div>
-
-      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
 
       <div style={{ background: '#0a0d13', borderRadius: 6, padding: 12, height: '65vh',
         overflowY: 'auto', fontFamily: 'Consolas, monospace', fontSize: 12 }}>
