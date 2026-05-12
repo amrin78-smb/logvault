@@ -1,0 +1,195 @@
+-- ============================================================
+-- LogVault Database Schema
+-- TimescaleDB (logvault database, separate from NetVault/SpanVault)
+-- Run this as postgres superuser against the logvault database
+-- ============================================================
+
+-- Enable TimescaleDB extension
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+
+-- ============================================================
+-- CORE LOGS TABLE
+-- ============================================================
+CREATE TABLE IF NOT EXISTS syslog_entries (
+    id              BIGSERIAL,
+    received_at     TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    log_timestamp   TIMESTAMPTZ,                          -- timestamp from the log message itself
+    source_ip       INET            NOT NULL,
+    source_host     TEXT,                                  -- resolved hostname if available
+    facility        SMALLINT,                              -- 0-23 syslog facility code
+    severity        SMALLINT        NOT NULL DEFAULT 6,    -- 0=Emergency 7=Debug
+    severity_label  TEXT,                                  -- 'emergency','alert','critical','error','warning','notice','info','debug'
+    facility_label  TEXT,                                  -- 'kern','user','mail','daemon','auth','syslog',...
+    vendor          TEXT            DEFAULT 'generic',     -- 'cisco','paloalto','fortinet','aruba','sangfor','generic'
+    program         TEXT,                                  -- process/program name (syslog tag)
+    pid             INTEGER,
+    message         TEXT            NOT NULL,
+    raw_message     TEXT,                                  -- original unprocessed syslog line
+    structured_data JSONB,                                 -- RFC5424 SD-elements or vendor parsed fields
+    is_parsed       BOOLEAN         DEFAULT FALSE,
+    parser_version  TEXT
+);
+
+-- Convert to hypertable (TimescaleDB time-series partitioning)
+SELECT create_hypertable('syslog_entries', 'received_at', if_not_exists => TRUE);
+
+-- Indexes for common query patterns
+CREATE INDEX IF NOT EXISTS idx_syslog_source_ip      ON syslog_entries (source_ip, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_syslog_severity       ON syslog_entries (severity, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_syslog_vendor         ON syslog_entries (vendor, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_syslog_source_host    ON syslog_entries (source_host, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_syslog_structured     ON syslog_entries USING GIN (structured_data);
+CREATE INDEX IF NOT EXISTS idx_syslog_message_text   ON syslog_entries USING GIN (to_tsvector('english', message));
+
+-- ============================================================
+-- RETENTION POLICY (90 days)
+-- ============================================================
+SELECT add_retention_policy('syslog_entries', INTERVAL '90 days', if_not_exists => TRUE);
+
+-- ============================================================
+-- CONTINUOUS AGGREGATES (for dashboard performance)
+-- ============================================================
+
+-- Hourly rollup: count by severity and vendor
+CREATE MATERIALIZED VIEW IF NOT EXISTS syslog_hourly
+WITH (timescaledb.continuous) AS
+SELECT
+    time_bucket('1 hour', received_at)  AS bucket,
+    vendor,
+    severity,
+    severity_label,
+    source_host,
+    COUNT(*)                            AS log_count
+FROM syslog_entries
+GROUP BY bucket, vendor, severity, severity_label, source_host
+WITH NO DATA;
+
+SELECT add_continuous_aggregate_policy('syslog_hourly',
+    start_offset => INTERVAL '3 hours',
+    end_offset   => INTERVAL '1 hour',
+    schedule_interval => INTERVAL '1 hour',
+    if_not_exists => TRUE
+);
+
+-- Daily rollup: top sources by log volume
+CREATE MATERIALIZED VIEW IF NOT EXISTS syslog_daily
+WITH (timescaledb.continuous) AS
+SELECT
+    time_bucket('1 day', received_at)   AS bucket,
+    vendor,
+    severity,
+    severity_label,
+    source_host,
+    source_ip::TEXT                     AS source_ip,
+    COUNT(*)                            AS log_count
+FROM syslog_entries
+GROUP BY bucket, vendor, severity, severity_label, source_host, source_ip::TEXT
+WITH NO DATA;
+
+SELECT add_continuous_aggregate_policy('syslog_daily',
+    start_offset => INTERVAL '2 days',
+    end_offset   => INTERVAL '1 day',
+    schedule_interval => INTERVAL '1 day',
+    if_not_exists => TRUE
+);
+
+-- ============================================================
+-- ALERT RULES TABLE
+-- ============================================================
+CREATE TABLE IF NOT EXISTS alert_rules (
+    id              SERIAL PRIMARY KEY,
+    name            TEXT            NOT NULL,
+    description     TEXT,
+    is_enabled      BOOLEAN         DEFAULT TRUE,
+    match_severity  SMALLINT[],                            -- e.g. ARRAY[0,1,2] = Emergency/Alert/Critical
+    match_vendor    TEXT[],                                -- e.g. ARRAY['fortinet','cisco'] or NULL=all
+    match_host      TEXT,                                  -- ILIKE pattern or NULL=all
+    match_pattern   TEXT,                                  -- regex pattern on message field
+    threshold_count INTEGER         DEFAULT 1,             -- how many hits before firing
+    threshold_window INTERVAL       DEFAULT '5 minutes',
+    notify_email    TEXT,
+    created_at      TIMESTAMPTZ     DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ     DEFAULT NOW()
+);
+
+-- ============================================================
+-- ALERT EVENTS TABLE (fired alerts)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS alert_events (
+    id              BIGSERIAL PRIMARY KEY,
+    rule_id         INTEGER         REFERENCES alert_rules(id) ON DELETE CASCADE,
+    fired_at        TIMESTAMPTZ     DEFAULT NOW(),
+    source_host     TEXT,
+    source_ip       INET,
+    match_count     INTEGER,
+    sample_message  TEXT,
+    acknowledged    BOOLEAN         DEFAULT FALSE,
+    acknowledged_at TIMESTAMPTZ,
+    acknowledged_by TEXT
+);
+
+-- ============================================================
+-- KNOWN HOSTS TABLE (for hostname resolution cache)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS known_hosts (
+    ip_address      INET            PRIMARY KEY,
+    hostname        TEXT,
+    vendor          TEXT,
+    description     TEXT,
+    last_seen       TIMESTAMPTZ     DEFAULT NOW(),
+    created_at      TIMESTAMPTZ     DEFAULT NOW()
+);
+
+-- ============================================================
+-- SEED: DEFAULT ALERT RULES
+-- ============================================================
+INSERT INTO alert_rules (name, description, match_severity, threshold_count, threshold_window)
+VALUES
+    ('Emergency Events',    'Any emergency-level syslog event',            ARRAY[0],       1,  '1 minute'),
+    ('Critical Threshold',  'Critical severity events from any device',     ARRAY[0,1,2],   5,  '5 minutes'),
+    ('Auth Failures',       'Repeated authentication failure messages',     NULL,           10, '5 minutes')
+ON CONFLICT DO NOTHING;
+
+-- ============================================================
+-- USEFUL VIEWS
+-- ============================================================
+
+-- Current top talkers (last 24h)
+CREATE OR REPLACE VIEW v_top_talkers_24h AS
+SELECT
+    COALESCE(source_host, source_ip::TEXT) AS host,
+    source_ip,
+    vendor,
+    COUNT(*)        AS log_count,
+    MAX(received_at) AS last_seen
+FROM syslog_entries
+WHERE received_at > NOW() - INTERVAL '24 hours'
+GROUP BY source_host, source_ip, vendor
+ORDER BY log_count DESC
+LIMIT 20;
+
+-- Severity distribution (last 24h)
+CREATE OR REPLACE VIEW v_severity_distribution_24h AS
+SELECT
+    severity,
+    severity_label,
+    COUNT(*) AS log_count
+FROM syslog_entries
+WHERE received_at > NOW() - INTERVAL '24 hours'
+GROUP BY severity, severity_label
+ORDER BY severity;
+
+-- Recent critical/error events
+CREATE OR REPLACE VIEW v_recent_critical AS
+SELECT
+    received_at,
+    source_host,
+    source_ip,
+    severity_label,
+    vendor,
+    message
+FROM syslog_entries
+WHERE severity <= 3
+  AND received_at > NOW() - INTERVAL '24 hours'
+ORDER BY received_at DESC
+LIMIT 100;
