@@ -2,13 +2,35 @@
 
 import { useEffect, useState } from 'react';
 
+function formatInterval(val: any): string {
+  if (!val) return '-';
+  if (typeof val === 'string') return val;
+  // PostgreSQL returns interval as object e.g. { minutes: 5 } or { hours: 1 }
+  if (typeof val === 'object') {
+    const parts = [];
+    if (val.hours)   parts.push(`${val.hours}h`);
+    if (val.minutes) parts.push(`${val.minutes}m`);
+    if (val.seconds) parts.push(`${val.seconds}s`);
+    return parts.length ? parts.join(' ') : JSON.stringify(val);
+  }
+  return String(val);
+}
+
 export default function AlertEvents() {
   const [events, setEvents] = useState<any[]>([]);
   const [rules,  setRules]  = useState<any[]>([]);
+  const [error,  setError]  = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/alerts/events').then(r => r.json()).then(d => setEvents(d.data || [])).catch(() => {});
-    fetch('/api/alerts/rules').then(r => r.json()).then(d => setRules(d.data || [])).catch(() => {});
+    fetch('/api/alerts/events')
+      .then(r => r.json())
+      .then(d => setEvents(d.data || []))
+      .catch(e => setError(e.message));
+
+    fetch('/api/alerts/rules')
+      .then(r => r.json())
+      .then(d => setRules(d.data || []))
+      .catch(e => setError(e.message));
   }, []);
 
   const acknowledge = async (id: number) => {
@@ -26,6 +48,14 @@ export default function AlertEvents() {
   };
 
   const CARD = { background: '#161b27', border: '1px solid #1e2d40', borderRadius: 8, padding: 20, marginBottom: 16 };
+
+  if (error) {
+    return (
+      <div style={{ ...CARD, color: '#ef4444' }}>
+        Failed to load alerts: {error}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -55,7 +85,7 @@ export default function AlertEvents() {
                 <td style={{ padding: '8px 12px', color: '#e2e8f0', fontWeight: 500 }}>{rule.name}</td>
                 <td style={{ padding: '8px 12px', color: '#64748b' }}>{rule.description || '-'}</td>
                 <td style={{ padding: '8px 12px', color: '#94a3b8' }}>{rule.threshold_count} events</td>
-                <td style={{ padding: '8px 12px', color: '#94a3b8' }}>{rule.threshold_window}</td>
+                <td style={{ padding: '8px 12px', color: '#94a3b8' }}>{formatInterval(rule.threshold_window)}</td>
               </tr>
             ))}
           </tbody>
