@@ -2,37 +2,39 @@
 
 export default function Header() {
   return (
-    <div style={{ background: '#161b27', borderBottom: '1px solid #1e2d40', padding: '0 24px',
-      display: 'flex', alignItems: 'center', height: 56, gap: 12 }}>
+    <div style={{ background: '#161c26', borderBottom: '1px solid #30363d',
+      padding: '0 24px', display: 'flex', alignItems: 'center', height: 56, gap: 12 }}>
       {/* Shield icon */}
-      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-        <path d="M14 2L4 7v8c0 5.25 4.25 10.15 10 11.35C19.75 25.15 24 20.25 24 15V7L14 2z"
-          fill="#1e3a5f" stroke="#38bdf8" strokeWidth="1.5"/>
-        <circle cx="14" cy="13" r="2.5" fill="#38bdf8"/>
-        <line x1="11" y1="13" x2="17" y2="13" stroke="#38bdf8" strokeWidth="1" opacity="0.5"/>
-        <line x1="14" y1="10" x2="14" y2="16" stroke="#38bdf8" strokeWidth="1" opacity="0.5"/>
-        <circle cx="11" cy="13" r="1" fill="#38bdf8" opacity="0.7"/>
-        <circle cx="17" cy="13" r="1" fill="#38bdf8" opacity="0.7"/>
-        <circle cx="14" cy="10" r="1" fill="#38bdf8" opacity="0.7"/>
-        <circle cx="14" cy="16" r="1" fill="#38bdf8" opacity="0.7"/>
+      <svg width="30" height="30" viewBox="0 0 30 30" fill="none">
+        <path d="M15 2L4 7.5v8c0 5.8 4.7 11.2 11 12.5C21.3 26.7 26 21.3 26 15.5v-8L15 2z"
+          fill="#1f6feb" stroke="#58a6ff" strokeWidth="1.5"/>
+        <circle cx="15" cy="14" r="2.5" fill="#58a6ff"/>
+        <line x1="11.5" y1="14" x2="18.5" y2="14" stroke="#58a6ff" strokeWidth="1.2" opacity="0.6"/>
+        <line x1="15" y1="10.5" x2="15" y2="17.5" stroke="#58a6ff" strokeWidth="1.2" opacity="0.6"/>
+        <circle cx="11.5" cy="14" r="1.2" fill="#58a6ff" opacity="0.8"/>
+        <circle cx="18.5" cy="14" r="1.2" fill="#58a6ff" opacity="0.8"/>
+        <circle cx="15" cy="10.5" r="1.2" fill="#58a6ff" opacity="0.8"/>
+        <circle cx="15" cy="17.5" r="1.2" fill="#58a6ff" opacity="0.8"/>
       </svg>
 
-      <div>
-        <span style={{ fontSize: 16, fontWeight: 700, color: '#f0f9ff', letterSpacing: '-0.3px' }}>
-          Log<span style={{ color: '#38bdf8' }}>Vault</span>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <span style={{ fontSize: 17, fontWeight: 700, color: '#e6edf3', letterSpacing: '-0.3px' }}>
+          Log<span style={{ color: '#58a6ff' }}>Vault</span>
         </span>
-        <span style={{ marginLeft: 8, fontSize: 11, color: '#475569', fontWeight: 400 }}>
-          NexVault Syslog Analyzer
+        <span style={{ fontSize: 11, color: '#6e7681', fontWeight: 400 }}>
+          NexVault · Syslog Analyzer
         </span>
       </div>
 
-      <div style={{ marginLeft: 'auto', display: 'flex', gap: 16, alignItems: 'center' }}>
-        <span style={{ fontSize: 11, color: '#475569' }}>
-          Ports: 514 / 1514 (UDP+TCP)
+      <div style={{ marginLeft: 'auto', display: 'flex', gap: 20, alignItems: 'center' }}>
+        <span style={{ fontSize: 11, color: '#6e7681', fontFamily: 'JetBrains Mono, monospace' }}>
+          UDP+TCP · 514 · 1514
         </span>
-        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e',
-          boxShadow: '0 0 6px #22c55e' }} />
-        <span style={{ fontSize: 11, color: '#22c55e' }}>Collector Active</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#3fb950',
+            boxShadow: '0 0 8px #3fb950' }} />
+          <span style={{ fontSize: 11, color: '#3fb950', fontWeight: 500 }}>Collector Active</span>
+        </div>
       </div>
     </div>
   );

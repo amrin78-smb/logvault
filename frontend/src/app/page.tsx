@@ -43,49 +43,69 @@ export default function Home() {
   }, [fetchSummary, fetchHealth]);
 
   const totalLogs  = summary.reduce((s, r) => s + parseInt(r.log_count), 0);
-  const critCount  = summary.filter(r => r.severity <= 2).reduce((s, r) => s + parseInt(r.log_count), 0);
-  const errorCount = summary.filter(r => r.severity === 3).reduce((s, r) => s + parseInt(r.log_count), 0);
-  const warnCount  = summary.filter(r => r.severity === 4).reduce((s, r) => s + parseInt(r.log_count), 0);
+  const critCount  = summary.filter(r => parseInt(r.severity) <= 2).reduce((s, r) => s + parseInt(r.log_count), 0);
+  const errorCount = summary.filter(r => parseInt(r.severity) === 3).reduce((s, r) => s + parseInt(r.log_count), 0);
+  const warnCount  = summary.filter(r => parseInt(r.severity) === 4).reduce((s, r) => s + parseInt(r.log_count), 0);
 
-  const TABS: { id: Tab; label: string }[] = [
-    { id: 'dashboard', label: 'Dashboard' },
-    { id: 'explorer',  label: 'Log Explorer' },
-    { id: 'livetail',  label: 'Live Tail' },
-    { id: 'alerts',    label: 'Alerts' },
-    { id: 'hosts',     label: 'Known Hosts' },
+  const TABS: { id: Tab; label: string; icon: string }[] = [
+    { id: 'dashboard', label: 'Dashboard',   icon: '▦' },
+    { id: 'explorer',  label: 'Log Explorer', icon: '⊞' },
+    { id: 'livetail',  label: 'Live Tail',    icon: '◉' },
+    { id: 'alerts',    label: 'Alerts',       icon: '⚠' },
+    { id: 'hosts',     label: 'Known Hosts',  icon: '⊙' },
+  ];
+
+  const KPI = [
+    { label: 'Total Logs',     value: totalLogs.toLocaleString(),  color: '#58a6ff', bg: '#1a2840', border: '#1f6feb' },
+    { label: 'Critical/Alert', value: critCount.toLocaleString(),  color: critCount  > 0 ? '#f85149' : '#3fb950', bg: critCount  > 0 ? '#2d0f0f' : '#0f2d1a', border: critCount  > 0 ? '#f8514944' : '#3fb95044' },
+    { label: 'Errors',         value: errorCount.toLocaleString(), color: errorCount > 0 ? '#db6d28' : '#3fb950', bg: errorCount > 0 ? '#2d1b0e' : '#0f2d1a', border: errorCount > 0 ? '#db6d2844' : '#3fb95044' },
+    { label: 'Warnings',       value: warnCount.toLocaleString(),  color: '#d29922',  bg: '#2d240e', border: '#d2992244' },
   ];
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0f1117', color: '#e2e8f0', fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#0d1117', color: '#e6edf3',
+      fontFamily: 'Inter, system-ui, sans-serif' }}>
       <Header />
 
-      {/* Navigation */}
-      <div style={{ background: '#161b27', borderBottom: '1px solid #1e2d40', padding: '0 24px', display: 'flex', gap: 0 }}>
+      {/* Nav bar */}
+      <div style={{ background: '#161c26', borderBottom: '1px solid #30363d',
+        padding: '0 24px', display: 'flex', alignItems: 'stretch' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            style={{ padding: '12px 20px', background: 'none', border: 'none', cursor: 'pointer',
-              fontSize: 14, fontWeight: 500,
-              color: tab === t.id ? '#38bdf8' : '#94a3b8',
-              borderBottom: tab === t.id ? '2px solid #38bdf8' : '2px solid transparent' }}>
+            style={{ padding: '0 18px', height: 44, background: 'none', border: 'none',
+              cursor: 'pointer', fontSize: 13, fontWeight: 500, display: 'flex',
+              alignItems: 'center', gap: 6,
+              color: tab === t.id ? '#58a6ff' : '#8b949e',
+              borderBottom: tab === t.id ? '2px solid #58a6ff' : '2px solid transparent',
+              transition: 'color 0.15s' }}>
+            <span style={{ fontSize: 11 }}>{t.icon}</span>
             {t.label}
           </button>
         ))}
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 12, color: '#64748b' }}>Time range:</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11, color: '#6e7681' }}>Range:</span>
           {[6, 24, 48, 168].map(h => (
             <button key={h} onClick={() => setHours(h)}
-              style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid', fontSize: 12, cursor: 'pointer',
-                background: hours === h ? '#1e3a5f' : 'transparent',
-                borderColor: hours === h ? '#38bdf8' : '#2d3748',
-                color: hours === h ? '#38bdf8' : '#94a3b8' }}>
+              style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid',
+                fontSize: 11, cursor: 'pointer', fontWeight: 500,
+                background: hours === h ? '#1f6feb22' : 'transparent',
+                borderColor: hours === h ? '#58a6ff' : '#30363d',
+                color: hours === h ? '#58a6ff' : '#8b949e',
+                transition: 'all 0.15s' }}>
               {h === 168 ? '7d' : `${h}h`}
             </button>
           ))}
           {health && (
-            <span style={{ marginLeft: 8, fontSize: 12, color: '#22c55e' }}>
-              ● {health.logs_last_hour.toLocaleString()} logs/hr
-            </span>
+            <div style={{ marginLeft: 8, display: 'flex', alignItems: 'center', gap: 5,
+              background: '#0f2d1a', border: '1px solid #3fb95033', borderRadius: 20,
+              padding: '3px 10px' }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#3fb950',
+                boxShadow: '0 0 6px #3fb950' }} />
+              <span style={{ fontSize: 11, color: '#3fb950', fontWeight: 500 }}>
+                {health.logs_last_hour.toLocaleString()} logs/hr
+              </span>
+            </div>
           )}
         </div>
       </div>
@@ -93,29 +113,27 @@ export default function Home() {
       <div style={{ padding: 24 }}>
         {tab === 'dashboard' && (
           <>
-            {/* KPI Row */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 24 }}>
-              {[
-                { label: 'Total Logs',     value: totalLogs.toLocaleString(),  color: '#38bdf8' },
-                { label: 'Critical/Alert', value: critCount.toLocaleString(),  color: critCount  > 0 ? '#ef4444' : '#22c55e' },
-                { label: 'Errors',         value: errorCount.toLocaleString(), color: errorCount > 0 ? '#f97316' : '#22c55e' },
-                { label: 'Warnings',       value: warnCount.toLocaleString(),  color: '#eab308' },
-              ].map(kpi => (
-                <div key={kpi.label} style={{ background: '#161b27', border: '1px solid #1e2d40', borderRadius: 8, padding: 20 }}>
-                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>{kpi.label}</div>
-                  <div style={{ fontSize: 28, fontWeight: 700, color: kpi.color }}>{kpi.value}</div>
-                  <div style={{ fontSize: 11, color: '#475569', marginTop: 4 }}>last {hours}h</div>
+            {/* KPI tiles */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 20 }}>
+              {KPI.map(kpi => (
+                <div key={kpi.label} style={{ background: kpi.bg,
+                  border: `1px solid ${kpi.border}`, borderRadius: 10, padding: '18px 20px' }}>
+                  <div style={{ fontSize: 11, color: '#8b949e', marginBottom: 6, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {kpi.label}
+                  </div>
+                  <div style={{ fontSize: 32, fontWeight: 700, color: kpi.color, lineHeight: 1 }}>
+                    {kpi.value}
+                  </div>
+                  <div style={{ fontSize: 10, color: '#6e7681', marginTop: 6 }}>last {hours}h</div>
                 </div>
               ))}
             </div>
 
-            {/* Charts row 1 */}
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 16 }}>
               <TimelineChart hours={hours} />
               <SeverityChart summary={summary} />
             </div>
 
-            {/* Charts row 2 */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
               <TopTalkers hours={hours} />
               <VendorBreakdown hours={hours} />
