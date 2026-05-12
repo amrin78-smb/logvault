@@ -9,9 +9,10 @@ import RecentCritical  from '@/components/RecentCritical';
 import LogExplorer     from '@/components/LogExplorer';
 import LiveTail        from '@/components/LiveTail';
 import AlertEvents     from '@/components/AlertEvents';
+import KnownHosts      from '@/components/KnownHosts';
 import Header          from '@/components/Header';
 
-type Tab = 'dashboard' | 'explorer' | 'livetail' | 'alerts';
+type Tab = 'dashboard' | 'explorer' | 'livetail' | 'alerts' | 'hosts';
 
 export default function Home() {
   const [tab, setTab]         = useState<Tab>('dashboard');
@@ -36,7 +37,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => { fetchSummary(); fetchHealth(); }, [fetchSummary, fetchHealth]);
-  useEffect(() => { const t = setInterval(() => { fetchSummary(); fetchHealth(); }, 30000); return () => clearInterval(t); }, [fetchSummary, fetchHealth]);
+  useEffect(() => {
+    const t = setInterval(() => { fetchSummary(); fetchHealth(); }, 30000);
+    return () => clearInterval(t);
+  }, [fetchSummary, fetchHealth]);
 
   const totalLogs  = summary.reduce((s, r) => s + parseInt(r.log_count), 0);
   const critCount  = summary.filter(r => r.severity <= 2).reduce((s, r) => s + parseInt(r.log_count), 0);
@@ -48,6 +52,7 @@ export default function Home() {
     { id: 'explorer',  label: 'Log Explorer' },
     { id: 'livetail',  label: 'Live Tail' },
     { id: 'alerts',    label: 'Alerts' },
+    { id: 'hosts',     label: 'Known Hosts' },
   ];
 
   return (
@@ -58,7 +63,8 @@ export default function Home() {
       <div style={{ background: '#161b27', borderBottom: '1px solid #1e2d40', padding: '0 24px', display: 'flex', gap: 0 }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            style={{ padding: '12px 20px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 500,
+            style={{ padding: '12px 20px', background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 14, fontWeight: 500,
               color: tab === t.id ? '#38bdf8' : '#94a3b8',
               borderBottom: tab === t.id ? '2px solid #38bdf8' : '2px solid transparent' }}>
             {t.label}
@@ -90,10 +96,10 @@ export default function Home() {
             {/* KPI Row */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 24 }}>
               {[
-                { label: 'Total Logs', value: totalLogs.toLocaleString(), color: '#38bdf8' },
-                { label: 'Critical/Alert', value: critCount.toLocaleString(), color: critCount > 0 ? '#ef4444' : '#22c55e' },
-                { label: 'Errors', value: errorCount.toLocaleString(), color: errorCount > 0 ? '#f97316' : '#22c55e' },
-                { label: 'Warnings', value: warnCount.toLocaleString(), color: '#eab308' },
+                { label: 'Total Logs',     value: totalLogs.toLocaleString(),  color: '#38bdf8' },
+                { label: 'Critical/Alert', value: critCount.toLocaleString(),  color: critCount  > 0 ? '#ef4444' : '#22c55e' },
+                { label: 'Errors',         value: errorCount.toLocaleString(), color: errorCount > 0 ? '#f97316' : '#22c55e' },
+                { label: 'Warnings',       value: warnCount.toLocaleString(),  color: '#eab308' },
               ].map(kpi => (
                 <div key={kpi.label} style={{ background: '#161b27', border: '1px solid #1e2d40', borderRadius: 8, padding: 20 }}>
                   <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>{kpi.label}</div>
@@ -115,7 +121,6 @@ export default function Home() {
               <VendorBreakdown hours={hours} />
             </div>
 
-            {/* Recent critical */}
             <RecentCritical hours={hours} />
           </>
         )}
@@ -123,6 +128,7 @@ export default function Home() {
         {tab === 'explorer' && <LogExplorer />}
         {tab === 'livetail' && <LiveTail />}
         {tab === 'alerts'   && <AlertEvents />}
+        {tab === 'hosts'    && <KnownHosts />}
       </div>
     </div>
   );
