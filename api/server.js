@@ -360,6 +360,131 @@ app.get('/api/health/summary', asyncHandler(async (req, res) => {
   });
 }));
 
+// ── SECURITY ANALYSIS ────────────────────────────────────────
+
+app.get('/api/security/summary', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const [authFail, denies, vpn, ips, afterHours, bruteSuccess] = await Promise.all([
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND ((vendor='cisco' AND structured_data->>'subcategory' IN ('login_failed','auth_failed','brute_force')) OR (vendor='fortinet' AND message ILIKE '%failed%' AND message ILIKE '%login%') OR (vendor='aruba' AND message ILIKE '%authentication failed%') OR message ILIKE '%authentication failure%')`),
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND vendor='fortinet' AND structured_data->>'action' = 'deny'`),
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND vendor='fortinet' AND (structured_data->>'subtype' = 'vpn' OR message ILIKE '%vpn%')`),
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND vendor='fortinet' AND structured_data->>'type' = 'utm'`),
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND (structured_data->>'subcategory' IN ('login_failed','config_change','auth_failed') OR message ILIKE '%login failed%' OR message ILIKE '%configured from%') AND EXTRACT(HOUR FROM received_at) NOT BETWEEN 7 AND 19`),
+    pool.query(`SELECT COUNT(DISTINCT source_ip) AS count FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND vendor='cisco' AND structured_data->>'subcategory' = 'login_success' AND source_ip IN (SELECT DISTINCT source_ip FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND vendor='cisco' AND structured_data->>'subcategory' = 'login_failed')`),
+  ]);
+  res.json({ hours, auth_failures: parseInt(authFail.rows[0].count), firewall_denies: parseInt(denies.rows[0].count), vpn_events: parseInt(vpn.rows[0].count), ips_events: parseInt(ips.rows[0].count), after_hours_events: parseInt(afterHours.rows[0].count), brute_force_success: parseInt(bruteSuccess.rows[0].count) });
+}));
+
+app.get('/api/security/auth-failures', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const { rows } = await pool.query(`
+    SELECT se.source_ip::TEXT, COALESCE(kh.hostname, se.source_host) AS source_host,
+      COUNT(*) AS failure_count, MIN(se.received_at) AS first_attempt, MAX(se.received_at) AS last_attempt, se.vendor,
+      ARRAY_AGG(DISTINCT LEFT(se.message, 150)) FILTER (WHERE LENGTH(se.message) < 200) AS sample_messages
+    FROM syslog_entries se LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at > NOW() - INTERVAL '${hours} hours'
+      AND ((se.vendor='cisco' AND se.structured_data->>'subcategory' IN ('login_failed','auth_failed','brute_force'))
+        OR (se.vendor='fortinet' AND se.message ILIKE '%failed%' AND se.message ILIKE '%login%')
+        OR (se.vendor='aruba' AND se.message ILIKE '%authentication failed%')
+        OR se.message ILIKE '%authentication failure%' OR se.message ILIKE '%login failed%')
+    GROUP BY se.source_ip, se.source_host, kh.hostname, se.vendor
+    ORDER BY failure_count DESC LIMIT 50
+  `);
+  res.json({ data: rows });
+}));
+
+app.get('/api/security/brute-force', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const { rows } = await pool.query(`
+    WITH failures AS (
+      SELECT source_ip, MIN(received_at) AS first_fail, MAX(received_at) AS last_fail, COUNT(*) AS fail_count
+      FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours'
+        AND ((vendor='cisco' AND structured_data->>'subcategory' IN ('login_failed','auth_failed'))
+          OR message ILIKE '%login failed%' OR message ILIKE '%authentication fail%')
+      GROUP BY source_ip
+    ),
+    successes AS (
+      SELECT source_ip, MIN(received_at) AS success_time, message AS success_msg
+      FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours'
+        AND ((vendor='cisco' AND structured_data->>'subcategory' = 'login_success')
+          OR message ILIKE '%login success%' OR message ILIKE '%authenticated%')
+      GROUP BY source_ip, message
+    )
+    SELECT f.source_ip::TEXT, COALESCE(kh.hostname, f.source_ip::TEXT) AS host,
+      f.fail_count, f.first_fail, f.last_fail, s.success_time, s.success_msg,
+      CASE WHEN s.success_time IS NOT NULL THEN TRUE ELSE FALSE END AS success_after_failure
+    FROM failures f
+    LEFT JOIN successes s ON s.source_ip = f.source_ip AND s.success_time > f.first_fail
+    LEFT JOIN known_hosts kh ON kh.ip_address = f.source_ip
+    WHERE f.fail_count >= 3
+    ORDER BY success_after_failure DESC, f.fail_count DESC LIMIT 50
+  `);
+  res.json({ data: rows });
+}));
+
+app.get('/api/security/firewall-denies', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const [bySrc, byDst, bySvc] = await Promise.all([
+    pool.query(`SELECT structured_data->>'srcip' AS src_ip, COUNT(*) AS deny_count, ARRAY_AGG(DISTINCT structured_data->>'dstip') FILTER (WHERE structured_data->>'dstip' IS NOT NULL) AS destinations FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND vendor='fortinet' AND structured_data->>'action'='deny' AND structured_data->>'srcip' IS NOT NULL GROUP BY structured_data->>'srcip' ORDER BY deny_count DESC LIMIT 15`),
+    pool.query(`SELECT structured_data->>'dstip' AS dst_ip, COUNT(*) AS deny_count, ARRAY_AGG(DISTINCT structured_data->>'srcip') FILTER (WHERE structured_data->>'srcip' IS NOT NULL) AS sources FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND vendor='fortinet' AND structured_data->>'action'='deny' AND structured_data->>'dstip' IS NOT NULL GROUP BY structured_data->>'dstip' ORDER BY deny_count DESC LIMIT 15`),
+    pool.query(`SELECT COALESCE(structured_data->>'service', 'unknown') AS service, COUNT(*) AS deny_count FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND vendor='fortinet' AND structured_data->>'action'='deny' GROUP BY structured_data->>'service' ORDER BY deny_count DESC LIMIT 10`),
+  ]);
+  res.json({ by_source: bySrc.rows, by_destination: byDst.rows, by_service: bySvc.rows });
+}));
+
+app.get('/api/security/vpn-events', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const { rows } = await pool.query(`
+    SELECT received_at, source_host, source_ip::TEXT, severity_label, message,
+      structured_data->>'srcip' AS vpn_src_ip, structured_data->>'msg' AS detail,
+      CASE WHEN message ILIKE '%fail%' OR message ILIKE '%error%' OR severity <= 4 THEN 'failure'
+           WHEN message ILIKE '%success%' OR message ILIKE '%login%' OR message ILIKE '%connected%' THEN 'success'
+           ELSE 'info' END AS event_type
+    FROM syslog_entries
+    WHERE received_at > NOW() - INTERVAL '${hours} hours' AND vendor='fortinet'
+      AND (structured_data->>'subtype'='vpn' OR message ILIKE '%ssl vpn%' OR message ILIKE '%ipsec%' OR message ILIKE '%vpn%')
+    ORDER BY received_at DESC LIMIT 100
+  `);
+  res.json({ data: rows });
+}));
+
+app.get('/api/security/ips-events', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const [events, byThreat] = await Promise.all([
+    pool.query(`SELECT received_at, source_host, source_ip::TEXT, severity_label, message, structured_data->>'srcip' AS src_ip, structured_data->>'dstip' AS dst_ip, structured_data->>'msg' AS threat_name, structured_data->>'action' AS action, structured_data->>'subtype' AS subtype FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND vendor='fortinet' AND structured_data->>'type'='utm' ORDER BY received_at DESC LIMIT 100`),
+    pool.query(`SELECT COALESCE(structured_data->>'msg','Unknown') AS threat, structured_data->>'subtype' AS subtype, COUNT(*) AS hit_count, COUNT(DISTINCT structured_data->>'srcip') AS unique_sources FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND vendor='fortinet' AND structured_data->>'type'='utm' GROUP BY structured_data->>'msg', structured_data->>'subtype' ORDER BY hit_count DESC LIMIT 20`),
+  ]);
+  res.json({ events: events.rows, by_threat: byThreat.rows });
+}));
+
+app.get('/api/security/after-hours', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '168'), 720);
+  const { rows } = await pool.query(`
+    SELECT se.received_at, COALESCE(kh.hostname, se.source_host) AS source_host, se.source_ip::TEXT,
+      se.vendor, se.severity_label, se.message, EXTRACT(HOUR FROM se.received_at) AS hour_of_day,
+      CASE WHEN se.structured_data->>'subcategory'='config_change' THEN 'Config Change'
+           WHEN se.structured_data->>'subcategory' IN ('login_failed','auth_failed') THEN 'Auth Failure'
+           WHEN se.structured_data->>'subcategory'='login_success' THEN 'Login Success'
+           WHEN se.message ILIKE '%vpn%' THEN 'VPN' ELSE 'Security Event' END AS event_type
+    FROM syslog_entries se LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at > NOW() - INTERVAL '${hours} hours'
+      AND (se.structured_data->>'subcategory' IN ('login_failed','config_change','auth_failed','login_success')
+        OR se.message ILIKE '%login%' OR se.message ILIKE '%configured from%' OR se.message ILIKE '%vpn%')
+      AND EXTRACT(HOUR FROM se.received_at) NOT BETWEEN 7 AND 19
+    ORDER BY se.received_at DESC LIMIT 100
+  `);
+  res.json({ data: rows });
+}));
+
+app.get('/api/security/wireless-auth', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const [failures, summary] = await Promise.all([
+    pool.query(`SELECT received_at, source_host, source_ip::TEXT, message, severity_label FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND vendor='aruba' AND message ILIKE '%authentication failed%' ORDER BY received_at DESC LIMIT 50`),
+    pool.query(`SELECT COUNT(*) FILTER (WHERE message ILIKE '%failed%') AS failures, COUNT(*) FILTER (WHERE message ILIKE '%success%' OR message ILIKE '%authenticated%') AS successes, COUNT(DISTINCT source_ip) AS devices FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND vendor='aruba' AND (message ILIKE '%authentication%' OR message ILIKE '%802.1x%')`),
+  ]);
+  res.json({ failures: failures.rows, summary: summary.rows[0] });
+}));
+
 // ── HEALTH CHECK ─────────────────────────────────────────────
 
 app.get('/api/health', asyncHandler(async (req, res) => {

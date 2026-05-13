@@ -11,9 +11,10 @@ import LiveTail        from '@/components/LiveTail';
 import AlertEvents     from '@/components/AlertEvents';
 import KnownHosts      from '@/components/KnownHosts';
 import NetworkHealth   from '@/components/NetworkHealth';
+import SecurityAnalysis from '@/components/SecurityAnalysis';
 import Header          from '@/components/Header';
 
-type Tab = 'dashboard' | 'explorer' | 'livetail' | 'alerts' | 'health' | 'hosts';
+type Tab = 'dashboard' | 'explorer' | 'livetail' | 'alerts' | 'health' | 'security' | 'hosts';
 
 export interface ExplorerFilter {
   severity?: string;
@@ -56,6 +57,12 @@ const Icons: Record<Tab, JSX.Element> = {
   health: (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
       <polyline points="1,8 4,4 6,10 9,3 11,8 13,6 15,8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+    </svg>
+  ),
+  security: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M8 1L2 4v5c0 3.5 2.5 6.5 6 7.4C11.5 15.5 14 12.5 14 9V4L8 1z" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round"/>
+      <polyline points="5,8 7,10 11,6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   ),
   hosts: (
@@ -107,6 +114,7 @@ export default function Home() {
     { id: 'livetail',  label: 'Live Tail' },
     { id: 'alerts',    label: 'Alerts' },
     { id: 'health',    label: 'Network Health' },
+    { id: 'security',  label: 'Security' },
     { id: 'hosts',     label: 'Known Hosts' },
   ];
 
@@ -239,8 +247,9 @@ export default function Home() {
           {tab === 'explorer' && <LogExplorer initialFilter={explorerFilter} onFilterUsed={() => setExplorerFilter({})} />}
           {tab === 'livetail' && <LiveTail />}
           {tab === 'alerts'   && <AlertEvents />}
-          {tab === 'health'   && <NetworkHealth hours={hours} />}
-          {tab === 'hosts'    && <KnownHosts />}
+          {tab === 'health'    && <NetworkHealth hours={hours} />}
+          {tab === 'security'  && <SecurityAnalysis hours={hours} />}
+          {tab === 'hosts'     && <KnownHosts />}
         </div>
       </div>
     </div>
