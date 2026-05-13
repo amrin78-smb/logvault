@@ -1,10 +1,7 @@
 /**
  * LogVault API Server
- * REST API for the LogVault Next.js frontend
- * Port: 3004 (shared with Next.js via internal routing)
- *
- * Run with: node api/server.js
- * Managed by NSSM as a Windows service: LogVaultAPI
+ * REST API + WebSocket for the LogVault Next.js frontend
+ * Port: 3005 (internal)
  */
 
 'use strict';
@@ -17,7 +14,7 @@ const { WebSocketServer } = require('ws');
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env.local') });
 
 const app  = express();
-const port = parseInt(process.env.LV_API_PORT || '3005'); // internal API port, Next.js is on 3004
+const port = parseInt(process.env.LV_API_PORT || '3005');
 
 app.use(cors());
 app.use(express.json());
@@ -31,152 +28,125 @@ const pool = new Pool({
   max:      10,
 });
 
-// ── Helper ───────────────────────────────────────────────────
 const asyncHandler = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 // ── DASHBOARD STATS ──────────────────────────────────────────
 
-// GET /api/stats/summary - total counts by severity for last N hours
 app.get('/api/stats/summary', asyncHandler(async (req, res) => {
   const hours = Math.min(parseInt(req.query.hours || '24'), 168);
   const { rows } = await pool.query(`
-    SELECT
-      severity,
-      severity_label,
-      COUNT(*) AS log_count
+    SELECT severity, severity_label, COUNT(*) AS log_count
     FROM syslog_entries
     WHERE received_at > NOW() - INTERVAL '${hours} hours'
-    GROUP BY severity, severity_label
-    ORDER BY severity
+    GROUP BY severity, severity_label ORDER BY severity
   `);
   res.json({ hours, data: rows });
 }));
 
-// GET /api/stats/timeline - log volume over time (for chart)
 app.get('/api/stats/timeline', asyncHandler(async (req, res) => {
-  const hours    = Math.min(parseInt(req.query.hours || '24'), 168);
-  const bucket   = hours <= 6 ? '5 minutes' : hours <= 48 ? '1 hour' : '6 hours';
+  const hours  = Math.min(parseInt(req.query.hours || '24'), 168);
+  const bucket = hours <= 6 ? '5 minutes' : hours <= 48 ? '1 hour' : '6 hours';
   const { rows } = await pool.query(`
     SELECT
-      time_bucket($1, received_at) AS bucket,
+      date_trunc('${bucket === '5 minutes' ? 'minute' : bucket === '1 hour' ? 'hour' : 'hour'}',
+        received_at ${bucket === '5 minutes' ? '- (EXTRACT(MINUTE FROM received_at)::int % 5) * interval \'1 minute\'' : bucket === '6 hours' ? '- (EXTRACT(HOUR FROM received_at)::int % 6) * interval \'1 hour\'' : ''}) AS bucket,
       severity_label,
       COUNT(*) AS log_count
     FROM syslog_entries
     WHERE received_at > NOW() - INTERVAL '${hours} hours'
     GROUP BY bucket, severity_label
     ORDER BY bucket
-  `, [bucket]);
+  `);
   res.json({ hours, bucket, data: rows });
 }));
 
-// GET /api/stats/top-talkers - top sources by volume
 app.get('/api/stats/top-talkers', asyncHandler(async (req, res) => {
   const hours = Math.min(parseInt(req.query.hours || '24'), 168);
   const limit = Math.min(parseInt(req.query.limit || '10'), 50);
   const { rows } = await pool.query(`
     SELECT
-      COALESCE(source_host, source_ip::TEXT) AS host,
-      source_ip::TEXT AS source_ip,
-      vendor,
+      COALESCE(kh.hostname, se.source_host, se.source_ip::TEXT) AS host,
+      se.source_ip::TEXT AS source_ip,
+      COALESCE(kh.vendor, se.vendor) AS vendor,
       COUNT(*) AS log_count,
-      MAX(received_at) AS last_seen
-    FROM syslog_entries
-    WHERE received_at > NOW() - INTERVAL '${hours} hours'
-    GROUP BY source_host, source_ip, vendor
+      MAX(se.received_at) AS last_seen
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at > NOW() - INTERVAL '${hours} hours'
+    GROUP BY se.source_host, se.source_ip, kh.hostname, kh.vendor, se.vendor
     ORDER BY log_count DESC
     LIMIT $1
   `, [limit]);
   res.json({ hours, data: rows });
 }));
 
-// GET /api/stats/by-vendor - breakdown by vendor
 app.get('/api/stats/by-vendor', asyncHandler(async (req, res) => {
   const hours = Math.min(parseInt(req.query.hours || '24'), 168);
   const { rows } = await pool.query(`
     SELECT
-      vendor,
-      COUNT(*) AS log_count,
+      vendor, COUNT(*) AS log_count,
       COUNT(*) FILTER (WHERE severity <= 2) AS critical_count,
       COUNT(*) FILTER (WHERE severity = 3)  AS error_count,
       COUNT(*) FILTER (WHERE severity = 4)  AS warning_count
     FROM syslog_entries
     WHERE received_at > NOW() - INTERVAL '${hours} hours'
-    GROUP BY vendor
-    ORDER BY log_count DESC
+    GROUP BY vendor ORDER BY log_count DESC
   `);
   res.json({ hours, data: rows });
 }));
 
 // ── LOG SEARCH ───────────────────────────────────────────────
 
-// GET /api/logs - search and filter logs
 app.get('/api/logs', asyncHandler(async (req, res) => {
-  const {
-    q,                           // full-text search
-    vendor,                      // filter by vendor
-    severity,                    // filter by severity (0-7 or comma-separated)
-    host,                        // filter by source_host ILIKE
-    ip,                          // filter by source_ip
-    hours   = '1',
-    page    = '1',
-    limit   = '100',
-  } = req.query;
-
+  const { q, vendor, severity, host, ip, hours = '1', page = '1', limit = '100' } = req.query;
   const conditions = [`received_at > NOW() - INTERVAL '${Math.min(parseInt(hours), 720)} hours'`];
-  const params     = [];
+  const params = [];
   let p = 1;
 
-  if (q) {
-    conditions.push(`to_tsvector('english', message) @@ plainto_tsquery('english', $${p++})`);
-    params.push(q);
-  }
+  if (q)        { conditions.push(`to_tsvector('english', message) @@ plainto_tsquery('english', $${p++})`); params.push(q); }
   if (vendor)   { conditions.push(`vendor = $${p++}`);               params.push(vendor); }
   if (severity) {
     const sevs = severity.split(',').map(Number).filter(n => n >= 0 && n <= 7);
     if (sevs.length) { conditions.push(`severity = ANY($${p++})`);   params.push(sevs); }
   }
-  if (host)     { conditions.push(`source_host ILIKE $${p++}`);      params.push(`%${host}%`); }
+  if (host)     { conditions.push(`(source_host ILIKE $${p++} OR COALESCE((SELECT hostname FROM known_hosts WHERE ip_address = source_ip), source_host, source_ip::TEXT) ILIKE $${p++})`); params.push(`%${host}%`); params.push(`%${host}%`); p++; }
   if (ip)       { conditions.push(`source_ip::TEXT ILIKE $${p++}`);  params.push(`%${ip}%`); }
 
   const offset = (Math.max(parseInt(page), 1) - 1) * Math.min(parseInt(limit), 500);
   const lim    = Math.min(parseInt(limit), 500);
-
   params.push(lim, offset);
 
   const { rows } = await pool.query(`
     SELECT
-      id, received_at, log_timestamp, source_ip::TEXT, source_host,
-      facility_label, severity, severity_label, vendor, program, message,
-      structured_data, is_parsed
-    FROM syslog_entries
+      se.id, se.received_at, se.log_timestamp,
+      se.source_ip::TEXT,
+      COALESCE(kh.hostname, se.source_host) AS source_host,
+      se.facility_label, se.severity, se.severity_label, se.vendor,
+      se.program, se.message, se.structured_data, se.is_parsed
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
     WHERE ${conditions.join(' AND ')}
-    ORDER BY received_at DESC
+    ORDER BY se.received_at DESC
     LIMIT $${p++} OFFSET $${p++}
   `, params);
 
-  // Count query (drop ORDER/LIMIT)
   const countRes = await pool.query(
-    `SELECT COUNT(*) AS total FROM syslog_entries WHERE ${conditions.join(' AND ')}`,
+    `SELECT COUNT(*) AS total FROM syslog_entries se WHERE ${conditions.join(' AND ')}`,
     params.slice(0, -2)
   );
 
-  res.json({
-    total: parseInt(countRes.rows[0].total),
-    page:  parseInt(page),
-    limit: lim,
-    data:  rows,
-  });
+  res.json({ total: parseInt(countRes.rows[0].total), page: parseInt(page), limit: lim, data: rows });
 }));
 
-// GET /api/logs/recent-critical - last 50 critical/error events
 app.get('/api/logs/recent-critical', asyncHandler(async (req, res) => {
   const hours = Math.min(parseInt(req.query.hours || '24'), 168);
   const { rows } = await pool.query(`
-    SELECT received_at, source_host, source_ip::TEXT, severity_label, vendor, message
-    FROM syslog_entries
-    WHERE severity <= 3 AND received_at > NOW() - INTERVAL '${hours} hours'
-    ORDER BY received_at DESC
-    LIMIT 50
+    SELECT se.received_at, COALESCE(kh.hostname, se.source_host) AS source_host,
+      se.source_ip::TEXT, se.severity_label, se.vendor, se.message
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.severity <= 3 AND se.received_at > NOW() - INTERVAL '${hours} hours'
+    ORDER BY se.received_at DESC LIMIT 50
   `);
   res.json({ data: rows });
 }));
@@ -209,7 +179,6 @@ app.patch('/api/alerts/rules/:id', asyncHandler(async (req, res) => {
   res.json({ data: rows[0] });
 }));
 
-// GET /api/alerts/events - recent fired alerts
 app.get('/api/alerts/events', asyncHandler(async (req, res) => {
   const { rows } = await pool.query(`
     SELECT ae.*, ar.name AS rule_name
@@ -221,10 +190,7 @@ app.get('/api/alerts/events', asyncHandler(async (req, res) => {
 }));
 
 app.patch('/api/alerts/events/:id/acknowledge', asyncHandler(async (req, res) => {
-  await pool.query(
-    'UPDATE alert_events SET acknowledged=TRUE, acknowledged_at=NOW() WHERE id=$1',
-    [req.params.id]
-  );
+  await pool.query('UPDATE alert_events SET acknowledged=TRUE, acknowledged_at=NOW() WHERE id=$1', [req.params.id]);
   res.json({ ok: true });
 }));
 
@@ -248,10 +214,156 @@ app.put('/api/hosts', asyncHandler(async (req, res) => {
   res.json({ data: rows[0] });
 }));
 
-// ── HEALTH ───────────────────────────────────────────────────
+// ── NETWORK HEALTH ───────────────────────────────────────────
+
+app.get('/api/health/interfaces', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const { rows } = await pool.query(`
+    SELECT received_at, source_host, source_ip::TEXT, message,
+      structured_data->>'interface'   AS interface,
+      structured_data->>'link_state'  AS link_state,
+      structured_data->>'subcategory' AS subcategory
+    FROM syslog_entries
+    WHERE received_at > NOW() - INTERVAL '${hours} hours'
+      AND vendor = 'cisco'
+      AND structured_data->>'category' = 'interface'
+    ORDER BY received_at DESC LIMIT 200
+  `);
+  res.json({ data: rows });
+}));
+
+app.get('/api/health/flaps', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const { rows } = await pool.query(`
+    SELECT
+      COALESCE(source_host, source_ip::TEXT) AS host,
+      structured_data->>'interface' AS interface,
+      COUNT(*) AS event_count,
+      COUNT(*) FILTER (WHERE structured_data->>'link_state' = 'down') AS down_count,
+      COUNT(*) FILTER (WHERE structured_data->>'link_state' = 'up')   AS up_count,
+      MIN(received_at) AS first_seen, MAX(received_at) AS last_seen
+    FROM syslog_entries
+    WHERE received_at > NOW() - INTERVAL '${hours} hours'
+      AND vendor = 'cisco'
+      AND structured_data->>'category' = 'interface'
+      AND structured_data->>'interface' IS NOT NULL
+    GROUP BY source_host, source_ip, structured_data->>'interface'
+    HAVING COUNT(*) >= 2
+    ORDER BY event_count DESC LIMIT 50
+  `);
+  res.json({ data: rows });
+}));
+
+app.get('/api/health/stp', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const { rows } = await pool.query(`
+    SELECT received_at, source_host, source_ip::TEXT, severity_label, message,
+      structured_data->>'subcategory' AS subcategory,
+      structured_data->>'interface'   AS interface,
+      structured_data->>'mac_address' AS mac_address
+    FROM syslog_entries
+    WHERE received_at > NOW() - INTERVAL '${hours} hours'
+      AND vendor = 'cisco'
+      AND structured_data->>'category' IN ('stp','loop')
+    ORDER BY received_at DESC LIMIT 200
+  `);
+  res.json({ data: rows });
+}));
+
+app.get('/api/health/macflaps', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const { rows } = await pool.query(`
+    SELECT
+      COALESCE(source_host, source_ip::TEXT) AS host,
+      structured_data->>'mac_address' AS mac_address,
+      COUNT(*) AS flap_count,
+      MIN(received_at) AS first_seen, MAX(received_at) AS last_seen,
+      STRING_AGG(DISTINCT structured_data->>'interface', ', ') AS interfaces
+    FROM syslog_entries
+    WHERE received_at > NOW() - INTERVAL '${hours} hours'
+      AND structured_data->>'subcategory' = 'mac_flap'
+    GROUP BY source_host, source_ip, structured_data->>'mac_address'
+    ORDER BY flap_count DESC LIMIT 50
+  `);
+  res.json({ data: rows });
+}));
+
+app.get('/api/health/config-changes', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const { rows } = await pool.query(`
+    SELECT received_at, source_host, source_ip::TEXT, message, vendor
+    FROM syslog_entries
+    WHERE received_at > NOW() - INTERVAL '${hours} hours'
+      AND (
+        (vendor = 'cisco' AND structured_data->>'subcategory' = 'config_change')
+        OR message ILIKE '%configured from%'
+        OR message ILIKE '%configuration changed%'
+        OR message ILIKE '%config edit%'
+        OR (vendor = 'fortinet' AND message ILIKE '%config edit%')
+      )
+    ORDER BY received_at DESC LIMIT 100
+  `);
+  res.json({ data: rows });
+}));
+
+app.get('/api/health/routing', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const { rows } = await pool.query(`
+    SELECT received_at, source_host, source_ip::TEXT, severity_label, message,
+      structured_data->>'subcategory' AS protocol
+    FROM syslog_entries
+    WHERE received_at > NOW() - INTERVAL '${hours} hours'
+      AND vendor = 'cisco'
+      AND structured_data->>'category' = 'routing'
+    ORDER BY received_at DESC LIMIT 100
+  `);
+  res.json({ data: rows });
+}));
+
+app.get('/api/health/device-status', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(`
+    SELECT
+      COALESCE(kh.hostname, se.source_host, se.source_ip::TEXT) AS host,
+      se.source_ip::TEXT,
+      kh.vendor AS known_vendor, se.vendor, kh.description,
+      MAX(se.received_at) AS last_seen,
+      COUNT(*) FILTER (WHERE se.received_at > NOW() - INTERVAL '1 hour')   AS logs_1h,
+      COUNT(*) FILTER (WHERE se.received_at > NOW() - INTERVAL '24 hours') AS logs_24h,
+      COUNT(*) FILTER (WHERE se.severity <= 2 AND se.received_at > NOW() - INTERVAL '24 hours') AS critical_24h,
+      COUNT(*) FILTER (WHERE se.severity = 3  AND se.received_at > NOW() - INTERVAL '24 hours') AS error_24h,
+      EXTRACT(EPOCH FROM (NOW() - MAX(se.received_at)))/60 AS minutes_since_last_log
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at > NOW() - INTERVAL '7 days'
+    GROUP BY se.source_host, se.source_ip, kh.hostname, kh.vendor, kh.description
+    ORDER BY last_seen DESC
+  `);
+  res.json({ data: rows });
+}));
+
+app.get('/api/health/summary', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const [iface, stp, mac, cfg, rt] = await Promise.all([
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND vendor='cisco' AND structured_data->>'category'='interface'`),
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND vendor='cisco' AND structured_data->>'category' IN ('stp','loop')`),
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND structured_data->>'subcategory'='mac_flap'`),
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND (structured_data->>'subcategory'='config_change' OR message ILIKE '%configured from%')`),
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - INTERVAL '${hours} hours' AND vendor='cisco' AND structured_data->>'category'='routing'`),
+  ]);
+  res.json({
+    hours,
+    interface_events: parseInt(iface.rows[0].count),
+    stp_loop_events:  parseInt(stp.rows[0].count),
+    mac_flap_events:  parseInt(mac.rows[0].count),
+    config_changes:   parseInt(cfg.rows[0].count),
+    routing_events:   parseInt(rt.rows[0].count),
+  });
+}));
+
+// ── HEALTH CHECK ─────────────────────────────────────────────
 
 app.get('/api/health', asyncHandler(async (req, res) => {
-  const { rows } = await pool.query('SELECT COUNT(*) AS total FROM syslog_entries WHERE received_at > NOW() - INTERVAL \'1 hour\'');
+  const { rows } = await pool.query(`SELECT COUNT(*) AS total FROM syslog_entries WHERE received_at > NOW() - INTERVAL '1 hour'`);
   res.json({ status: 'ok', logs_last_hour: parseInt(rows[0].total) });
 }));
 
@@ -265,26 +377,25 @@ app.use((err, req, res, _next) => {
 const server = http.createServer(app);
 const wss    = new WebSocketServer({ server, path: '/ws/live' });
 
-// Poll DB every 2s for new logs and broadcast to all connected clients
 let lastId = BigInt(0);
 
 async function broadcastNewLogs() {
   if (wss.clients.size === 0) return;
   try {
     const { rows } = await pool.query(`
-      SELECT id, received_at, source_host, source_ip::TEXT, severity_label, vendor, program, message
-      FROM syslog_entries
-      WHERE id > $1
-      ORDER BY id ASC
-      LIMIT 50
+      SELECT se.id, se.received_at,
+        COALESCE(kh.hostname, se.source_host) AS source_host,
+        se.source_ip::TEXT, se.severity_label, se.vendor, se.program, se.message
+      FROM syslog_entries se
+      LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+      WHERE se.id > $1
+      ORDER BY se.id ASC LIMIT 50
     `, [lastId.toString()]);
 
     if (rows.length > 0) {
       lastId = BigInt(rows[rows.length - 1].id);
       const payload = JSON.stringify({ type: 'logs', data: rows });
-      wss.clients.forEach(client => {
-        if (client.readyState === 1) client.send(payload);
-      });
+      wss.clients.forEach(client => { if (client.readyState === 1) client.send(payload); });
     }
   } catch (err) {
     console.error('[WS] Broadcast error:', err.message);
@@ -293,7 +404,6 @@ async function broadcastNewLogs() {
 
 setInterval(broadcastNewLogs, 2000);
 
-// ── Start ────────────────────────────────────────────────────
 server.listen(port, () => {
   console.log(`LogVault API + WebSocket running on port ${port}`);
 });

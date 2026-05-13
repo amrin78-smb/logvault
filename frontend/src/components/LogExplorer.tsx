@@ -1,8 +1,10 @@
 'use client';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import type { ExplorerFilter } from '@/app/page';
 
 const CARD  = { background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 10, padding: 20 };
 const INPUT = { background: '#f8f9fb', border: '1px solid #e2e6ea', borderRadius: 6, padding: '8px 12px', color: '#1a202c', fontSize: 13, outline: 'none' };
+
 const SEV_COLORS: Record<string, string> = {
   emergency: '#dc2626', alert: '#dc2626', critical: '#dc2626',
   error: '#ea580c', warning: '#ca8a04', notice: '#2563eb', info: '#16a34a', debug: '#9ca3af',
@@ -15,7 +17,10 @@ const SEVERITIES = [
   { label: '🔵 Notice', value: '5' }, { label: '🟢 Info', value: '6' },
 ];
 
-export default function LogExplorer() {
+export default function LogExplorer({ initialFilter, onFilterUsed }: {
+  initialFilter?: ExplorerFilter;
+  onFilterUsed?: () => void;
+}) {
   const [q, setQ]             = useState('');
   const [vendor, setVendor]   = useState('');
   const [severity, setSev]    = useState('');
@@ -28,17 +33,40 @@ export default function LogExplorer() {
   const [searched, setSearched] = useState(false);
   const [error, setError]     = useState<string | null>(null);
 
-  const search = useCallback(async () => {
+  // Apply initial filter from dashboard click
+  useEffect(() => {
+    if (initialFilter && Object.keys(initialFilter).length > 0) {
+      if (initialFilter.severity !== undefined) setSev(initialFilter.severity);
+      if (initialFilter.vendor    !== undefined) setVendor(initialFilter.vendor);
+      if (initialFilter.host      !== undefined) setHost(initialFilter.host);
+      if (initialFilter.hours     !== undefined) setHours(initialFilter.hours);
+      if (onFilterUsed) onFilterUsed();
+      // Auto-search when filter is applied
+      setTimeout(() => triggerSearch(initialFilter), 100);
+    }
+  }, [initialFilter]);
+
+  const triggerSearch = async (filter?: ExplorerFilter) => {
     setLoading(true); setError(null); setSearched(true);
+    const activeFilter = filter || {};
     try {
-      const params = new URLSearchParams({ hours, limit: '200', ...(q && { q }), ...(vendor && { vendor }), ...(severity && { severity }), ...(host && { host }) });
+      const params = new URLSearchParams({
+        hours:  activeFilter.hours    || hours,
+        limit:  '200',
+        ...(q                         && { q }),
+        ...(activeFilter.vendor  || vendor   ? { vendor:   activeFilter.vendor  || vendor   } : {}),
+        ...(activeFilter.severity || severity ? { severity: activeFilter.severity || severity } : {}),
+        ...(activeFilter.host    || host     ? { host:     activeFilter.host    || host     } : {}),
+      });
       const r = await fetch(`/api/logs?${params}`);
       if (!r.ok) throw new Error(`API error: ${r.status}`);
       const d = await r.json();
       setLogs(d.data || []); setTotal(d.total || 0);
     } catch (e: any) { setError(e.message); }
     setLoading(false);
-  }, [q, vendor, severity, host, hours]);
+  };
+
+  const search = useCallback(() => triggerSearch(), [q, vendor, severity, host, hours]);
 
   return (
     <div style={CARD}>
@@ -64,12 +92,28 @@ export default function LogExplorer() {
             fontWeight: 600, background: '#2563eb', color: '#ffffff', opacity: loading ? 0.7 : 1 }}>
           {loading ? 'Searching...' : 'Search'}
         </button>
+        {(vendor || severity || host) && (
+          <button onClick={() => { setVendor(''); setSev(''); setHost(''); }}
+            style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #e2e6ea', cursor: 'pointer',
+              fontSize: 12, background: '#f8f9fb', color: '#6b7280' }}>
+            Clear filters
+          </button>
+        )}
       </div>
+
+      {/* Active filter chips */}
+      {(vendor || severity || host) && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+          {vendor   && <span style={{ padding: '3px 10px', borderRadius: 20, background: '#eff6ff', color: '#2563eb', fontSize: 11, border: '1px solid #bfdbfe', fontWeight: 500 }}>vendor: {vendor}</span>}
+          {severity && <span style={{ padding: '3px 10px', borderRadius: 20, background: '#fef2f2', color: '#dc2626', fontSize: 11, border: '1px solid #fecaca', fontWeight: 500 }}>severity: {severity}</span>}
+          {host     && <span style={{ padding: '3px 10px', borderRadius: 20, background: '#f0fdf4', color: '#16a34a', fontSize: 11, border: '1px solid #bbf7d0', fontWeight: 500 }}>host: {host}</span>}
+        </div>
+      )}
 
       {searched && !loading && !error && (
         <div style={{ fontSize: 11, color: '#718096', marginBottom: 12, padding: '6px 12px',
           background: '#f8f9fb', border: '1px solid #e2e6ea', borderRadius: 6 }}>
-          {total === 0 ? `No logs found in the last ${hours}h — try a wider time range` : `Showing ${logs.length} of ${total.toLocaleString()} logs`}
+          {total === 0 ? `No logs found — try a wider time range or different filters` : `Showing ${logs.length} of ${total.toLocaleString()} logs`}
         </div>
       )}
       {error && <div style={{ fontSize: 12, color: '#dc2626', marginBottom: 12 }}>Error: {error}</div>}
@@ -114,7 +158,7 @@ export default function LogExplorer() {
                       <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#1a202c' }}>
                         <div style={{ marginBottom: 8 }}>
                           <strong style={{ color: '#718096' }}>Message: </strong>
-                          <span style={{ color: '#1a202c', wordBreak: 'break-all' }}>{row.message}</span>
+                          <span style={{ wordBreak: 'break-all' }}>{row.message}</span>
                         </div>
                         {row.structured_data && Object.keys(row.structured_data).length > 0 && (
                           <div>

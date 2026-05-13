@@ -6,17 +6,24 @@ const VENDOR_COLORS: Record<string, string> = {
   aruba: '#7c3aed', sangfor: '#0891b2', generic: '#9ca3af', unknown: '#9ca3af',
 };
 
-export default function VendorBreakdown({ hours }: { hours: number }) {
+export default function VendorBreakdown({ hours, onVendorClick }: {
+  hours: number;
+  onVendorClick?: (vendor: string) => void;
+}) {
   const [data, setData] = useState<any[]>([]);
   useEffect(() => {
     fetch(`/api/stats/by-vendor?hours=${hours}`).then(r => r.json()).then(d => setData(d.data || [])).catch(() => {});
   }, [hours]);
+
   const total = data.reduce((s, r) => s + parseInt(r.log_count), 0) || 1;
+
   return (
     <div style={{ background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 10, padding: 20 }}>
       <div style={{ fontSize: 14, fontWeight: 600, color: '#1a202c', marginBottom: 2 }}>Logs by Vendor</div>
-      <div style={{ fontSize: 11, color: '#718096', marginBottom: 16 }}>Distribution across device types</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ fontSize: 11, color: '#718096', marginBottom: 16 }}>
+        {onVendorClick ? 'Click a vendor to filter logs' : 'Distribution across device types'}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {data.map(row => {
           const count = parseInt(row.log_count);
           const pct   = Math.round((count / total) * 100);
@@ -24,7 +31,10 @@ export default function VendorBreakdown({ hours }: { hours: number }) {
           const crit  = parseInt(row.critical_count);
           const err   = parseInt(row.error_count);
           return (
-            <div key={row.vendor}>
+            <div key={row.vendor} onClick={() => onVendorClick && onVendorClick(row.vendor)}
+              style={{ cursor: onVendorClick ? 'pointer' : 'default', padding: '4px 6px', borderRadius: 6, transition: 'background 0.15s' }}
+              onMouseEnter={e => { if (onVendorClick) (e.currentTarget as HTMLElement).style.background = '#f0f7ff'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ width: 10, height: 10, borderRadius: 2, background: color }} />

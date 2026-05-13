@@ -6,23 +6,34 @@ const VENDOR_COLORS: Record<string, string> = {
   aruba: '#7c3aed', sangfor: '#0891b2', generic: '#9ca3af', unknown: '#9ca3af',
 };
 
-export default function TopTalkers({ hours }: { hours: number }) {
+export default function TopTalkers({ hours, onHostClick }: {
+  hours: number;
+  onHostClick?: (host: string) => void;
+}) {
   const [data, setData] = useState<any[]>([]);
   useEffect(() => {
     fetch(`/api/stats/top-talkers?hours=${hours}&limit=8`)
       .then(r => r.json()).then(d => setData(d.data || [])).catch(() => {});
   }, [hours]);
+
   const max = data[0] ? parseInt(data[0].log_count) : 1;
+
   return (
     <div style={{ background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 10, padding: 20 }}>
       <div style={{ fontSize: 14, fontWeight: 600, color: '#1a202c', marginBottom: 2 }}>Top Talkers</div>
-      <div style={{ fontSize: 11, color: '#718096', marginBottom: 16 }}>Most active sources by log volume</div>
+      <div style={{ fontSize: 11, color: '#718096', marginBottom: 16 }}>
+        {onHostClick ? 'Click a host to filter logs' : 'Most active sources by log volume'}
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {data.map((row, i) => {
           const pct   = Math.round((parseInt(row.log_count) / max) * 100);
           const color = VENDOR_COLORS[row.vendor] || '#9ca3af';
           return (
-            <div key={i}>
+            <div key={i} onClick={() => onHostClick && onHostClick(row.host)}
+              style={{ cursor: onHostClick ? 'pointer' : 'default', padding: '4px 6px', borderRadius: 6,
+                transition: 'background 0.15s' }}
+              onMouseEnter={e => { if (onHostClick) (e.currentTarget as HTMLElement).style.background = '#f0f7ff'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />

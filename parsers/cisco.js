@@ -1,49 +1,106 @@
 /**
  * Cisco IOS / IOS-XE Syslog Parser
- *
- * Cisco format: <PRI>TIMESTAMP: %FACILITY-SEVERITY-MNEMONIC: message
- * Example: <189>May 12 10:23:01.456: %SYS-5-CONFIG_I: Configured from console by admin on vty0
- * Example: <189>*May 12 10:23:01.456 UTC: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down
+ * Enhanced with STP, MAC flap, storm control, and interface event classification
  */
 
 'use strict';
 
-const { parseGeneric } = require('./generic');
-
-const SEVERITY_LABELS = ['emergency','alert','critical','error','warning','notice','info','debug'];
-const FACILITY_LABELS = ['kern','user','mail','daemon','auth','syslog','lpr','news',
+const SEVERITY_LABELS  = ['emergency','alert','critical','error','warning','notice','info','debug'];
+const FACILITY_LABELS  = ['kern','user','mail','daemon','auth','syslog','lpr','news',
   'uucp','cron','authpriv','ftp','ntp','audit','alert2','clock',
   'local0','local1','local2','local3','local4','local5','local6','local7'];
 
-// Cisco syslog mnemonic maps IOS facility severity to syslog severity
-const IOS_SEV_MAP = { 0:'emergency', 1:'alert', 2:'critical', 3:'error', 4:'warning', 5:'notice', 6:'info', 7:'debug' };
+const IOS_SEV_MAP = { 0:'emergency',1:'alert',2:'critical',3:'error',4:'warning',5:'notice',6:'info',7:'debug' };
 
-// Detects Cisco IOS-style %FACILITY-SEVERITY-MNEMONIC pattern
 const CISCO_MNEMONIC_RE = /%([A-Z0-9_\-]+)-(\d)-([A-Z0-9_]+):/;
+const CISCO_FULL_RE     = /^<(\d{1,3})>\*?(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:\s+\w+)?(?:\s+\w+)?):\s+(%[A-Z0-9_\-]+-\d-[A-Z0-9_]+:.*)/s;
 
-// Full Cisco log line
-const CISCO_FULL_RE = /^<(\d{1,3})>\*?(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:\s+\w+)?(?:\s+\w+)?):\s+(%[A-Z0-9_\-]+-\d-[A-Z0-9_]+:.*)/s;
+// ── Event classification for Network Health tab ───────────────
+const EVENT_PATTERNS = [
+  // Interface events
+  { pattern: /LINK-\d-UPDOWN/,           category: 'interface',   subcategory: 'link_change' },
+  { pattern: /LINEPROTO-\d-UPDOWN/,      category: 'interface',   subcategory: 'protocol_change' },
+  { pattern: /INTERFACE_UPDOWN/,         category: 'interface',   subcategory: 'link_change' },
+
+  // STP / Loop events
+  { pattern: /SPANTREE.*TOPOTRAP/,       category: 'stp',         subcategory: 'topology_change' },
+  { pattern: /SPANTREE.*ROOTCHANGE/,     category: 'stp',         subcategory: 'root_change' },
+  { pattern: /SPANTREE.*CHNMISCFG/,      category: 'stp',         subcategory: 'loop_detected' },
+  { pattern: /SPANTREE.*PORTDEL/,        category: 'stp',         subcategory: 'port_removed' },
+  { pattern: /STP.*INTERFACE_ROLE/,      category: 'stp',         subcategory: 'role_change' },
+  { pattern: /STP-\d-BLOCK/,            category: 'stp',         subcategory: 'port_blocked' },
+
+  // MAC flapping (definitive loop indicator)
+  { pattern: /SW_MATM.*MACFLAP/,         category: 'loop',        subcategory: 'mac_flap' },
+  { pattern: /MACFLAP_NOTIF/,            category: 'loop',        subcategory: 'mac_flap' },
+  { pattern: /MAC.*flap/i,               category: 'loop',        subcategory: 'mac_flap' },
+
+  // Storm control
+  { pattern: /STORM_CONTROL.*FILTERED/,  category: 'loop',        subcategory: 'storm_control' },
+  { pattern: /STORM_CONTROL.*SHUTDOWN/,  category: 'loop',        subcategory: 'storm_shutdown' },
+
+  // Authentication / Security
+  { pattern: /SEC_LOGIN.*LOGIN_FAILED/,  category: 'security',    subcategory: 'login_failed' },
+  { pattern: /SEC_LOGIN.*QUIET_MODE/,    category: 'security',    subcategory: 'brute_force' },
+  { pattern: /SEC_LOGIN.*LOGIN_SUCCESS/, category: 'security',    subcategory: 'login_success' },
+  { pattern: /AAA.*AUTHEN_FAIL/,         category: 'security',    subcategory: 'auth_failed' },
+
+  // Configuration changes
+  { pattern: /SYS-\d-CONFIG_I/,          category: 'config',      subcategory: 'config_change' },
+  { pattern: /SYS-\d-LOGOUT/,            category: 'config',      subcategory: 'logout' },
+
+  // Routing
+  { pattern: /OSPF.*ADJCHG/,             category: 'routing',     subcategory: 'ospf_neighbor' },
+  { pattern: /BGP.*ADJCHANGE/,           category: 'routing',     subcategory: 'bgp_neighbor' },
+  { pattern: /DUAL-\d-NBRCHANGE/,        category: 'routing',     subcategory: 'eigrp_neighbor' },
+];
+
+function classifyEvent(mnemonicFull, message) {
+  const searchStr = `${mnemonicFull} ${message}`;
+  for (const p of EVENT_PATTERNS) {
+    if (p.pattern.test(searchStr)) {
+      return { category: p.category, subcategory: p.subcategory };
+    }
+  }
+  return { category: 'general', subcategory: 'general' };
+}
+
+// Extract interface name from message
+function extractInterface(message) {
+  const m = message.match(/(?:Interface|interface|port)\s+([\w\/\.]+)/i)
+         || message.match(/(GigabitEthernet[\w\/\.]+)/i)
+         || message.match(/(FastEthernet[\w\/\.]+)/i)
+         || message.match(/(TenGigabitEthernet[\w\/\.]+)/i)
+         || message.match(/(Ethernet[\w\/\.]+)/i)
+         || message.match(/(Vlan[\w\/\.]+)/i)
+         || message.match(/(Po[\d]+)/i);
+  return m ? m[1] : null;
+}
+
+// Extract MAC address from message
+function extractMAC(message) {
+  const m = message.match(/([0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4})/i)
+         || message.match(/([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})/i);
+  return m ? m[1] : null;
+}
 
 function parseCisco(raw, sourceIp) {
-  // Must contain the Cisco mnemonic pattern to be treated as Cisco
   if (!CISCO_MNEMONIC_RE.test(raw)) return null;
 
-  const fullMatch = CISCO_FULL_RE.exec(raw);
+  const fullMatch     = CISCO_FULL_RE.exec(raw);
   const mnemonicMatch = CISCO_MNEMONIC_RE.exec(raw);
-
   if (!mnemonicMatch) return null;
 
-  const iosFacility  = mnemonicMatch[1]; // e.g. "SYS", "LINK", "SEC_LOGIN"
-  const iosSeverity  = parseInt(mnemonicMatch[2], 10);
-  const mnemonic     = mnemonicMatch[3]; // e.g. "CONFIG_I", "UPDOWN"
+  const iosFacility = mnemonicMatch[1];
+  const iosSeverity = parseInt(mnemonicMatch[2], 10);
+  const mnemonic    = mnemonicMatch[3];
+  const mnemonicFull = mnemonicMatch[0];
 
-  // Extract message after the mnemonic colon
-  const msgStart = raw.indexOf(mnemonicMatch[0]) + mnemonicMatch[0].length;
+  const msgStart = raw.indexOf(mnemonicFull) + mnemonicFull.length;
   const message  = raw.slice(msgStart).trim();
 
-  // Decode PRI if present
   let severity      = iosSeverity <= 7 ? iosSeverity : 6;
-  let facility      = 23; // default local7
+  let facility      = 23;
   let facilityLabel = 'local7';
   let severityLabel = IOS_SEV_MAP[severity] || 'info';
 
@@ -51,14 +108,26 @@ function parseCisco(raw, sourceIp) {
     const pri = parseInt(fullMatch[1], 10);
     facility      = Math.floor(pri / 8);
     facilityLabel = FACILITY_LABELS[facility] || 'local7';
-    // Use IOS severity (more accurate) over PRI severity
   }
 
-  // Parse timestamp
   let logTimestamp = null;
   if (fullMatch && fullMatch[2]) {
     const year = new Date().getFullYear();
     try { logTimestamp = new Date(`${fullMatch[2].trim()} ${year}`); } catch (_) {}
+  }
+
+  // Classify the event
+  const { category, subcategory } = classifyEvent(mnemonicFull, message);
+
+  // Extract useful fields
+  const iface = extractInterface(message);
+  const mac   = extractMAC(message);
+
+  // Determine link state for interface events
+  let linkState = null;
+  if (subcategory === 'link_change' || subcategory === 'protocol_change') {
+    if (/changed state to up|line protocol.*up/i.test(message))   linkState = 'up';
+    if (/changed state to down|line protocol.*down/i.test(message)) linkState = 'down';
   }
 
   return {
@@ -76,6 +145,11 @@ function parseCisco(raw, sourceIp) {
       ios_facility: iosFacility,
       ios_severity: iosSeverity,
       mnemonic,
+      category,
+      subcategory,
+      interface:    iface,
+      mac_address:  mac,
+      link_state:   linkState,
     },
     is_parsed:       true,
     log_timestamp:   logTimestamp,

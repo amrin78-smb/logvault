@@ -8,15 +8,25 @@ const SEV_STYLE: Record<string, { bg: string; color: string; border: string }> =
   error:     { bg: '#fff7ed', color: '#ea580c', border: '#fed7aa' },
 };
 
-export default function RecentCritical({ hours }: { hours: number }) {
+const SEV_FILTER: Record<string, string> = {
+  emergency: '0', alert: '1', critical: '2', error: '3',
+};
+
+export default function RecentCritical({ hours, onRowClick }: {
+  hours: number;
+  onRowClick?: (severity: string) => void;
+}) {
   const [data, setData] = useState<any[]>([]);
   useEffect(() => {
     fetch(`/api/logs/recent-critical?hours=${hours}`).then(r => r.json()).then(d => setData(d.data || [])).catch(() => {});
   }, [hours]);
+
   return (
     <div style={{ background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 10, padding: 20 }}>
       <div style={{ fontSize: 14, fontWeight: 600, color: '#1a202c', marginBottom: 2 }}>Recent Critical &amp; Error Events</div>
-      <div style={{ fontSize: 11, color: '#718096', marginBottom: 16 }}>Latest severity 0–3 events</div>
+      <div style={{ fontSize: 11, color: '#718096', marginBottom: 16 }}>
+        {onRowClick ? 'Click a row to view similar logs' : 'Latest severity 0–3 events'}
+      </div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
@@ -30,7 +40,14 @@ export default function RecentCritical({ hours }: { hours: number }) {
             {data.map((row, i) => {
               const sev = SEV_STYLE[row.severity_label] || SEV_STYLE.error;
               return (
-                <tr key={i} style={{ borderBottom: '1px solid #f0f2f5', background: i % 2 === 0 ? '#fafbfc' : '#ffffff' }}>
+                <tr key={i}
+                  onClick={() => onRowClick && onRowClick(SEV_FILTER[row.severity_label] || '3')}
+                  style={{ borderBottom: '1px solid #f0f2f5',
+                    background: i % 2 === 0 ? '#fafbfc' : '#ffffff',
+                    cursor: onRowClick ? 'pointer' : 'default',
+                    transition: 'background 0.1s' }}
+                  onMouseEnter={e => { if (onRowClick) (e.currentTarget as HTMLElement).style.background = '#eff6ff'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? '#fafbfc' : '#ffffff'; }}>
                   <td style={{ padding: '8px 12px', color: '#9ca3af', whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>
                     {new Date(row.received_at).toLocaleTimeString()}
                   </td>
@@ -42,7 +59,8 @@ export default function RecentCritical({ hours }: { hours: number }) {
                   </td>
                   <td style={{ padding: '8px 12px' }}>
                     <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700,
-                      background: sev.bg, color: sev.color, border: `1px solid ${sev.border}`, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      background: sev.bg, color: sev.color, border: `1px solid ${sev.border}`,
+                      textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       {row.severity_label}
                     </span>
                   </td>
