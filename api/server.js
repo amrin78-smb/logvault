@@ -485,6 +485,27 @@ app.get('/api/security/wireless-auth', asyncHandler(async (req, res) => {
   res.json({ failures: failures.rows, summary: summary.rows[0] });
 }));
 
+// ── STORAGE STATS ────────────────────────────────────────────
+
+function formatBytes(bytes) {
+  if (bytes < 1024)        return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1024 ** 3)   return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+}
+
+app.get('/api/stats/storage', asyncHandler(async (req, res) => {
+  const [sizes, growth, oldest, retention] = await Promise.all([
+    pool.query(`SELECT pg_size_pretty(pg_database_size('logvault')) AS db_size, pg_database_size('logvault') AS db_size_bytes, pg_size_pretty(pg_total_relation_size('syslog_entries')) AS table_size, pg_total_relation_size('syslog_entries') AS table_size_bytes, (SELECT COUNT(*) FROM syslog_entries) AS total_rows, (SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - INTERVAL '24 hours') AS rows_24h, (SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - INTERVAL '7 days') AS rows_7d`),
+    pool.query(`SELECT DATE_TRUNC('day', received_at) AS day, COUNT(*) AS log_count FROM syslog_entries WHERE received_at > NOW() - INTERVAL '7 days' GROUP BY day ORDER BY day`),
+    pool.query(`SELECT MIN(received_at) AS oldest_log FROM syslog_entries`),
+    pool.query(`SELECT EXTRACT(DAY FROM (NOW() - MIN(received_at))) AS days_stored FROM syslog_entries`),
+  ]);
+  const s = sizes.rows[0];
+  const avgPerDay = s.rows_7d > 0 ? Math.round(parseInt(s.table_size_bytes) / Math.max(parseFloat(retention.rows[0]?.days_stored || 1), 1)) : 0;
+  res.json({ db_size: s.db_size, db_size_bytes: parseInt(s.db_size_bytes), table_size: s.table_size, table_size_bytes: parseInt(s.table_size_bytes), total_rows: parseInt(s.total_rows), rows_24h: parseInt(s.rows_24h), rows_7d: parseInt(s.rows_7d), oldest_log: oldest.rows[0]?.oldest_log, days_stored: parseFloat(retention.rows[0]?.days_stored || 0).toFixed(1), avg_bytes_per_day: avgPerDay, avg_size_per_day: avgPerDay > 0 ? formatBytes(avgPerDay) : 'N/A', daily_breakdown: growth.rows });
+}));
+
 // ── HEALTH CHECK ─────────────────────────────────────────────
 
 app.get('/api/health', asyncHandler(async (req, res) => {

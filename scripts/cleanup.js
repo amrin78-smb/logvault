@@ -11,7 +11,7 @@ const pool = new Pool({
 });
 
 async function cleanup() {
-  const days = parseInt(process.env.RETENTION_DAYS || '90');
+  const days = parseInt(process.env.RETENTION_DAYS || '30');
   console.log(`[Cleanup] Deleting logs older than ${days} days...`);
   try {
     const result = await pool.query(

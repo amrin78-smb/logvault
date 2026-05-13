@@ -12,6 +12,7 @@ import AlertEvents     from '@/components/AlertEvents';
 import KnownHosts      from '@/components/KnownHosts';
 import NetworkHealth   from '@/components/NetworkHealth';
 import SecurityAnalysis from '@/components/SecurityAnalysis';
+import StorageWidget   from '@/components/StorageWidget';
 import Header          from '@/components/Header';
 
 type Tab = 'dashboard' | 'explorer' | 'livetail' | 'alerts' | 'health' | 'security' | 'hosts';
@@ -242,6 +243,9 @@ export default function Home() {
                 <VendorBreakdown hours={hours} onVendorClick={(vendor) => openExplorer({ vendor })} />
               </div>
               <RecentCritical hours={hours} onRowClick={(severity) => openExplorer({ severity })} />
+              <div style={{ marginTop: 16 }}>
+                <StorageWidget />
+              </div>
             </>
           )}
           {tab === 'explorer' && <LogExplorer initialFilter={explorerFilter} onFilterUsed={() => setExplorerFilter({})} />}
