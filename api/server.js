@@ -99,18 +99,18 @@ app.get('/api/stats/by-vendor', asyncHandler(async (req, res) => {
 
 app.get('/api/logs', asyncHandler(async (req, res) => {
   const { q, vendor, severity, host, ip, hours = '1', page = '1', limit = '100' } = req.query;
-  const conditions = [`received_at > NOW() - INTERVAL '${Math.min(parseInt(hours), 720)} hours'`];
+  const conditions = [`se.received_at > NOW() - INTERVAL '${Math.min(parseInt(hours), 720)} hours'`];
   const params = [];
   let p = 1;
 
-  if (q)        { conditions.push(`to_tsvector('english', message) @@ plainto_tsquery('english', $${p++})`); params.push(q); }
-  if (vendor)   { conditions.push(`vendor = $${p++}`);               params.push(vendor); }
+  if (q)        { conditions.push(`to_tsvector('english', se.message) @@ plainto_tsquery('english', $${p++})`); params.push(q); }
+  if (vendor)   { conditions.push(`se.vendor = $${p++}`);                     params.push(vendor); }
   if (severity) {
-    const sevs = severity.split(',').map(Number).filter(n => n >= 0 && n <= 7);
-    if (sevs.length) { conditions.push(`severity = ANY($${p++})`);   params.push(sevs); }
+    const sevs = String(severity).split(',').map(Number).filter(n => n >= 0 && n <= 7);
+    if (sevs.length) { conditions.push(`se.severity = ANY($${p++}::int[])`);  params.push(sevs); }
   }
-  if (host)     { conditions.push(`(source_host ILIKE $${p++} OR COALESCE((SELECT hostname FROM known_hosts WHERE ip_address = source_ip), source_host, source_ip::TEXT) ILIKE $${p++})`); params.push(`%${host}%`); params.push(`%${host}%`); p++; }
-  if (ip)       { conditions.push(`source_ip::TEXT ILIKE $${p++}`);  params.push(`%${ip}%`); }
+  if (host)     { conditions.push(`(se.source_host ILIKE $${p++} OR kh.hostname ILIKE $${p++} OR se.source_ip::TEXT ILIKE $${p++})`); params.push(`%${host}%`); params.push(`%${host}%`); params.push(`%${host}%`); p += 2; }
+  if (ip)       { conditions.push(`se.source_ip::TEXT ILIKE $${p++}`);        params.push(`%${ip}%`); }
 
   const offset = (Math.max(parseInt(page), 1) - 1) * Math.min(parseInt(limit), 500);
   const lim    = Math.min(parseInt(limit), 500);
@@ -131,7 +131,7 @@ app.get('/api/logs', asyncHandler(async (req, res) => {
   `, params);
 
   const countRes = await pool.query(
-    `SELECT COUNT(*) AS total FROM syslog_entries se WHERE ${conditions.join(' AND ')}`,
+    `SELECT COUNT(*) AS total FROM syslog_entries se LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip WHERE ${conditions.join(' AND ')}`,
     params.slice(0, -2)
   );
 

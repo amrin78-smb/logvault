@@ -72,7 +72,36 @@ function enqueue(entry) {
   if (buffer.length >= BATCH_SIZE) flushBuffer();
 }
 
-// ── Parser chain ─────────────────────────────────────────────
+// ── Collector-side log filter ─────────────────────────────────
+function shouldDrop(entry) {
+  if (entry.vendor !== 'fortinet') return false;
+
+  const severity = entry.severity;
+  const msg      = (entry.message || '') + ' ' + (entry.raw_message || '');
+
+  // Always keep warning and above (severity 0-4)
+  if (severity <= 4) return false;
+
+  // Always keep UTM logs
+  if (msg.includes('utm/') || msg.includes('type=utm')) return false;
+
+  // Always keep event logs
+  if (msg.includes('event/') || msg.includes('type=event')) return false;
+
+  // Always keep denied/blocked traffic
+  if (/action=(deny|block|drop|reset)/i.test(msg)) return false;
+
+  // Drop routine traffic at notice/info level
+  if (/traffic\/(forward|local|multicast)/i.test(msg)) {
+    if (/action=(accept|close|timeout|server-rst|client-rst|passthrough|ip-conn)/i.test(msg)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+
 const PARSERS = [parseCisco, parsePaloAlto, parseFortinet, parseAruba, parseSangfor, parseGeneric];
 
 function processMessage(rawMsg, sourceIp) {
@@ -94,6 +123,10 @@ function processMessage(rawMsg, sourceIp) {
   }
 
   entry.received_at = new Date();
+
+  // Drop routine high-volume low-value logs
+  if (shouldDrop(entry)) return;
+
   enqueue(entry);
 
   // Run alert rules for medium+ severity
