@@ -1,7 +1,8 @@
 /**
  * LogVault Collector Service
  * Syslog receiver on UDP/TCP ports 514 and 1514
- * Parses, normalizes, writes to PostgreSQL, evaluates alert rules
+ * Parses, normalizes, writes to PostgreSQL
+ * Evaluates alert rules AND correlation engine in real time
  */
 
 'use strict';
@@ -17,6 +18,7 @@ const { parsePaloAlto } = require('../parsers/paloalto');
 const { parseFortinet } = require('../parsers/fortinet');
 const { parseAruba }    = require('../parsers/aruba');
 const { parseSangfor }  = require('../parsers/sangfor');
+const { evaluateCorrelation } = require('./correlationEngine');
 
 // ── DB pool ───────────────────────────────────────────────────
 const pool = new Pool({
@@ -32,7 +34,7 @@ const pool = new Pool({
 // ── Write buffer ──────────────────────────────────────────────
 const BATCH_SIZE     = 100;
 const BATCH_INTERVAL = 2000;
-let buffer   = [];
+let buffer     = [];
 let flushTimer = null;
 
 async function flushBuffer() {
@@ -94,10 +96,13 @@ function processMessage(rawMsg, sourceIp) {
   entry.received_at = new Date();
   enqueue(entry);
 
-  // Check alert rules immediately for high-severity events
+  // Run alert rules for medium+ severity
   if (entry.severity <= 4) {
     checkAlertRules(entry).catch(err => console.error('[Alert] Rule check error:', err.message));
   }
+
+  // Run correlation engine for all events
+  evaluateCorrelation(entry, pool).catch(err => console.error('[Correlation] Error:', err.message));
 }
 
 // ── Alert Rule Evaluation ─────────────────────────────────────
@@ -118,71 +123,51 @@ async function getAlertRules() {
   return alertRulesCache;
 }
 
-// Track recent event counts per rule to avoid duplicate firing
-const recentEvents = new Map(); // ruleId -> [timestamps]
+const recentEvents = new Map();
 
 async function checkAlertRules(entry) {
   const rules = await getAlertRules();
 
   for (const rule of rules) {
-    // Check severity match
-    if (rule.match_severity && rule.match_severity.length > 0) {
-      if (!rule.match_severity.includes(entry.severity)) continue;
-    }
+    // Skip correlation rules managed by the correlation engine
+    if (['Brute Force Login Success','Port Scan Detected','Interface Flapping Detected',
+         'Network Loop Detected','After-Hours Configuration Change','STP Instability Detected',
+         'Repeated IPS Triggers','VPN Brute Force Attempt'].includes(rule.name)) continue;
 
-    // Check vendor match
-    if (rule.match_vendor && rule.match_vendor.length > 0) {
-      if (!rule.match_vendor.includes(entry.vendor)) continue;
-    }
-
-    // Check host match
+    if (rule.match_severity?.length && !rule.match_severity.includes(entry.severity)) continue;
+    if (rule.match_vendor?.length   && !rule.match_vendor.includes(entry.vendor))     continue;
     if (rule.match_host) {
       const pattern = rule.match_host.replace(/%/g, '.*');
       if (!new RegExp(pattern, 'i').test(entry.source_host || entry.source_ip || '')) continue;
     }
-
-    // Check message pattern
     if (rule.match_pattern) {
-      try {
-        if (!new RegExp(rule.match_pattern, 'i').test(entry.message)) continue;
-      } catch (_) { continue; }
+      try { if (!new RegExp(rule.match_pattern, 'i').test(entry.message)) continue; } catch (_) { continue; }
     }
 
-    // Track hits within the threshold window
     const windowMs = parseIntervalMs(rule.threshold_window);
     const now      = Date.now();
     const key      = rule.id;
 
     if (!recentEvents.has(key)) recentEvents.set(key, []);
-    const hits = recentEvents.get(key);
+    const hits  = recentEvents.get(key);
     hits.push(now);
-
-    // Remove hits outside the window
-    const cutoff = now - windowMs;
-    const fresh  = hits.filter(t => t > cutoff);
+    const fresh = hits.filter(t => t > now - windowMs);
     recentEvents.set(key, fresh);
 
-    // Fire alert if threshold reached
-    if (fresh.length >= rule.threshold_count) {
-      // Only fire once per window to avoid spam
-      if (fresh.length === rule.threshold_count) {
-        await fireAlert(rule, entry, fresh.length);
-      }
+    if (fresh.length === rule.threshold_count) {
+      await fireAlert(rule, entry, fresh.length);
     }
   }
 }
 
 function parseIntervalMs(interval) {
-  if (!interval) return 300000; // default 5 min
-  // interval may come back as object {minutes:5} or string "00:05:00"
+  if (!interval) return 300000;
   if (typeof interval === 'object') {
     return ((interval.hours || 0) * 3600 + (interval.minutes || 0) * 60 + (interval.seconds || 0)) * 1000;
   }
   const str = String(interval);
-  // Try HH:MM:SS format
   const hms = str.match(/(\d+):(\d+):(\d+)/);
   if (hms) return (parseInt(hms[1]) * 3600 + parseInt(hms[2]) * 60 + parseInt(hms[3])) * 1000;
-  // Try "5 minutes" or "1 minute" format
   const mins = str.match(/(\d+)\s*min/i);
   if (mins) return parseInt(mins[1]) * 60000;
   const secs = str.match(/(\d+)\s*sec/i);
@@ -195,14 +180,8 @@ async function fireAlert(rule, entry, matchCount) {
     await pool.query(`
       INSERT INTO alert_events (rule_id, source_host, source_ip, match_count, sample_message)
       VALUES ($1, $2, $3, $4, $5)
-    `, [
-      rule.id,
-      entry.source_host || null,
-      entry.source_ip,
-      matchCount,
-      entry.message.substring(0, 500),
-    ]);
-    console.log(`[Alert] Rule "${rule.name}" fired — ${entry.source_host || entry.source_ip} — ${entry.message.substring(0, 80)}`);
+    `, [rule.id, entry.source_host || null, entry.source_ip, matchCount, entry.message.substring(0, 500)]);
+    console.log(`[Alert] Rule "${rule.name}" fired — ${entry.source_host || entry.source_ip}`);
   } catch (err) {
     console.error('[Alert] Failed to insert alert event:', err.message);
   }
@@ -212,8 +191,8 @@ async function fireAlert(rule, entry, matchCount) {
 function startUDP(port) {
   const server = dgram.createSocket('udp4');
   server.on('message', (msg, rinfo) => processMessage(msg, rinfo.address));
-  server.on('error', err => console.error(`[UDP:${port}]`, err.message));
-  server.bind(port, () => console.log(`[UDP] Listening on port ${port}`));
+  server.on('error',   err => console.error(`[UDP:${port}]`, err.message));
+  server.bind(port,    ()  => console.log(`[UDP] Listening on port ${port}`));
   return server;
 }
 
@@ -225,11 +204,9 @@ function startTCP(port) {
       const text  = leftover + data.toString('utf8');
       const lines = text.split('\n');
       leftover    = lines.pop();
-      for (const line of lines) {
-        if (line.trim()) processMessage(Buffer.from(line), socket.remoteAddress);
-      }
+      for (const line of lines) { if (line.trim()) processMessage(Buffer.from(line), socket.remoteAddress); }
     });
-    socket.on('end', () => { if (leftover.trim()) processMessage(Buffer.from(leftover), socket.remoteAddress); });
+    socket.on('end',   () => { if (leftover.trim()) processMessage(Buffer.from(leftover), socket.remoteAddress); });
     socket.on('error', err => { if (err.code !== 'ECONNRESET') console.error(`[TCP:${port}]`, err.message); });
   });
   server.on('error', err => console.error(`[TCP:${port}]`, err.message));
@@ -255,6 +232,7 @@ async function main() {
   await getAlertRules();
 
   console.log('LogVault Collector running. Listening on ports 514 and 1514 (UDP+TCP).');
+  console.log('[Correlation] Engine loaded with', require('./correlationEngine').evaluateCorrelation ? 8 : 0, 'rules');
 
   const shutdown = async () => {
     clearInterval(flushTimer);
