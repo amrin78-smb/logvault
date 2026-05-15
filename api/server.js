@@ -485,6 +485,116 @@ app.get('/api/security/wireless-auth', asyncHandler(async (req, res) => {
   res.json({ failures: failures.rows, summary: summary.rows[0] });
 }));
 
+// ── DASHBOARD WIDGET STATS ────────────────────────────────────
+
+app.get('/api/stats/top-security-events', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const { rows } = await pool.query(`
+    SELECT
+      COALESCE(
+        CASE
+          WHEN message ILIKE '%ssl-alert%'    THEN 'SSL Alert'
+          WHEN message ILIKE '%ssl exit error%' THEN 'SSL Exit Error'
+          WHEN message ILIKE '%ipsec%phase 1%' THEN 'IPSec Phase 1 Error'
+          WHEN message ILIKE '%login failed%' THEN 'Login Failed'
+          WHEN message ILIKE '%action=deny%'  THEN 'Traffic Denied'
+          WHEN message ILIKE '%utm/ips%'      THEN 'IPS Threat'
+          WHEN message ILIKE '%negotiate%'    THEN 'VPN Negotiate'
+          WHEN structured_data->>'subtype' IS NOT NULL THEN structured_data->>'subtype'
+          ELSE 'Other'
+        END
+      ) AS event_type,
+      COUNT(*) AS count
+    FROM syslog_entries
+    WHERE received_at > NOW() - INTERVAL '${hours} hours'
+      AND severity <= 4
+    GROUP BY event_type
+    ORDER BY count DESC
+    LIMIT 7
+  `);
+  res.json({ data: rows });
+}));
+
+app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const { rows } = await pool.query(`
+    SELECT
+      COALESCE(structured_data->>'dstip', 'unknown') AS dst_ip,
+      COALESCE(structured_data->>'service', '') AS service,
+      COUNT(*) AS deny_count
+    FROM syslog_entries
+    WHERE received_at > NOW() - INTERVAL '${hours} hours'
+      AND vendor = 'fortinet'
+      AND (structured_data->>'action' = 'deny' OR message ILIKE '%action=deny%')
+      AND structured_data->>'dstip' IS NOT NULL
+    GROUP BY structured_data->>'dstip', structured_data->>'service'
+    ORDER BY deny_count DESC
+    LIMIT 5
+  `);
+  res.json({ data: rows });
+}));
+
+app.get('/api/stats/vpn-summary', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const { rows } = await pool.query(`
+    SELECT
+      COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE message ILIKE '%fail%' OR message ILIKE '%error%') AS failures,
+      COUNT(*) FILTER (WHERE message ILIKE '%success%' OR message ILIKE '%connected%') AS successes,
+      COUNT(*) FILTER (WHERE message ILIKE '%ssl-alert%' OR message ILIKE '%ssl alert%') AS ssl_alerts
+    FROM syslog_entries
+    WHERE received_at > NOW() - INTERVAL '${hours} hours'
+      AND vendor = 'fortinet'
+      AND (structured_data->>'subtype' = 'vpn' OR message ILIKE '%vpn%'
+        OR message ILIKE '%ipsec%' OR message ILIKE '%ssl%')
+  `);
+  res.json(rows[0]);
+}));
+
+app.get('/api/stats/alerts-summary', asyncHandler(async (req, res) => {
+  const [unacked, total24h, recent] = await Promise.all([
+    pool.query(`SELECT COUNT(*) AS count FROM alert_events WHERE acknowledged = FALSE`),
+    pool.query(`SELECT COUNT(*) AS count FROM alert_events WHERE fired_at > NOW() - INTERVAL '24 hours'`),
+    pool.query(`SELECT ae.fired_at, ar.name AS rule_name FROM alert_events ae LEFT JOIN alert_rules ar ON ar.id = ae.rule_id WHERE ae.acknowledged = FALSE ORDER BY ae.fired_at DESC LIMIT 3`),
+  ]);
+  res.json({ unacknowledged: parseInt(unacked.rows[0].count), total_24h: parseInt(total24h.rows[0].count), recent: recent.rows });
+}));
+
+app.get('/api/stats/top-services', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const { rows } = await pool.query(`
+    SELECT
+      COALESCE(structured_data->>'service', 'unknown') AS service,
+      COUNT(*) AS count
+    FROM syslog_entries
+    WHERE received_at > NOW() - INTERVAL '${hours} hours'
+      AND vendor = 'fortinet'
+      AND structured_data->>'service' IS NOT NULL
+      AND structured_data->>'service' != ''
+    GROUP BY structured_data->>'service'
+    ORDER BY count DESC
+    LIMIT 8
+  `);
+  res.json({ data: rows });
+}));
+
+app.get('/api/stats/firewall-actions', asyncHandler(async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours || '24'), 168);
+  const { rows } = await pool.query(`
+    SELECT
+      COALESCE(structured_data->>'action', 'unknown') AS action,
+      COUNT(*) AS count
+    FROM syslog_entries
+    WHERE received_at > NOW() - INTERVAL '${hours} hours'
+      AND vendor = 'fortinet'
+      AND structured_data->>'action' IS NOT NULL
+    GROUP BY structured_data->>'action'
+    ORDER BY count DESC
+    LIMIT 10
+  `);
+  res.json({ data: rows });
+}));
+
 // ── STORAGE STATS ────────────────────────────────────────────
 
 function formatBytes(bytes) {
