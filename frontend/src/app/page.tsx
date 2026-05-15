@@ -93,11 +93,13 @@ export default function Home() {
     try { const r = await fetch('/api/health'); const d = await r.json(); setHealth(d); } catch {}
   }, []);
 
+  const [refreshInterval, setRefreshInterval] = useState(30);
+
   useEffect(() => { fetchSummary(); fetchHealth(); }, [fetchSummary, fetchHealth]);
   useEffect(() => {
-    const t = setInterval(() => { fetchSummary(); fetchHealth(); }, 30000);
+    const t = setInterval(() => { fetchSummary(); fetchHealth(); }, refreshInterval * 1000);
     return () => clearInterval(t);
-  }, [fetchSummary, fetchHealth]);
+  }, [fetchSummary, fetchHealth, refreshInterval]);
 
   const openExplorer = (filter: ExplorerFilter) => {
     setExplorerFilter({ ...filter, hours: String(hours) });
@@ -200,19 +202,56 @@ export default function Home() {
                   <div style={{ fontSize: 22, fontWeight: 700, color: '#1a202c', letterSpacing: '-0.3px' }}>Dashboard</div>
                   <div style={{ fontSize: 12, color: '#718096', marginTop: 2 }}>Real-time syslog overview</div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4,
-                  background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 8, padding: '5px 6px',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                  <span style={{ fontSize: 10, color: '#9ca3af', marginRight: 4, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Range</span>
-                  {HOUR_OPTIONS.map(h => (
-                    <button key={h.value} onClick={() => setHours(h.value)}
-                      style={{ padding: '4px 10px', borderRadius: 5, border: 'none', fontSize: 12,
-                        cursor: 'pointer', fontWeight: hours === h.value ? 600 : 400,
-                        background: hours === h.value ? '#1a202c' : 'transparent',
-                        color: hours === h.value ? '#ffffff' : '#6b7280', transition: 'all 0.15s' }}>
-                      {h.label}
-                    </button>
-                  ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {/* Auto-refresh selector */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6,
+                    background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 8,
+                    padding: '5px 10px' }}>
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <circle cx="6" cy="6" r="5" stroke="#9ca3af" strokeWidth="1.2" fill="none"/>
+                      <line x1="6" y1="3" x2="6" y2="6" stroke="#9ca3af" strokeWidth="1.2" strokeLinecap="round"/>
+                      <line x1="6" y1="6" x2="8.5" y2="7.5" stroke="#9ca3af" strokeWidth="1.2" strokeLinecap="round"/>
+                    </svg>
+                    <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500 }}>Refresh:</span>
+                    {[10, 30, 60, 300].map(s => (
+                      <button key={s} onClick={() => setRefreshInterval(s)}
+                        style={{ padding: '3px 8px', borderRadius: 5, border: 'none', fontSize: 11,
+                          cursor: 'pointer', fontWeight: refreshInterval === s ? 600 : 400,
+                          background: refreshInterval === s ? '#1a202c' : 'transparent',
+                          color: refreshInterval === s ? '#ffffff' : '#6b7280',
+                          transition: 'all 0.15s' }}>
+                        {s < 60 ? `${s}s` : `${s/60}m`}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Manual refresh button */}
+                  <button onClick={() => { fetchSummary(); fetchHealth(); }}
+                    style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #e2e6ea',
+                      cursor: 'pointer', background: '#ffffff', color: '#718096',
+                      fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M10 6A4 4 0 1 1 6 2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" fill="none"/>
+                      <polyline points="6,1 8,3 6,5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                    </svg>
+                    Now
+                  </button>
+
+                  {/* Time range pills */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4,
+                    background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 8, padding: '5px 6px' }}>
+                    <span style={{ fontSize: 10, color: '#9ca3af', marginRight: 4, fontWeight: 500,
+                      textTransform: 'uppercase', letterSpacing: '0.5px' }}>Range</span>
+                    {HOUR_OPTIONS.map(h => (
+                      <button key={h.value} onClick={() => setHours(h.value)}
+                        style={{ padding: '4px 10px', borderRadius: 5, border: 'none', fontSize: 12,
+                          cursor: 'pointer', fontWeight: hours === h.value ? 600 : 400,
+                          background: hours === h.value ? '#1a202c' : 'transparent',
+                          color: hours === h.value ? '#ffffff' : '#6b7280', transition: 'all 0.15s' }}>
+                        {h.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
