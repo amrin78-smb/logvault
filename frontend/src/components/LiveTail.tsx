@@ -34,6 +34,12 @@ export default function LiveTail() {
   }, []);
 
   useEffect(() => {
+    // Clear persisted logs on mount so we always start fresh
+    persistedLogs  = [];
+    persistedCount = 0;
+    setLogs([]);
+    setCount(0);
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${window.location.hostname}:3005/ws/live`);
     ws.onopen  = () => setConn(true);

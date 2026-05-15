@@ -74,29 +74,81 @@ function enqueue(entry) {
 
 // ── Collector-side log filter ─────────────────────────────────
 function shouldDrop(entry) {
-  if (entry.vendor !== 'fortinet') return false;
-
   const severity = entry.severity;
+  const vendor   = entry.vendor;
   const msg      = (entry.message || '') + ' ' + (entry.raw_message || '');
 
-  // Always keep warning and above (severity 0-4)
-  if (severity <= 4) return false;
-
-  // Always keep UTM logs
-  if (msg.includes('utm/') || msg.includes('type=utm')) return false;
-
-  // Always keep event logs
-  if (msg.includes('event/') || msg.includes('type=event')) return false;
-
-  // Always keep denied/blocked traffic
-  if (/action=(deny|block|drop|reset)/i.test(msg)) return false;
-
-  // Drop routine traffic at notice/info level
-  if (/traffic\/(forward|local|multicast)/i.test(msg)) {
-    if (/action=(accept|close|timeout|server-rst|client-rst|passthrough|ip-conn)/i.test(msg)) {
-      return true;
+  // ── FORTINET ─────────────────────────────────────────────────
+  if (vendor === 'fortinet') {
+    // Always keep warning and above (0-4)
+    if (severity <= 4) return false;
+    // Always keep UTM logs (IPS, webfilter, app-ctrl, antivirus)
+    if (/utm\//i.test(msg) || /type=utm/i.test(msg)) return false;
+    // Always keep event logs (VPN, auth, system, config)
+    if (/event\//i.test(msg) || /type=event/i.test(msg)) return false;
+    // Always keep denied/blocked traffic
+    if (/action=(deny|block|drop|reset)/i.test(msg)) return false;
+    // Drop routine traffic accepts, closes, timeouts
+    if (/traffic\/(forward|local|multicast)/i.test(msg)) {
+      if (/action=(accept|close|timeout|server-rst|client-rst|passthrough|ip-conn|dns)/i.test(msg)) {
+        return true;
+      }
     }
+    return false;
   }
+
+  // ── CISCO ─────────────────────────────────────────────────────
+  if (vendor === 'cisco') {
+    // Always keep warning and above (0-4)
+    if (severity <= 4) return false;
+    // Keep security-relevant mnemonics regardless of severity
+    const securityPatterns = [
+      /SEC_LOGIN/i, /AAA/i, /MACFLAP/i, /SPANTREE/i, /STORM_CONTROL/i,
+      /OSPF/i, /BGP/i, /EIGRP/i, /CONFIG_I/i, /LINK.*UPDOWN/i,
+      /LINEPROTO/i, /SYS-\d-(RESTART|RELOAD)/i, /DUAL-\d-NBRCHANGE/i,
+    ];
+    if (securityPatterns.some(p => p.test(msg))) return false;
+    // Drop routine info/notice/debug Cisco logs
+    if (severity >= 5) return true;
+    return false;
+  }
+
+  // ── PALO ALTO ─────────────────────────────────────────────────
+  if (vendor === 'paloalto') {
+    // Always keep warning and above
+    if (severity <= 4) return false;
+    // Keep THREAT and SYSTEM logs
+    if (/THREAT|SYSTEM|GLOBALPROTECT|AUTHENTICATION/i.test(msg)) return false;
+    // Keep denied traffic
+    if (/action=(deny|block|drop|reset)/i.test(msg)) return false;
+    // Drop routine TRAFFIC allowed logs
+    if (/TRAFFIC/i.test(msg) && /action=(allow|accept)/i.test(msg)) return true;
+    return false;
+  }
+
+  // ── ARUBA ─────────────────────────────────────────────────────
+  if (vendor === 'aruba') {
+    // Always keep warning and above
+    if (severity <= 4) return false;
+    // Keep auth-related events
+    if (/auth|802\.1x|association|deauth|radius/i.test(msg)) return false;
+    // Drop routine AP noise at notice/info
+    if (severity >= 5) return true;
+    return false;
+  }
+
+  // ── SANGFOR ───────────────────────────────────────────────────
+  if (vendor === 'sangfor') {
+    // Keep warning and above
+    if (severity <= 4) return false;
+    // Drop info/notice
+    if (severity >= 5) return true;
+    return false;
+  }
+
+  // ── GENERIC / UNKNOWN ─────────────────────────────────────────
+  // For generic syslog, only drop debug (7)
+  if (severity >= 7) return true;
 
   return false;
 }

@@ -523,10 +523,26 @@ app.use((err, req, res, _next) => {
 const server = http.createServer(app);
 const wss    = new WebSocketServer({ server, path: '/ws/live' });
 
-let lastId = BigInt(0);
+// Start from the latest log ID so Live Tail shows only new logs
+let lastId    = BigInt(0);
+let lastIdSet = false;
+
+async function initLastId() {
+  try {
+    const { rows } = await pool.query('SELECT MAX(id) AS max_id FROM syslog_entries');
+    if (rows[0].max_id) {
+      lastId    = BigInt(rows[0].max_id);
+      lastIdSet = true;
+      console.log(`[WS] Live Tail starting from log ID ${lastId}`);
+    }
+  } catch (err) {
+    console.error('[WS] Failed to init lastId:', err.message);
+  }
+}
 
 async function broadcastNewLogs() {
   if (wss.clients.size === 0) return;
+  if (!lastIdSet) { await initLastId(); return; }
   try {
     const { rows } = await pool.query(`
       SELECT se.id, se.received_at,
@@ -548,7 +564,10 @@ async function broadcastNewLogs() {
   }
 }
 
-setInterval(broadcastNewLogs, 2000);
+// Init lastId on startup then poll every 2 seconds
+initLastId().then(() => {
+  setInterval(broadcastNewLogs, 2000);
+});
 
 server.listen(port, () => {
   console.log(`LogVault API + WebSocket running on port ${port}`);
