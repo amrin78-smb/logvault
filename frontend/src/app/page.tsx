@@ -14,12 +14,13 @@ import SecurityAnalysis from '@/components/SecurityAnalysis';
 import StorageWidget   from '@/components/StorageWidget';
 import KnownHosts      from '@/components/KnownHosts';
 import Header          from '@/components/Header';
+import AlertBanner     from '@/components/AlertBanner';
+import TimeRangePicker from '@/components/TimeRangePicker';
+import ErrorBoundary   from '@/components/ErrorBoundary';
+import { useTheme }    from '@/components/ThemeContext';
 
 type Tab = 'dashboard' | 'explorer' | 'livetail' | 'alerts' | 'health' | 'security' | 'hosts';
-
-export interface ExplorerFilter {
-  severity?: string; vendor?: string; host?: string; hours?: string;
-}
+export interface ExplorerFilter { severity?: string; vendor?: string; host?: string; hours?: string; }
 
 const Icons: Record<Tab, JSX.Element> = {
   dashboard: (<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1" fill="currentColor"/><rect x="9" y="1" width="6" height="6" rx="1" fill="currentColor"/><rect x="1" y="9" width="6" height="6" rx="1" fill="currentColor"/><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor"/></svg>),
@@ -32,24 +33,39 @@ const Icons: Record<Tab, JSX.Element> = {
 };
 
 export default function Home() {
+  const { theme } = useTheme();
   const [tab, setTab]                       = useState<Tab>('dashboard');
   const [hours, setHours]                   = useState(24);
   const [summary, setSummary]               = useState<any[]>([]);
   const [health, setHealth]                 = useState<any>(null);
   const [explorerFilter, setExplorerFilter] = useState<ExplorerFilter>({});
   const [refreshInterval, setRefreshInterval] = useState(30);
+  const [kpiFlash, setKpiFlash]             = useState(false);
 
   const fetchSummary = useCallback(async () => {
-    try { const r = await fetch(`/api/stats/summary?hours=${hours}`); const d = await r.json(); setSummary(d.data || []); } catch {}
+    try {
+      const r = await fetch(`/api/stats/summary?hours=${hours}`);
+      const d = await r.json();
+      setSummary(prev => {
+        // Flash KPI tiles when data changes
+        const prevTotal = prev.reduce((s: number, r: any) => s + parseInt(r.log_count), 0);
+        const newTotal  = (d.data || []).reduce((s: number, r: any) => s + parseInt(r.log_count), 0);
+        if (prev.length > 0 && newTotal !== prevTotal) { setKpiFlash(true); setTimeout(() => setKpiFlash(false), 600); }
+        return d.data || [];
+      });
+    } catch {}
   }, [hours]);
+
   const fetchHealth = useCallback(async () => {
     try { const r = await fetch('/api/health'); const d = await r.json(); setHealth(d); } catch {}
   }, []);
 
   useEffect(() => { fetchSummary(); fetchHealth(); }, [fetchSummary, fetchHealth]);
-  useEffect(() => { const t = setInterval(() => { fetchSummary(); fetchHealth(); }, refreshInterval * 1000); return () => clearInterval(t); }, [fetchSummary, fetchHealth, refreshInterval]);
 
-  const openExplorer = (filter: ExplorerFilter) => { setExplorerFilter({ ...filter, hours: String(hours) }); setTab('explorer'); };
+  const openExplorer = (filter: ExplorerFilter) => {
+    setExplorerFilter({ ...filter, hours: String(hours) });
+    setTab('explorer');
+  };
 
   const totalLogs  = summary.reduce((s, r) => s + parseInt(r.log_count), 0);
   const critCount  = summary.filter(r => parseInt(r.severity) <= 2).reduce((s, r) => s + parseInt(r.log_count), 0);
@@ -70,15 +86,14 @@ export default function Home() {
     { label: 'WARNINGS',       value: warnCount.toLocaleString(),  color: '#ca8a04', bg: '#fefce8', border: '#fde68a', filter: { severity: '4' } },
   ];
 
-  const HOUR_OPTIONS = [{ label: '1h', value: 1 }, { label: '6h', value: 6 }, { label: '24h', value: 24 }, { label: '48h', value: 48 }, { label: '7d', value: 168 }, { label: '30d', value: 720 }];
-
   return (
-    <div style={{ minHeight: '100vh', background: '#f0f2f5', fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', fontFamily: 'Inter, system-ui, sans-serif', color: 'var(--text-primary)' }}>
       <Header />
-      <div style={{ display: 'flex', minHeight: 'calc(100vh - 60px)' }}>
+      <AlertBanner />
 
+      <div style={{ display: 'flex', minHeight: 'calc(100vh - 52px)' }}>
         {/* Sidebar */}
-        <div style={{ width: 200, background: '#0f1b2d', flexShrink: 0, display: 'flex', flexDirection: 'column', paddingTop: 8 }}>
+        <div style={{ width: 200, background: 'var(--bg-sidebar)', flexShrink: 0, display: 'flex', flexDirection: 'column', paddingTop: 8 }}>
           {TABS.map(t => {
             const active = tab === t.id;
             return (
@@ -95,10 +110,12 @@ export default function Home() {
               </button>
             );
           })}
+
           <div style={{ margin: '10px 14px', borderTop: '1px solid #1e2d40' }} />
           <div style={{ padding: '0 12px' }}>
             <div style={{ fontSize: 9, color: '#475569', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>Time Range</div>
-            {[{ label: '1 hour', value: 1 }, { label: '6 hours', value: 6 }, { label: '24 hours', value: 24 }, { label: '48 hours', value: 48 }, { label: '7 days', value: 168 }].map(h => (
+            {[{ label: '15 min', value: 0.25 }, { label: '1 hour', value: 1 }, { label: '6 hours', value: 6 },
+              { label: '24 hours', value: 24 }, { label: '48 hours', value: 48 }, { label: '7 days', value: 168 }].map(h => (
               <button key={h.value} onClick={() => setHours(h.value)}
                 style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '5px 8px', marginBottom: 3,
                   borderRadius: 5, border: '1px solid', fontSize: 11, cursor: 'pointer', textAlign: 'left',
@@ -109,6 +126,7 @@ export default function Home() {
               </button>
             ))}
           </div>
+
           {health && (
             <div style={{ margin: '10px 12px 14px', padding: '7px 10px', background: '#0a1f10', border: '1px solid #16a34a33', borderRadius: 7 }}>
               <div style={{ fontSize: 9, color: '#475569', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Ingestion</div>
@@ -121,53 +139,31 @@ export default function Home() {
           )}
         </div>
 
-        {/* Main */}
+        {/* Main content */}
         <div style={{ flex: 1, padding: 16, overflow: 'auto' }}>
           {tab === 'dashboard' && (
             <>
-              {/* Top bar: page title + controls */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <div style={{ fontSize: 16, fontWeight: 700, color: '#1a202c' }}>Dashboard</div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  {/* Refresh */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#fff', border: '1px solid #e2e6ea', borderRadius: 7, padding: '4px 8px' }}>
-                    <span style={{ fontSize: 10, color: '#9ca3af' }}>↻</span>
-                    {[10, 30, 60, 300].map(s => (
-                      <button key={s} onClick={() => setRefreshInterval(s)}
-                        style={{ padding: '3px 7px', borderRadius: 4, border: 'none', fontSize: 11, cursor: 'pointer',
-                          fontWeight: refreshInterval === s ? 600 : 400,
-                          background: refreshInterval === s ? '#1a202c' : 'transparent',
-                          color: refreshInterval === s ? '#fff' : '#6b7280' }}>
-                        {s < 60 ? `${s}s` : `${s/60}m`}
-                      </button>
-                    ))}
-                    <button onClick={() => { fetchSummary(); fetchHealth(); }}
-                      style={{ padding: '3px 7px', borderRadius: 4, border: '1px solid #e2e6ea', cursor: 'pointer', fontSize: 11, background: '#f8f9fb', color: '#718096', marginLeft: 2 }}>
-                      Now
-                    </button>
-                  </div>
-                  {/* Range */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3, background: '#fff', border: '1px solid #e2e6ea', borderRadius: 7, padding: '4px 6px' }}>
-                    <span style={{ fontSize: 10, color: '#9ca3af', marginRight: 2 }}>Range</span>
-                    {HOUR_OPTIONS.map(h => (
-                      <button key={h.value} onClick={() => setHours(h.value)}
-                        style={{ padding: '3px 8px', borderRadius: 4, border: 'none', fontSize: 11, cursor: 'pointer',
-                          fontWeight: hours === h.value ? 600 : 400,
-                          background: hours === h.value ? '#1a202c' : 'transparent',
-                          color: hours === h.value ? '#fff' : '#6b7280' }}>
-                        {h.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+              {/* Header row */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, position: 'relative' }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Dashboard</div>
+                <ErrorBoundary name="Time Range Picker">
+                  <TimeRangePicker
+                    hours={hours}
+                    onHoursChange={setHours}
+                    refreshInterval={refreshInterval}
+                    onRefreshChange={setRefreshInterval}
+                    onRefreshNow={() => { fetchSummary(); fetchHealth(); }}
+                  />
+                </ErrorBoundary>
               </div>
 
-              {/* KPI tiles - compact */}
+              {/* KPI tiles */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 12 }}>
                 {KPI.map(kpi => (
                   <div key={kpi.label} onClick={() => openExplorer(kpi.filter)}
                     style={{ background: kpi.bg, border: `1px solid ${kpi.border}`, borderRadius: 8,
-                      padding: '12px 14px', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s' }}
+                      padding: '12px 14px', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s',
+                      animation: kpiFlash ? 'kpiFlash 0.6s ease' : 'none' }}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'; }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'none'; (e.currentTarget as HTMLElement).style.boxShadow = 'none'; }}>
                     <div style={{ fontSize: 9, color: '#718096', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.8px' }}>{kpi.label}</div>
@@ -177,46 +173,55 @@ export default function Home() {
                 ))}
               </div>
 
-              {/* Row 2: Timeline + Severity + Top Talkers + Vendor — all same height */}
+              {/* Row 2: 4-column charts */}
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
-                <div style={{ height: 220, overflow: 'hidden' }}>
-                  <TimelineChart hours={hours} compact />
+                <div style={{ height: 220 }}>
+                  <ErrorBoundary name="Timeline Chart">
+                    <TimelineChart hours={hours} compact />
+                  </ErrorBoundary>
                 </div>
-                <div style={{ height: 220, overflow: 'hidden' }}>
-                  <SeverityChart summary={summary} onSeverityClick={(sev) => openExplorer({ severity: sev })} compact />
+                <div style={{ height: 220 }}>
+                  <ErrorBoundary name="Severity Chart">
+                    <SeverityChart summary={summary} onSeverityClick={(sev) => openExplorer({ severity: sev })} compact />
+                  </ErrorBoundary>
                 </div>
-                <div style={{ height: 220, overflow: 'hidden' }}>
-                  <TopTalkers hours={hours} onHostClick={(host) => openExplorer({ host })} compact />
+                <div style={{ height: 220 }}>
+                  <ErrorBoundary name="Top Talkers">
+                    <TopTalkers hours={hours} onHostClick={(host) => openExplorer({ host })} compact />
+                  </ErrorBoundary>
                 </div>
-                <div style={{ height: 220, overflow: 'hidden' }}>
-                  <VendorBreakdown hours={hours} onVendorClick={(vendor) => openExplorer({ vendor })} compact />
+                <div style={{ height: 220 }}>
+                  <ErrorBoundary name="Vendor Breakdown">
+                    <VendorBreakdown hours={hours} onVendorClick={(vendor) => openExplorer({ vendor })} compact />
+                  </ErrorBoundary>
                 </div>
               </div>
 
               {/* Row 3: Security widgets */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
-                <TopSecurityEvents hours={hours} />
-                <TopBlockedDestinations hours={hours} />
-                <VPNStatus hours={hours} />
-                <ActiveAlertsSummary onNavigate={() => setTab('alerts')} />
+                <ErrorBoundary name="Top Security Events"><TopSecurityEvents hours={hours} /></ErrorBoundary>
+                <ErrorBoundary name="Top Blocked"><TopBlockedDestinations hours={hours} /></ErrorBoundary>
+                <ErrorBoundary name="VPN Status"><VPNStatus hours={hours} /></ErrorBoundary>
+                <ErrorBoundary name="Active Alerts"><ActiveAlertsSummary onNavigate={() => setTab('alerts')} /></ErrorBoundary>
               </div>
 
               {/* Row 4: Network widgets */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
-                <TopServices hours={hours} />
-                <FirewallActions hours={hours} />
-                <InterfaceEventsSummary hours={hours} onNavigate={() => setTab('health')} />
+                <ErrorBoundary name="Top Services"><TopServices hours={hours} /></ErrorBoundary>
+                <ErrorBoundary name="Firewall Actions"><FirewallActions hours={hours} /></ErrorBoundary>
+                <ErrorBoundary name="Network Health"><InterfaceEventsSummary hours={hours} onNavigate={() => setTab('health')} /></ErrorBoundary>
               </div>
 
-              <StorageWidget />
+              <ErrorBoundary name="Storage Widget"><StorageWidget /></ErrorBoundary>
             </>
           )}
-          {tab === 'explorer'  && <LogExplorer initialFilter={explorerFilter} onFilterUsed={() => setExplorerFilter({})} />}
-          {tab === 'livetail'  && <LiveTail />}
-          {tab === 'alerts'    && <AlertEvents />}
-          {tab === 'health'    && <NetworkHealth hours={hours} />}
-          {tab === 'security'  && <SecurityAnalysis hours={hours} />}
-          {tab === 'hosts'     && <KnownHosts />}
+
+          {tab === 'explorer'  && <ErrorBoundary name="Log Explorer"><LogExplorer initialFilter={explorerFilter} onFilterUsed={() => setExplorerFilter({})} /></ErrorBoundary>}
+          {tab === 'livetail'  && <ErrorBoundary name="Live Tail"><LiveTail /></ErrorBoundary>}
+          {tab === 'alerts'    && <ErrorBoundary name="Alerts"><AlertEvents /></ErrorBoundary>}
+          {tab === 'health'    && <ErrorBoundary name="Network Health"><NetworkHealth hours={hours} /></ErrorBoundary>}
+          {tab === 'security'  && <ErrorBoundary name="Security"><SecurityAnalysis hours={hours} /></ErrorBoundary>}
+          {tab === 'hosts'     && <ErrorBoundary name="Known Hosts"><KnownHosts /></ErrorBoundary>}
         </div>
       </div>
     </div>

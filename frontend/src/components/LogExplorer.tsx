@@ -92,6 +92,19 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
             fontWeight: 600, background: '#2563eb', color: '#ffffff', opacity: loading ? 0.7 : 1 }}>
           {loading ? 'Searching...' : 'Search'}
         </button>
+        {/* CSV Export */}
+        <button onClick={() => {
+          const params = new URLSearchParams({ hours, ...(q && { q }), ...(vendor && { vendor }), ...(severity && { severity }), ...(host && { host }) });
+          window.open(`/api/logs/export?${params}`, '_blank');
+        }}
+          style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #e2e6ea', cursor: 'pointer',
+            fontSize: 12, background: '#f8f9fb', color: '#4a5568', display: 'flex', alignItems: 'center', gap: 5 }}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M6 1v7M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M1 9v1a1 1 0 001 1h8a1 1 0 001-1V9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+          </svg>
+          CSV
+        </button>
         {(vendor || severity || host) && (
           <button onClick={() => { setVendor(''); setSev(''); setHost(''); }}
             style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #e2e6ea', cursor: 'pointer',

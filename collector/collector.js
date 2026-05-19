@@ -20,6 +20,15 @@ const { parseAruba }    = require('../parsers/aruba');
 const { parseSangfor }  = require('../parsers/sangfor');
 const { evaluateCorrelation } = require('./correlationEngine');
 
+// ── Crash resilience ──────────────────────────────────────────
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception:', err.message, err.stack);
+  flushBuffer().catch(() => {}).finally(() => process.exit(1));
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled rejection:', reason);
+});
+
 // ── DB pool ───────────────────────────────────────────────────
 const pool = new Pool({
   host:     process.env.DB_HOST     || 'localhost',
@@ -88,7 +97,7 @@ function shouldDrop(entry) {
     if (/event\//i.test(msg) || /type=event/i.test(msg)) return false;
     // Always keep denied/blocked traffic
     if (/action=(deny|block|drop|reset)/i.test(msg)) return false;
-    // Drop routine traffic accepts, closes, timeouts
+    // Drop routine traffic accepts, closes, timeouts at notice/info
     if (/traffic\/(forward|local|multicast)/i.test(msg)) {
       if (/action=(accept|close|timeout|server-rst|client-rst|passthrough|ip-conn|dns)/i.test(msg)) {
         return true;
@@ -108,52 +117,42 @@ function shouldDrop(entry) {
       /LINEPROTO/i, /SYS-\d-(RESTART|RELOAD)/i, /DUAL-\d-NBRCHANGE/i,
     ];
     if (securityPatterns.some(p => p.test(msg))) return false;
-    // Drop routine info/notice/debug Cisco logs
+    // Drop routine info/notice/debug
     if (severity >= 5) return true;
     return false;
   }
 
   // ── PALO ALTO ─────────────────────────────────────────────────
   if (vendor === 'paloalto') {
-    // Always keep warning and above
     if (severity <= 4) return false;
-    // Keep THREAT and SYSTEM logs
     if (/THREAT|SYSTEM|GLOBALPROTECT|AUTHENTICATION/i.test(msg)) return false;
-    // Keep denied traffic
     if (/action=(deny|block|drop|reset)/i.test(msg)) return false;
-    // Drop routine TRAFFIC allowed logs
     if (/TRAFFIC/i.test(msg) && /action=(allow|accept)/i.test(msg)) return true;
     return false;
   }
 
   // ── ARUBA ─────────────────────────────────────────────────────
   if (vendor === 'aruba') {
-    // Always keep warning and above
     if (severity <= 4) return false;
-    // Keep auth-related events
     if (/auth|802\.1x|association|deauth|radius/i.test(msg)) return false;
-    // Drop routine AP noise at notice/info
     if (severity >= 5) return true;
     return false;
   }
 
   // ── SANGFOR ───────────────────────────────────────────────────
   if (vendor === 'sangfor') {
-    // Keep warning and above
     if (severity <= 4) return false;
-    // Drop info/notice
     if (severity >= 5) return true;
     return false;
   }
 
   // ── GENERIC / UNKNOWN ─────────────────────────────────────────
-  // For generic syslog, only drop debug (7)
+  // Drop only debug (7)
   if (severity >= 7) return true;
-
   return false;
 }
 
-
+// ── Parser chain ─────────────────────────────────────────────
 const PARSERS = [parseCisco, parsePaloAlto, parseFortinet, parseAruba, parseSangfor, parseGeneric];
 
 function processMessage(rawMsg, sourceIp) {
@@ -176,7 +175,7 @@ function processMessage(rawMsg, sourceIp) {
 
   entry.received_at = new Date();
 
-  // Drop routine high-volume low-value logs
+  // Drop high-volume low-value logs before writing to DB
   if (shouldDrop(entry)) return;
 
   enqueue(entry);
@@ -201,9 +200,7 @@ async function getAlertRules() {
       const { rows } = await pool.query('SELECT * FROM alert_rules WHERE is_enabled = TRUE');
       alertRulesCache = rows;
       lastRulesFetch  = now;
-    } catch (err) {
-      console.error('[Alert] Failed to fetch rules:', err.message);
-    }
+    } catch (err) { console.error('[Alert] Failed to fetch rules:', err.message); }
   }
   return alertRulesCache;
 }
@@ -212,18 +209,23 @@ const recentEvents = new Map();
 
 async function checkAlertRules(entry) {
   const rules = await getAlertRules();
+  const correlationRuleNames = new Set([
+    'Brute Force Login Success', 'Port Scan Detected', 'Interface Flapping Detected',
+    'Network Loop Detected', 'After-Hours Configuration Change', 'STP Instability Detected',
+    'Repeated IPS Triggers', 'VPN Brute Force Attempt',
+  ]);
 
   for (const rule of rules) {
-    // Skip correlation rules managed by the correlation engine
-    if (['Brute Force Login Success','Port Scan Detected','Interface Flapping Detected',
-         'Network Loop Detected','After-Hours Configuration Change','STP Instability Detected',
-         'Repeated IPS Triggers','VPN Brute Force Attempt'].includes(rule.name)) continue;
+    // Skip correlation rules — handled by correlationEngine
+    if (correlationRuleNames.has(rule.name)) continue;
 
     if (rule.match_severity?.length && !rule.match_severity.includes(entry.severity)) continue;
     if (rule.match_vendor?.length   && !rule.match_vendor.includes(entry.vendor))     continue;
     if (rule.match_host) {
-      const pattern = rule.match_host.replace(/%/g, '.*');
-      if (!new RegExp(pattern, 'i').test(entry.source_host || entry.source_ip || '')) continue;
+      try {
+        const pattern = rule.match_host.replace(/%/g, '.*');
+        if (!new RegExp(pattern, 'i').test(entry.source_host || entry.source_ip || '')) continue;
+      } catch (_) { continue; }
     }
     if (rule.match_pattern) {
       try { if (!new RegExp(rule.match_pattern, 'i').test(entry.message)) continue; } catch (_) { continue; }
@@ -267,9 +269,7 @@ async function fireAlert(rule, entry, matchCount) {
       VALUES ($1, $2, $3, $4, $5)
     `, [rule.id, entry.source_host || null, entry.source_ip, matchCount, entry.message.substring(0, 500)]);
     console.log(`[Alert] Rule "${rule.name}" fired — ${entry.source_host || entry.source_ip}`);
-  } catch (err) {
-    console.error('[Alert] Failed to insert alert event:', err.message);
-  }
+  } catch (err) { console.error('[Alert] Failed to insert alert event:', err.message); }
 }
 
 // ── UDP Server ────────────────────────────────────────────────
@@ -317,9 +317,10 @@ async function main() {
   await getAlertRules();
 
   console.log('LogVault Collector running. Listening on ports 514 and 1514 (UDP+TCP).');
-  console.log('[Correlation] Engine loaded with', require('./correlationEngine').evaluateCorrelation ? 8 : 0, 'rules');
+  console.log('[Correlation] Engine loaded with 8 rules');
 
   const shutdown = async () => {
+    console.log('[Collector] Shutting down gracefully...');
     clearInterval(flushTimer);
     await flushBuffer();
     await pool.end();
