@@ -5,7 +5,7 @@ import SeverityChart   from '@/components/SeverityChart';
 import TimelineChart   from '@/components/TimelineChart';
 import TopTalkers      from '@/components/TopTalkers';
 import VendorBreakdown from '@/components/VendorBreakdown';
-import { TopSecurityEvents, TopBlockedDestinations, VPNStatus, ActiveAlertsSummary, TopServices, InterfaceEventsSummary, FirewallActions } from '@/components/DashboardWidgets';
+import { TopSecurityEvents, TopBlockedDestinations, TopConnectionFailures, VPNStatus, ActiveAlertsSummary, InterfaceEventsSummary, FirewallActions } from '@/components/DashboardWidgets';
 import LogExplorer     from '@/components/LogExplorer';
 import LiveTail        from '@/components/LiveTail';
 import AlertEvents     from '@/components/AlertEvents';
@@ -197,19 +197,33 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Row 3: Security widgets */}
+              {/* Row 3: Security + Network widgets — 4 columns */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
-                <ErrorBoundary name="Top Security Events"><TopSecurityEvents hours={hours} /></ErrorBoundary>
-                <ErrorBoundary name="Top Blocked"><TopBlockedDestinations hours={hours} /></ErrorBoundary>
-                <ErrorBoundary name="VPN Status"><VPNStatus hours={hours} /></ErrorBoundary>
-                <ErrorBoundary name="Active Alerts"><ActiveAlertsSummary onNavigate={() => setTab('alerts')} /></ErrorBoundary>
+                <ErrorBoundary name="Top Security Events">
+                  <TopSecurityEvents hours={hours} onNavigate={() => setTab('security')} />
+                </ErrorBoundary>
+                <ErrorBoundary name="Top Denied">
+                  <TopBlockedDestinations hours={hours} onNavigate={() => setTab('security')} />
+                </ErrorBoundary>
+                <ErrorBoundary name="Top Connection Failures">
+                  <TopConnectionFailures hours={hours} />
+                </ErrorBoundary>
+                <ErrorBoundary name="Active Alerts">
+                  <ActiveAlertsSummary onNavigate={() => setTab('alerts')} />
+                </ErrorBoundary>
               </div>
 
-              {/* Row 4: Network widgets */}
+              {/* Row 4: VPN + Firewall + Network Health — 3 columns */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
-                <ErrorBoundary name="Top Services"><TopServices hours={hours} /></ErrorBoundary>
-                <ErrorBoundary name="Firewall Actions"><FirewallActions hours={hours} /></ErrorBoundary>
-                <ErrorBoundary name="Network Health"><InterfaceEventsSummary hours={hours} onNavigate={() => setTab('health')} /></ErrorBoundary>
+                <ErrorBoundary name="VPN Status">
+                  <VPNStatus hours={hours} onNavigate={() => setTab('security')} />
+                </ErrorBoundary>
+                <ErrorBoundary name="Firewall Actions">
+                  <FirewallActions hours={hours} />
+                </ErrorBoundary>
+                <ErrorBoundary name="Network Health">
+                  <InterfaceEventsSummary hours={hours} onNavigate={() => setTab('health')} />
+                </ErrorBoundary>
               </div>
 
               <ErrorBoundary name="Storage Widget"><StorageWidget /></ErrorBoundary>

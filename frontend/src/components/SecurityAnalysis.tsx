@@ -51,7 +51,7 @@ function StatCard({ value, label, color, bg, border, warn = false }: {
       )}
       <div style={{ fontSize: 10, color: '#718096', marginBottom: 6, fontWeight: 600,
         textTransform: 'uppercase', letterSpacing: '0.8px' }}>{label}</div>
-      <div style={{ fontSize: 30, fontWeight: 700, color, lineHeight: 1 }}>{value.toLocaleString()}</div>
+      <div style={{ fontSize: 30, fontWeight: 700, color, lineHeight: 1 }}>{(value || 0).toLocaleString()}</div>
     </div>
   );
 }
@@ -81,7 +81,15 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
         fetch(`/api/security/after-hours?hours=${hours}`).then(r => r.json()),
         fetch(`/api/security/wireless-auth?hours=${hours}`).then(r => r.json()),
       ]);
-      setSummary(s);
+      setSummary(s ? {
+        ...s,
+        auth_failures:       parseInt(s.auth_failures       || 0),
+        brute_force_success: parseInt(s.brute_force_success || 0),
+        firewall_denies:     parseInt(s.firewall_denies     || 0),
+        vpn_events:          parseInt(s.vpn_events          || 0),
+        ips_events:          parseInt(s.ips_events          || 0),
+        after_hours_events:  parseInt(s.after_hours_events  || 0),
+      } : null);
       setAuthFails(af.data || []);
       setBruteForce(bf.data || []);
       setFwDenies(fw);

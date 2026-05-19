@@ -145,6 +145,25 @@ app.get('/api/stats/top-security-events', asyncHandler(async (req, res) => {
   res.json({ data: rows });
 }));
 
+app.get('/api/stats/top-failures', asyncHandler(async (req, res) => {
+  const hours = safeHours(req.query.hours);
+  const { rows } = await pool.query(`
+    SELECT
+      COALESCE(structured_data->>'dstip', 'unknown') AS dst_ip,
+      COALESCE(structured_data->>'service', '') AS service,
+      COUNT(*) AS fail_count
+    FROM syslog_entries
+    WHERE received_at > NOW() - make_interval(hours => $1)
+      AND vendor = 'fortinet'
+      AND message ILIKE '%Connection Failed%'
+      AND structured_data->>'dstip' IS NOT NULL
+    GROUP BY structured_data->>'dstip', structured_data->>'service'
+    ORDER BY fail_count DESC
+    LIMIT 5
+  `, [hours]);
+  res.json({ data: rows });
+}));
+
 app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const { rows } = await pool.query(`
