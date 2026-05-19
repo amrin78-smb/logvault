@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 
 interface Props {
   hours: number;
@@ -10,23 +10,35 @@ interface Props {
 }
 
 const PRESETS = [
-  { label: '15m',  value: 0.25 },
-  { label: '1h',   value: 1    },
-  { label: '6h',   value: 6    },
-  { label: '24h',  value: 24   },
-  { label: '48h',  value: 48   },
-  { label: '7d',   value: 168  },
-  { label: '30d',  value: 720  },
+  { label: '15m', value: 0.25 },
+  { label: '1h',  value: 1    },
+  { label: '6h',  value: 6    },
+  { label: '24h', value: 24   },
+  { label: '48h', value: 48   },
+  { label: '7d',  value: 168  },
+  { label: '30d', value: 720  },
 ];
 
 export default function TimeRangePicker({ hours, onHoursChange, refreshInterval, onRefreshChange, onRefreshNow }: Props) {
   const [showCustom, setShowCustom] = useState(false);
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo,   setCustomTo]   = useState('');
   const [countdown,  setCountdown]  = useState(refreshInterval);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Countdown timer
+  // Memoize quick picks so Date objects aren't created on every render
+  const quickPicks = useMemo(() => {
+    const now = new Date();
+    return [
+      { label: 'Last 15 minutes', hours: 0.25 },
+      { label: 'Last 30 minutes', hours: 0.5  },
+      { label: 'Last 2 hours',    hours: 2    },
+      { label: 'Last 4 hours',    hours: 4    },
+      { label: 'Last 12 hours',   hours: 12   },
+      { label: 'Since midnight',  hours: now.getHours() + now.getMinutes() / 60 },
+      { label: 'Yesterday',       hours: 48   },
+      { label: 'This week',       hours: now.getDay() * 24 },
+    ];
+  }, [showCustom]); // Only recalculate when dropdown opens
+
   useEffect(() => {
     setCountdown(refreshInterval);
     const t = setInterval(() => {
@@ -38,9 +50,10 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
     return () => clearInterval(t);
   }, [refreshInterval]);
 
-  // Close custom picker on outside click
   useEffect(() => {
-    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setShowCustom(false); };
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setShowCustom(false);
+    };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
@@ -52,7 +65,6 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
       {/* Refresh interval */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4,
         background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 7, padding: '4px 8px' }}>
-        {/* Countdown ring */}
         <svg width="16" height="16" viewBox="0 0 16 16" style={{ flexShrink: 0 }}>
           <circle cx="8" cy="8" r="6" fill="none" stroke="var(--border)" strokeWidth="2"/>
           <circle cx="8" cy="8" r="6" fill="none" stroke="#2563eb" strokeWidth="2"
@@ -71,13 +83,14 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
         ))}
         <button onClick={onRefreshNow}
           style={{ padding: '3px 7px', borderRadius: 4, border: '1px solid var(--border)',
-            cursor: 'pointer', fontSize: 11, background: 'var(--input-bg)', color: 'var(--text-secondary)', marginLeft: 2 }}>
+            cursor: 'pointer', fontSize: 11, background: 'var(--input-bg)',
+            color: 'var(--text-secondary)', marginLeft: 2 }}>
           Now
         </button>
       </div>
 
       {/* Time range presets */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 3,
+      <div style={{ display: 'flex', alignItems: 'center', gap: 3, position: 'relative',
         background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 7, padding: '4px 6px' }}>
         <span style={{ fontSize: 10, color: 'var(--text-muted)', marginRight: 2 }}>Range</span>
         {PRESETS.map(p => (
@@ -89,7 +102,6 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
             {p.label}
           </button>
         ))}
-        {/* Custom range button */}
         <button onClick={() => setShowCustom(s => !s)}
           style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--border)',
             fontSize: 11, cursor: 'pointer', background: 'var(--input-bg)',
@@ -101,44 +113,37 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
           </svg>
           Custom
         </button>
-      </div>
 
-      {/* Custom date picker dropdown */}
-      {showCustom && (
-        <div style={{ position: 'absolute', top: 54, right: 16, zIndex: 200,
-          background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10,
-          padding: 16, boxShadow: '0 8px 24px rgba(0,0,0,0.15)', minWidth: 280 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 12 }}>Custom Time Range</div>
-
-          {/* Quick picks */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-            {[
-              { label: 'Last 15 minutes', hours: 0.25 },
-              { label: 'Last 30 minutes', hours: 0.5 },
-              { label: 'Last 2 hours',    hours: 2 },
-              { label: 'Last 4 hours',    hours: 4 },
-              { label: 'Last 12 hours',   hours: 12 },
-              { label: 'Since midnight',  hours: new Date().getHours() + new Date().getMinutes() / 60 },
-              { label: 'Yesterday',       hours: 48 },
-              { label: 'This week',       hours: new Date().getDay() * 24 },
-            ].map(q => (
-              <button key={q.label} onClick={() => { onHoursChange(Math.max(q.hours, 0.1)); setShowCustom(false); }}
-                style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)',
-                  fontSize: 11, cursor: 'pointer', background: 'var(--input-bg)', color: 'var(--text-secondary)',
-                  transition: 'all 0.15s' }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'var(--input-bg)'; }}>
-                {q.label}
-              </button>
-            ))}
+        {/* Custom dropdown */}
+        {showCustom && (
+          <div style={{ position: 'absolute', top: 34, right: 0, zIndex: 200,
+            background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10,
+            padding: 16, boxShadow: '0 8px 24px rgba(0,0,0,0.15)', minWidth: 260 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>
+              Quick Ranges
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {quickPicks.map(q => (
+                <button key={q.label}
+                  onClick={() => { onHoursChange(Math.max(q.hours, 0.1)); setShowCustom(false); }}
+                  style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)',
+                    fontSize: 11, cursor: 'pointer', background: 'var(--input-bg)',
+                    color: 'var(--text-secondary)', transition: 'all 0.15s' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'var(--input-bg)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; }}>
+                  {q.label}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setShowCustom(false)}
+              style={{ width: '100%', marginTop: 12, padding: '6px', borderRadius: 6,
+                border: '1px solid var(--border)', cursor: 'pointer', fontSize: 11,
+                background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
+              Close
+            </button>
           </div>
-          <button onClick={() => setShowCustom(false)}
-            style={{ width: '100%', padding: '6px', borderRadius: 6, border: '1px solid var(--border)',
-              cursor: 'pointer', fontSize: 11, background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
-            Close
-          </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

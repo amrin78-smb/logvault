@@ -43,17 +43,21 @@ const pool = new Pool({
 // ── Write buffer ──────────────────────────────────────────────
 const BATCH_SIZE     = 100;
 const BATCH_INTERVAL = 2000;
-let buffer     = [];
-let flushTimer = null;
+let buffer      = [];
+let retryBuffer = []; // Holds failed batches for retry
+let flushTimer  = null;
 
 async function flushBuffer() {
-  if (buffer.length === 0) return;
-  const batch = buffer.splice(0, buffer.length);
+  // Combine retry buffer with current buffer
+  const toFlush = [...retryBuffer, ...buffer.splice(0, buffer.length)];
+  retryBuffer = [];
+  if (toFlush.length === 0) return;
+
   const values = [];
   const params = [];
   let p = 1;
 
-  for (const row of batch) {
+  for (const row of toFlush) {
     values.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
     params.push(
       row.received_at, row.log_timestamp, row.source_ip, row.source_host,
@@ -72,7 +76,11 @@ async function flushBuffer() {
       VALUES ${values.join(',')}
     `, params);
   } catch (err) {
-    console.error('[DB] Flush error:', err.message);
+    console.error(`[DB] Flush error (${toFlush.length} rows): ${err.message}`);
+    // Move failed batch to retry buffer — will retry on next flush
+    // Cap retry buffer at 1000 rows to avoid unbounded memory growth
+    retryBuffer = [...toFlush, ...retryBuffer].slice(0, 1000);
+    console.error(`[DB] ${retryBuffer.length} rows queued for retry`);
   }
 }
 

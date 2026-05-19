@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback } from 'react';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info';
 interface Toast { id: number; message: string; type: ToastType; }
@@ -7,13 +7,18 @@ interface Toast { id: number; message: string; type: ToastType; }
 const ToastContext = createContext<{ toast: (message: string, type?: ToastType) => void }>({ toast: () => {} });
 
 let toastId = 0;
+const MAX_TOASTS = 5;
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const toast = useCallback((message: string, type: ToastType = 'info') => {
     const id = ++toastId;
-    setToasts(prev => [...prev, { id, message, type }]);
+    setToasts(prev => {
+      // Cap at MAX_TOASTS — drop oldest if exceeded
+      const next = [...prev, { id, message, type }];
+      return next.slice(-MAX_TOASTS);
+    });
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
   }, []);
 
@@ -28,18 +33,21 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 9999,
+        display: 'flex', flexDirection: 'column', gap: 8 }}>
         {toasts.map(t => {
           const c = COLORS[t.type];
           return (
             <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10,
               background: c.bg, border: `1px solid ${c.border}`, borderRadius: 8,
               padding: '10px 16px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-              animation: 'fadeIn 0.2s ease', fontSize: 13, color: c.color, minWidth: 260, maxWidth: 380 }}>
+              animation: 'fadeIn 0.2s ease', fontSize: 13, color: c.color,
+              minWidth: 260, maxWidth: 380 }}>
               <span style={{ fontWeight: 700, fontSize: 14 }}>{ICONS[t.type]}</span>
               <span style={{ color: 'var(--text-primary)', flex: 1 }}>{t.message}</span>
               <button onClick={() => setToasts(prev => prev.filter(x => x.id !== t.id))}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, padding: 0 }}>
+                style={{ background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--text-muted)', fontSize: 14, padding: 0 }}>
                 ×
               </button>
             </div>

@@ -1,25 +1,33 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
 
-interface BannerAlert { id: number; message: string; rule_name: string; fired_at: string; }
+interface BannerAlert {
+  id: number;
+  message: string;
+  rule_name: string;
+  fired_at: string;
+}
 
 export default function AlertBanner() {
-  const [alerts,   setAlerts]   = useState<BannerAlert[]>([]);
-  const [visible,  setVisible]  = useState(false);
-  const lastIdRef  = useRef<number>(0);
-  const wsRef      = useRef<WebSocket | null>(null);
+  const [alerts,  setAlerts]  = useState<BannerAlert[]>([]);
+  const [visible, setVisible] = useState(false);
+  const lastIdRef = useRef<number>(0);
 
-  // Also poll for new unacknowledged alerts every 15s as fallback
   useEffect(() => {
     const check = async () => {
       try {
         const r = await fetch('/api/alerts/events/recent-unacked');
         const d = await r.json();
         if (d.data?.length > 0) {
-          const newAlerts = d.data.filter((a: any) => a.id > lastIdRef.current);
+          const newAlerts = (d.data as BannerAlert[]).filter(a => a.id > lastIdRef.current);
           if (newAlerts.length > 0) {
-            lastIdRef.current = Math.max(...newAlerts.map((a: any) => a.id));
-            setAlerts(prev => [...newAlerts, ...prev].slice(0, 5));
+            lastIdRef.current = Math.max(...newAlerts.map(a => a.id));
+            // Deduplicate by ID before adding
+            setAlerts(prev => {
+              const existingIds = new Set(prev.map(a => a.id));
+              const unique = newAlerts.filter(a => !existingIds.has(a.id));
+              return [...unique, ...prev].slice(0, 5);
+            });
             setVisible(true);
           }
         }
@@ -32,14 +40,14 @@ export default function AlertBanner() {
 
   if (!visible || alerts.length === 0) return null;
 
-  const latest = alerts[0];
-  const isLoop     = /loop|mac flap/i.test(latest.rule_name);
-  const isBrute    = /brute force/i.test(latest.rule_name);
-  const isIPS      = /ips/i.test(latest.rule_name);
-  const emoji      = isLoop ? '🔁' : isBrute ? '🚨' : isIPS ? '🛡️' : '⚠️';
-  const bg         = isLoop || isBrute ? '#fef2f2' : '#fefce8';
-  const border     = isLoop || isBrute ? '#fecaca' : '#fde68a';
-  const color      = isLoop || isBrute ? '#dc2626' : '#ca8a04';
+  const latest  = alerts[0];
+  const isLoop  = /loop|mac flap/i.test(latest.rule_name);
+  const isBrute = /brute force/i.test(latest.rule_name);
+  const isIPS   = /ips/i.test(latest.rule_name);
+  const emoji   = isLoop ? '🔁' : isBrute ? '🚨' : isIPS ? '🛡️' : '⚠️';
+  const bg      = isLoop || isBrute ? '#fef2f2' : '#fefce8';
+  const border  = isLoop || isBrute ? '#fecaca' : '#fde68a';
+  const color   = isLoop || isBrute ? '#dc2626' : '#ca8a04';
 
   return (
     <div style={{ background: bg, border: `1px solid ${border}`, borderBottom: `2px solid ${border}`,
