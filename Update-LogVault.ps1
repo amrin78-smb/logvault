@@ -52,6 +52,9 @@ if ($LASTEXITCODE -ne 0) {
 OK "Git pull complete"
 Write-Host "    $gitOutput" -ForegroundColor DarkGray
 
+# ── Sync .env.local to frontend ──────────────────────────────
+Copy-Item "$InstallDir\.env.local" "$InstallDir\frontend\.env.local" -Force
+
 # ── Step 2: Install root dependencies ────────────────────────
 Step "Installing root dependencies (collector + API)"
 $npmRoot = npm install 2>&1
