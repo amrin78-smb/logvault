@@ -64,23 +64,32 @@ export function TopBlockedDestinations({ hours, onNavigate }: { hours: number; o
   }, [hours]);
   const max = denied[0] ? parseInt(denied[0].deny_count) : 1;
   return (
-    <div style={CARD}>
-      <div style={TITLE}>Top Denied Destinations</div>
-      <div style={SUB}>Firewall policy blocks — {hours}h{onNavigate ? ' · Click to investigate' : ''}</div>
+    <div style={{ ...CARD, height: '100%', boxSizing: 'border-box' }}>
+      <div style={TITLE}>Top Blocked Destinations</div>
+      <div style={SUB}>Policy denies + UTM/SSL blocks — {hours}h{onNavigate ? ' · Click to investigate' : ''}</div>
       {denied.length === 0 ? (
-        <div style={{ height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a', fontSize: 12, fontWeight: 500 }}>✓ No policy denies</div>
+        <div style={{ height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a', fontSize: 12, fontWeight: 500 }}>✓ No blocks</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {denied.slice(0, 5).map((row, i) => {
             const pct = Math.round((parseInt(row.deny_count) / max) * 100);
             return (
-              <div key={i} onClick={() => onNavigate?.()} title={`${row.dst_ip} — ${parseInt(row.deny_count).toLocaleString()} denies`}
+              <div key={i} onClick={() => onNavigate?.()}
+                title={`${row.dst_ip}${row.service ? ` (${row.service})` : ''} — ${parseInt(row.deny_count).toLocaleString()} blocks`}
                 style={{ cursor: onNavigate ? 'pointer' : 'default' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <span style={{ fontSize: 11, color: '#dc2626', fontFamily: 'JetBrains Mono, monospace',
-                    fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 150 }}>
-                    {row.dst_ip || '—'}
-                  </span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
+                    <span style={{ fontSize: 11, color: '#dc2626', fontFamily: 'JetBrains Mono, monospace',
+                      fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
+                      {row.dst_ip || '—'}
+                    </span>
+                    {row.vendor && (
+                      <span style={{ fontSize: 9, color: '#9ca3af', background: '#f0f2f5',
+                        padding: '1px 4px', borderRadius: 4, flexShrink: 0, textTransform: 'capitalize' }}>
+                        {row.vendor}
+                      </span>
+                    )}
+                  </div>
                   <span style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', flexShrink: 0 }}>
                     {parseInt(row.deny_count).toLocaleString()}
                   </span>
@@ -106,7 +115,7 @@ export function TopConnectionFailures({ hours, onNavigate }: { hours: number; on
   }, [hours]);
   const max = data[0] ? parseInt(data[0].fail_count) : 1;
   return (
-    <div style={CARD}>
+    <div style={{ ...CARD, height: '100%', boxSizing: 'border-box' }}>
       <div style={TITLE}>Top Connection Failures</div>
       <div style={SUB}>Network unreachable destinations — {hours}h · Hover for details</div>
       {data.length === 0 ? (
@@ -212,7 +221,7 @@ export function ActiveAlertsSummary({ onNavigate }: { onNavigate: () => void }) 
     return () => clearInterval(t);
   }, []);
   return (
-    <div style={{ ...CARD, cursor: 'pointer' }} onClick={onNavigate}
+    <div style={{ ...CARD, cursor: 'pointer', height: '100%', boxSizing: 'border-box' }} onClick={onNavigate}
       title="Click to manage alerts"
       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'; }}
       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = 'none'; }}>
@@ -332,7 +341,7 @@ export function InterfaceEventsSummary({ hours, onNavigate }: { hours: number; o
     { key: 'routing_events',   label: 'Routing Events',   warn: 1,  danger: 5,  icon: '⇄',  tip: 'OSPF/BGP/EIGRP neighbor state changes' },
   ];
   return (
-    <div style={{ ...CARD, cursor: 'pointer' }} onClick={onNavigate}
+    <div style={{ ...CARD, cursor: 'pointer', height: '100%', boxSizing: 'border-box' }} onClick={onNavigate}
       title="Click to open Network Health tab"
       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'; }}
       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = 'none'; }}>

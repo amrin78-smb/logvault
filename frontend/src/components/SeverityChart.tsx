@@ -43,7 +43,8 @@ export default function SeverityChart({ summary, onSeverityClick, compact }: {
 
   return (
     <div style={{ background: '#fff', border: '1px solid #e2e6ea', borderRadius: 10,
-      padding: '12px 14px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+      padding: '12px 14px', height: '100%', boxSizing: 'border-box',
+      display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ fontSize: 12, fontWeight: 600, color: '#1a202c', marginBottom: 1, flexShrink: 0 }}>Severity Distribution</div>
       <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 4, flexShrink: 0 }}>Click a segment to filter</div>
       {data.length === 0 ? (

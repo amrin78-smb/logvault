@@ -173,57 +173,61 @@ export default function Home() {
                 ))}
               </div>
 
-              {/* Row 2: 4-column charts */}
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
-                <div style={{ height: 220 }}>
-                  <ErrorBoundary name="Timeline Chart">
-                    <TimelineChart hours={hours} compact />
-                  </ErrorBoundary>
-                </div>
-                <div style={{ height: 220 }}>
+              {/* Row 2: Severity + Active Alerts + Network Health — 3 equal */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+                {[
                   <ErrorBoundary name="Severity Chart">
                     <SeverityChart summary={summary} onSeverityClick={(sev) => openExplorer({ severity: sev })} compact />
-                  </ErrorBoundary>
-                </div>
-                <div style={{ height: 220 }}>
-                  <ErrorBoundary name="Top Talkers">
-                    <TopTalkers hours={hours} onHostClick={(host) => openExplorer({ host })} compact />
-                  </ErrorBoundary>
-                </div>
-                <div style={{ height: 220 }}>
-                  <ErrorBoundary name="Vendor Breakdown">
-                    <VendorBreakdown hours={hours} onVendorClick={(vendor) => openExplorer({ vendor })} compact />
-                  </ErrorBoundary>
-                </div>
+                  </ErrorBoundary>,
+                  <ErrorBoundary name="Active Alerts">
+                    <ActiveAlertsSummary onNavigate={() => setTab('alerts')} />
+                  </ErrorBoundary>,
+                  <ErrorBoundary name="Network Health">
+                    <InterfaceEventsSummary hours={hours} onNavigate={() => setTab('health')} />
+                  </ErrorBoundary>,
+                ].map((widget, i) => (
+                  <div key={i} style={{ height: 260, overflow: 'hidden' }}>
+                    {widget}
+                  </div>
+                ))}
               </div>
 
-              {/* Row 3: Security + Network widgets — 4 columns */}
+              {/* Row 3: Traffic analysis — 4 equal columns */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                 <ErrorBoundary name="Top Security Events">
                   <TopSecurityEvents hours={hours} onNavigate={() => setTab('security')} />
                 </ErrorBoundary>
-                <ErrorBoundary name="Top Denied">
-                  <TopBlockedDestinations hours={hours} onNavigate={() => setTab('security')} />
-                </ErrorBoundary>
                 <ErrorBoundary name="Top Connection Failures">
                   <TopConnectionFailures hours={hours} />
                 </ErrorBoundary>
-                <ErrorBoundary name="Active Alerts">
-                  <ActiveAlertsSummary onNavigate={() => setTab('alerts')} />
-                </ErrorBoundary>
-              </div>
-
-              {/* Row 4: VPN + Firewall + Network Health — 3 columns */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
                 <ErrorBoundary name="VPN Status">
                   <VPNStatus hours={hours} onNavigate={() => setTab('security')} />
                 </ErrorBoundary>
                 <ErrorBoundary name="Firewall Actions">
                   <FirewallActions hours={hours} />
                 </ErrorBoundary>
-                <ErrorBoundary name="Network Health">
-                  <InterfaceEventsSummary hours={hours} onNavigate={() => setTab('health')} />
-                </ErrorBoundary>
+              </div>
+
+              {/* Row 4: Timeline + Top Blocked + Top Talkers + Vendor — uniform heights */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+                {[
+                  <ErrorBoundary name="Timeline Chart">
+                    <TimelineChart hours={hours} compact />
+                  </ErrorBoundary>,
+                  <ErrorBoundary name="Top Blocked">
+                    <TopBlockedDestinations hours={hours} onNavigate={() => setTab('security')} />
+                  </ErrorBoundary>,
+                  <ErrorBoundary name="Top Talkers">
+                    <TopTalkers hours={hours} onHostClick={(host) => openExplorer({ host })} compact />
+                  </ErrorBoundary>,
+                  <ErrorBoundary name="Vendor Breakdown">
+                    <VendorBreakdown hours={hours} onVendorClick={(vendor) => openExplorer({ vendor })} compact />
+                  </ErrorBoundary>,
+                ].map((widget, i) => (
+                  <div key={i} style={{ height: 220, overflow: 'hidden' }}>
+                    {widget}
+                  </div>
+                ))}
               </div>
 
               <ErrorBoundary name="Storage Widget"><StorageWidget /></ErrorBoundary>

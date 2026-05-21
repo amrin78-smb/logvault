@@ -16,7 +16,7 @@ export default function VendorBreakdown({ hours, onVendorClick, compact }: {
   const total = data.reduce((s, r) => s + parseInt(r.log_count), 0) || 1;
   return (
     <div style={{ background: '#fff', border: '1px solid #e2e6ea', borderRadius: 10,
-      padding: '12px 14px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+      padding: '12px 14px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ fontSize: 12, fontWeight: 600, color: '#1a202c', marginBottom: 1, flexShrink: 0 }}>Logs by Vendor</div>
       <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 8, flexShrink: 0 }}>Distribution — {hours}h</div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7, justifyContent: 'space-evenly' }}>

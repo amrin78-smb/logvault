@@ -1,15 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  turbopack: {
-    root: __dirname,
-  },
-  async rewrites() {
-    return [
-      {
-        source:      '/api/:path*',
-        destination: 'http://localhost:3005/api/:path*',
-      },
-    ];
+  // Allow NextAuth to work on local HTTP network
+  env: {
+    NEXTAUTH_URL:              process.env.NEXTAUTH_URL,
+    NEXT_PUBLIC_NETVAULT_HUB_URL: process.env.NEXT_PUBLIC_NETVAULT_HUB_URL,
   },
 };
 

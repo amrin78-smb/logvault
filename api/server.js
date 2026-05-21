@@ -154,8 +154,27 @@ app.get('/api/stats/top-failures', asyncHandler(async (req, res) => {
       COUNT(*) AS fail_count
     FROM syslog_entries
     WHERE received_at > NOW() - make_interval(hours => $1)
-      AND vendor = 'fortinet'
-      AND message ILIKE '%Connection Failed%'
+      AND (
+        -- Fortinet connection failures
+        (vendor = 'fortinet' AND message ILIKE '%Connection Failed%')
+        OR
+        -- Palo Alto session end with no bytes
+        (vendor = 'paloalto' AND message ILIKE '%session_end%' AND message ILIKE '%bytes%0%')
+        OR
+        -- Cisco TCP unreachable / timeout
+        (vendor = 'cisco' AND (
+          message ILIKE '%unreachable%'
+          OR message ILIKE '%timed out%'
+        ))
+        OR
+        -- Generic connection failure indicators
+        (vendor NOT IN ('fortinet','paloalto','cisco') AND (
+          message ILIKE '%connection failed%'
+          OR message ILIKE '%connection refused%'
+          OR message ILIKE '%host unreachable%'
+          OR message ILIKE '%timed out%'
+        ))
+      )
       AND structured_data->>'dstip' IS NOT NULL
     GROUP BY structured_data->>'dstip', structured_data->>'service'
     ORDER BY fail_count DESC
@@ -170,13 +189,43 @@ app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
     SELECT
       COALESCE(structured_data->>'dstip', 'unknown') AS dst_ip,
       COALESCE(structured_data->>'service', '') AS service,
+      vendor,
       COUNT(*) AS deny_count
     FROM syslog_entries
     WHERE received_at > NOW() - make_interval(hours => $1)
-      AND vendor = 'fortinet'
-      AND (structured_data->>'action' = 'deny' OR message ILIKE '%action=deny%')
+      AND (
+        -- Fortinet: policy deny or UTM block
+        (vendor = 'fortinet' AND (
+          structured_data->>'action' = 'deny'
+          OR structured_data->>'action' = 'blocked'
+          OR message ILIKE '%action=deny%'
+          OR message ILIKE '%action=blocked%'
+        ))
+        OR
+        -- Palo Alto: deny or drop in traffic logs
+        (vendor = 'paloalto' AND (
+          structured_data->>'action' = 'deny'
+          OR structured_data->>'action' = 'drop'
+          OR message ILIKE '%action=deny%'
+          OR message ILIKE '%action=drop%'
+        ))
+        OR
+        -- Cisco: ACL deny messages
+        (vendor = 'cisco' AND (
+          message ILIKE '%denied%'
+          OR message ILIKE '%ACL%deny%'
+        ))
+        OR
+        -- Generic: any vendor with explicit deny/block action
+        (vendor NOT IN ('fortinet','paloalto','cisco') AND (
+          structured_data->>'action' IN ('deny','block','drop','blocked')
+          OR message ILIKE '%action=deny%'
+          OR message ILIKE '%action=block%'
+          OR message ILIKE '%denied%'
+        ))
+      )
       AND structured_data->>'dstip' IS NOT NULL
-    GROUP BY structured_data->>'dstip', structured_data->>'service'
+    GROUP BY structured_data->>'dstip', structured_data->>'service', vendor
     ORDER BY deny_count DESC
     LIMIT 5
   `, [hours]);
@@ -615,9 +664,25 @@ app.get('/api/security/summary', asyncHandler(async (req, res) => {
     pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND (structured_data->>'subtype' = 'vpn' OR message ILIKE '%vpn%')`, [hours]),
     pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'type' = 'utm'`, [hours]),
     pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND (structured_data->>'subcategory' IN ('login_failed','config_change','auth_failed') OR message ILIKE '%login failed%' OR message ILIKE '%configured from%') AND EXTRACT(HOUR FROM received_at) NOT BETWEEN 7 AND 19`, [hours]),
-    pool.query(`SELECT COUNT(DISTINCT source_ip) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='cisco' AND structured_data->>'subcategory' = 'login_success' AND source_ip IN (SELECT DISTINCT source_ip FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='cisco' AND structured_data->>'subcategory' = 'login_failed')`, [hours, hours]),
+    pool.query(`SELECT COUNT(DISTINCT a.source_ip) AS count
+      FROM syslog_entries a
+      INNER JOIN syslog_entries b ON b.source_ip = a.source_ip
+        AND b.vendor = 'cisco'
+        AND b.structured_data->>'subcategory' = 'login_failed'
+        AND b.received_at > NOW() - make_interval(hours => $1)
+      WHERE a.received_at > NOW() - make_interval(hours => $1)
+        AND a.vendor = 'cisco'
+        AND a.structured_data->>'subcategory' = 'login_success'`, [hours]),
   ]);
-  res.json({ hours, auth_failures: parseInt(authFail.rows[0].count), firewall_denies: parseInt(denies.rows[0].count), vpn_events: parseInt(vpn.rows[0].count), ips_events: parseInt(ips.rows[0].count), after_hours_events: parseInt(afterHours.rows[0].count), brute_force_success: parseInt(bruteSuccess.rows[0].count) });
+  res.json({
+    hours,
+    auth_failures:       parseInt(authFail.rows[0].count),
+    firewall_denies:     parseInt(denies.rows[0].count),
+    vpn_events:          parseInt(vpn.rows[0].count),
+    ips_events:          parseInt(ips.rows[0].count),
+    after_hours_events:  parseInt(afterHours.rows[0].count),
+    brute_force_success: parseInt(bruteSuccess.rows[0].count),
+  });
 }));
 
 app.get('/api/security/auth-failures', asyncHandler(async (req, res) => {

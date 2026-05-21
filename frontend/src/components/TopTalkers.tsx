@@ -17,7 +17,7 @@ export default function TopTalkers({ hours, onHostClick, compact }: {
   const max = data[0] ? parseInt(data[0].log_count) : 1;
   return (
     <div style={{ background: '#fff', border: '1px solid #e2e6ea', borderRadius: 10,
-      padding: '12px 14px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+      padding: '12px 14px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ fontSize: 12, fontWeight: 600, color: '#1a202c', marginBottom: 1, flexShrink: 0 }}>Top Talkers</div>
       <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 8, flexShrink: 0 }}>Most active — {hours}h</div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7, justifyContent: 'space-evenly' }}>

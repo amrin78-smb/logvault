@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { ThemeProvider } from '@/components/ThemeContext';
-import { ToastProvider } from '@/components/Toast';
+import { ThemeProvider }   from '@/components/ThemeContext';
+import { ToastProvider }   from '@/components/Toast';
+import AuthProvider        from '@/components/AuthProvider';
 
 export const metadata: Metadata = {
   title: 'LogVault — Syslog Analyzer',
@@ -12,11 +13,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <ThemeProvider>
-          <ToastProvider>
-            {children}
-          </ToastProvider>
-        </ThemeProvider>
+        <AuthProvider>
+          <ThemeProvider>
+            <ToastProvider>
+              {children}
+            </ToastProvider>
+          </ThemeProvider>
+        </AuthProvider>
       </body>
     </html>
   );
