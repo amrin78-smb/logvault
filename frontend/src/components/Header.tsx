@@ -81,7 +81,12 @@ export default function Header() {
                 </div>
               )}
             </div>
-            <button onClick={() => signOut({ callbackUrl: `${process.env.NEXT_PUBLIC_NETVAULT_HUB_URL || 'http://192.168.6.111:3000'}/login` })}
+            <button 
+              onClick={() => {
+                signOut({ redirect: false }).then(() => {
+                  window.location.href = 'http://192.168.6.111:3000/login';
+                });
+              }}
               title="Sign out"
               style={{ background: 'none', border: '1px solid #334155', borderRadius: 5,
                 padding: '3px 6px', cursor: 'pointer', color: '#64748b', fontSize: 10,
