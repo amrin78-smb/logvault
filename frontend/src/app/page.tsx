@@ -13,13 +13,14 @@ import NetworkHealth   from '@/components/NetworkHealth';
 import SecurityAnalysis from '@/components/SecurityAnalysis';
 import StorageWidget   from '@/components/StorageWidget';
 import KnownHosts      from '@/components/KnownHosts';
+import Settings        from '@/components/Settings';
 import Header          from '@/components/Header';
 import AlertBanner     from '@/components/AlertBanner';
 import TimeRangePicker from '@/components/TimeRangePicker';
 import ErrorBoundary   from '@/components/ErrorBoundary';
 import { useTheme }    from '@/components/ThemeContext';
 
-type Tab = 'dashboard' | 'explorer' | 'livetail' | 'alerts' | 'health' | 'security' | 'hosts';
+type Tab = 'dashboard' | 'explorer' | 'livetail' | 'alerts' | 'health' | 'security' | 'hosts' | 'settings';
 export interface ExplorerFilter { severity?: string; vendor?: string; host?: string; hours?: string; }
 
 const Icons: Record<Tab, JSX.Element> = {
@@ -30,6 +31,7 @@ const Icons: Record<Tab, JSX.Element> = {
   health:    (<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><polyline points="1,8 4,4 6,10 9,3 11,8 13,6 15,8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>),
   security:  (<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 1L2 4v5c0 3.5 2.5 6.5 6 7.4C11.5 15.5 14 12.5 14 9V4L8 1z" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round"/><polyline points="5,8 7,10 11,6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>),
   hosts:     (<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" fill="none"/><line x1="5" y1="13" x2="11" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><line x1="8" y1="10" x2="8" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
+  settings:  (<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.3" fill="none"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
 };
 
 export default function Home() {
@@ -77,6 +79,7 @@ export default function Home() {
     { id: 'livetail',  label: 'Live Tail' }, { id: 'alerts',   label: 'Alerts' },
     { id: 'health',    label: 'Network Health' }, { id: 'security', label: 'Security' },
     { id: 'hosts',     label: 'Known Hosts' },
+    { id: 'settings',  label: 'Settings' },
   ];
 
   const KPI = [
@@ -240,6 +243,7 @@ export default function Home() {
           {tab === 'health'    && <ErrorBoundary name="Network Health"><NetworkHealth hours={hours} /></ErrorBoundary>}
           {tab === 'security'  && <ErrorBoundary name="Security"><SecurityAnalysis hours={hours} /></ErrorBoundary>}
           {tab === 'hosts'     && <ErrorBoundary name="Known Hosts"><KnownHosts /></ErrorBoundary>}
+          {tab === 'settings'  && <ErrorBoundary name="Settings"><Settings /></ErrorBoundary>}
         </div>
       </div>
     </div>

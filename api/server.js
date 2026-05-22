@@ -795,6 +795,28 @@ app.get('/api/security/wireless-auth', asyncHandler(async (req, res) => {
   res.json({ failures: failures.rows, summary: summary.rows[0] });
 }));
 
+// ── APP SETTINGS ─────────────────────────────────────────────
+
+app.get('/api/settings', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query('SELECT key, value FROM app_settings');
+  const data = Object.fromEntries(rows.map(r => [r.key, r.value]));
+  res.json({ data });
+}));
+
+app.post('/api/settings', asyncHandler(async (req, res) => {
+  const allowed = ['app_name', 'app_subtitle', 'primary_color', 'sidebar_color', 'logo_url'];
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) {
+      await pool.query(
+        `INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+        [key, req.body[key]]
+      );
+    }
+  }
+  res.json({ ok: true });
+}));
+
 // ── HEALTH CHECK ─────────────────────────────────────────────
 
 app.get('/api/health', asyncHandler(async (req, res) => {
