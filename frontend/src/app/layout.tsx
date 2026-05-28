@@ -6,7 +6,7 @@ import AuthProvider        from '@/components/AuthProvider';
 
 export const metadata: Metadata = {
   title: 'LogVault — Syslog Analyzer',
-  description: 'NexVault Network Syslog Analyzer',
+  description: 'NocVault Network Syslog Analyzer',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

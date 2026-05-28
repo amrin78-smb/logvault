@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
-const CARD  = { background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 10, padding: '14px 16px' };
-const TITLE = { fontSize: 13, fontWeight: 600, color: '#1a202c', marginBottom: 2 };
-const SUB   = { fontSize: 11, color: '#9ca3af', marginBottom: 10 };
+const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' };
+const TITLE = { fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 };
+const SUB   = { fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 };
 
 // ── Custom tooltip for bar charts ─────────────────────────────
 const CustomTooltip = ({ active, payload, label, unit = 'events' }: any) => {

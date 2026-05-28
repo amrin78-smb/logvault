@@ -83,8 +83,8 @@ export default function Home() {
   ];
 
   const KPI = [
-    { label: 'TOTAL LOGS',     value: totalLogs.toLocaleString(),  color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe', filter: {} },
-    { label: 'CRITICAL/ALERT', value: critCount.toLocaleString(),  color: critCount  > 0 ? '#dc2626' : '#16a34a', bg: critCount  > 0 ? '#fef2f2' : '#f0fdf4', border: critCount  > 0 ? '#fecaca' : '#bbf7d0', filter: { severity: '0,1,2' } },
+    { label: 'TOTAL LOGS',     value: totalLogs.toLocaleString(),  color: '#1a2744', bg: '#f8f9fb', border: '#e5e7eb', filter: {} },
+    { label: 'CRITICAL/ALERT', value: critCount.toLocaleString(),  color: critCount  > 0 ? '#C8102E' : '#16a34a', bg: critCount  > 0 ? '#fff0f2' : '#f0fdf4', border: critCount  > 0 ? '#fca5a5' : '#bbf7d0', filter: { severity: '0,1,2' } },
     { label: 'ERRORS',         value: errorCount.toLocaleString(), color: errorCount > 0 ? '#ea580c' : '#16a34a', bg: errorCount > 0 ? '#fff7ed' : '#f0fdf4', border: errorCount > 0 ? '#fed7aa' : '#bbf7d0', filter: { severity: '3' } },
     { label: 'WARNINGS',       value: warnCount.toLocaleString(),  color: '#ca8a04', bg: '#fefce8', border: '#fde68a', filter: { severity: '4' } },
   ];
@@ -96,17 +96,17 @@ export default function Home() {
 
       <div style={{ display: 'flex', minHeight: 'calc(100vh - 52px)' }}>
         {/* Sidebar */}
-        <div style={{ width: 200, background: 'var(--bg-sidebar)', flexShrink: 0, display: 'flex', flexDirection: 'column', paddingTop: 8 }}>
+        <div style={{ width: 200, background: '#1a2744', flexShrink: 0, display: 'flex', flexDirection: 'column', paddingTop: 8 }}>
           {TABS.map(t => {
             const active = tab === t.id;
             return (
               <button key={t.id} onClick={() => setTab(t.id)}
                 style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 16px',
-                  background: active ? '#1e3a5f' : 'transparent', border: 'none', cursor: 'pointer',
+                  background: active ? 'rgba(200,16,46,0.15)' : 'transparent', border: 'none', cursor: 'pointer',
                   fontSize: 12, fontWeight: active ? 600 : 400, color: active ? '#ffffff' : '#94a3b8',
-                  textAlign: 'left', borderLeft: active ? '3px solid #3b82f6' : '3px solid transparent',
+                  textAlign: 'left', borderLeft: active ? '3px solid #C8102E' : '3px solid transparent',
                   transition: 'all 0.15s', width: '100%' }}
-                onMouseEnter={e => { if (!active) { (e.currentTarget as HTMLElement).style.background = '#162032'; (e.currentTarget as HTMLElement).style.color = '#cbd5e1'; } }}
+                onMouseEnter={e => { if (!active) { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; (e.currentTarget as HTMLElement).style.color = '#cbd5e1'; } }}
                 onMouseLeave={e => { if (!active) { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = '#94a3b8'; } }}>
                 <span style={{ opacity: active ? 1 : 0.7, flexShrink: 0 }}>{Icons[t.id]}</span>
                 {t.label}
@@ -114,25 +114,25 @@ export default function Home() {
             );
           })}
 
-          <div style={{ margin: '10px 14px', borderTop: '1px solid #1e2d40' }} />
+          <div style={{ margin: '10px 14px', borderTop: '1px solid #253352' }} />
           <div style={{ padding: '0 12px' }}>
-            <div style={{ fontSize: 9, color: '#475569', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>Time Range</div>
+            <div style={{ fontSize: 9, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>Time Range</div>
             {[{ label: '15 min', value: 0.25 }, { label: '1 hour', value: 1 }, { label: '6 hours', value: 6 },
               { label: '24 hours', value: 24 }, { label: '48 hours', value: 48 }, { label: '7 days', value: 168 }].map(h => (
               <button key={h.value} onClick={() => setHours(h.value)}
                 style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '5px 8px', marginBottom: 3,
                   borderRadius: 5, border: '1px solid', fontSize: 11, cursor: 'pointer', textAlign: 'left',
-                  background: hours === h.value ? '#1e3a5f' : 'transparent',
-                  borderColor: hours === h.value ? '#3b82f6' : '#1e2d40',
-                  color: hours === h.value ? '#60a5fa' : '#64748b' }}>
+                  background: hours === h.value ? 'rgba(200,16,46,0.2)' : 'transparent',
+                  borderColor: hours === h.value ? '#C8102E' : '#253352',
+                  color: hours === h.value ? '#ffffff' : '#64748b' }}>
                 {h.label}
               </button>
             ))}
           </div>
 
           {health && (
-            <div style={{ margin: '10px 12px 14px', padding: '7px 10px', background: '#0a1f10', border: '1px solid #16a34a33', borderRadius: 7 }}>
-              <div style={{ fontSize: 9, color: '#475569', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Ingestion</div>
+            <div style={{ margin: '10px 12px 14px', padding: '7px 10px', background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 7 }}>
+              <div style={{ fontSize: 9, color: '#64748b', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Ingestion</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 5px #22c55e' }} />
                 <span style={{ fontSize: 12, color: '#22c55e', fontWeight: 600 }}>{health.logs_last_hour.toLocaleString()}</span>

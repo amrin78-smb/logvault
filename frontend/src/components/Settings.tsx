@@ -209,7 +209,7 @@ export default function Settings() {
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 20 }}>About LogVault</div>
           {[
             { label: 'Product',    value: 'LogVault — Syslog & Log Analyzer' },
-            { label: 'Family',     value: 'NexVault Network Intelligence Suite' },
+            { label: 'Family',     value: 'NocVault Network Intelligence Suite' },
             { label: 'Version',    value: '1.0.0' },
             { label: 'API Port',   value: '3005 (internal)' },
             { label: 'App Port',   value: '3004' },
