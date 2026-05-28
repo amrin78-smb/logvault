@@ -3,7 +3,7 @@ import { Suspense, useEffect } from 'react';
 import { signIn } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 
-const HUB_URL = 'http://192.168.6.111:3000';
+const HUB_URL = process.env.NEXT_PUBLIC_NETVAULT_HUB_URL || 'http://localhost:3000';
 
 function SSOHandler() {
   const params = useSearchParams();

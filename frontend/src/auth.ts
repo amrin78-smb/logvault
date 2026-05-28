@@ -93,8 +93,8 @@ export const authOptions: NextAuthOptions = {
 
   pages: {
     // Redirect to NetVault hub for login — no separate LogVault login page
-    signIn: `${process.env.NETVAULT_HUB_URL || 'http://192.168.6.111:3000'}/login`,
-    error:  `${process.env.NETVAULT_HUB_URL || 'http://192.168.6.111:3000'}/login`,
+    signIn: `${process.env.NETVAULT_HUB_URL || 'http://localhost:3000'}/login`,
+    error:  `${process.env.NETVAULT_HUB_URL || 'http://localhost:3000'}/login`,
   },
 
   session: {

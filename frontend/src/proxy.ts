@@ -13,7 +13,7 @@ export default withAuth(
     pages: {
       signIn: process.env.NETVAULT_HUB_URL
         ? `${process.env.NETVAULT_HUB_URL}/login`
-        : 'http://192.168.6.111:3000/login',
+        : 'http://localhost:3000/login',
     },
   }
 );

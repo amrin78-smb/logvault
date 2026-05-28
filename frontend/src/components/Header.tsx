@@ -25,7 +25,7 @@ export default function Header() {
 
   const handleSignOut = () => {
     signOut({ redirect: false }).then(() => {
-      window.location.href = 'http://192.168.6.111:3000/login';
+      window.location.href = `${process.env.NEXT_PUBLIC_NETVAULT_HUB_URL || 'http://localhost:3000'}/login`;
     });
   };
 
@@ -113,7 +113,7 @@ export default function Header() {
             <div style={{ padding: '6px 0' }}>
 
               {/* NocVault Hub */}
-              <a href="http://192.168.6.111:3000/launcher"
+              <a href={`${process.env.NEXT_PUBLIC_NETVAULT_HUB_URL || 'http://localhost:3000'}/launcher`}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px',
                   textDecoration: 'none', color: '#374151', fontSize: 13, transition: 'background 0.1s' }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f9fafb'; }}
