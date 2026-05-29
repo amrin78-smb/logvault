@@ -654,7 +654,7 @@ app.get('/api/health/device-status', asyncHandler(async (req, res) => {
     FROM syslog_entries se
     LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
     WHERE se.received_at > NOW() - make_interval(days => 7)
-    GROUP BY se.source_host, se.source_ip, kh.hostname, kh.vendor, kh.description
+    GROUP BY se.source_host, se.source_ip, kh.hostname, kh.vendor, kh.description, se.vendor
     ORDER BY last_seen DESC
   `);
   res.json({ data: rows });
