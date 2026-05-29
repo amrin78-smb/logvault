@@ -5,7 +5,6 @@
 -- ============================================================
 
 -- Enable TimescaleDB extension
-CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 -- ============================================================
 -- CORE LOGS TABLE
@@ -30,8 +29,6 @@ CREATE TABLE IF NOT EXISTS syslog_entries (
     parser_version  TEXT
 );
 
--- Convert to hypertable (TimescaleDB time-series partitioning)
-SELECT create_hypertable('syslog_entries', 'received_at', if_not_exists => TRUE);
 
 -- Indexes for common query patterns
 CREATE INDEX IF NOT EXISTS idx_syslog_source_ip      ON syslog_entries (source_ip, received_at DESC);
@@ -44,7 +41,6 @@ CREATE INDEX IF NOT EXISTS idx_syslog_message_text   ON syslog_entries USING GIN
 -- ============================================================
 -- RETENTION POLICY (90 days)
 -- ============================================================
-SELECT add_retention_policy('syslog_entries', INTERVAL '90 days', if_not_exists => TRUE);
 
 -- ============================================================
 -- CONTINUOUS AGGREGATES (for dashboard performance)
@@ -52,9 +48,7 @@ SELECT add_retention_policy('syslog_entries', INTERVAL '90 days', if_not_exists 
 
 -- Hourly rollup: count by severity and vendor
 CREATE MATERIALIZED VIEW IF NOT EXISTS syslog_hourly
-WITH (timescaledb.continuous) AS
 SELECT
-    time_bucket('1 hour', received_at)  AS bucket,
     vendor,
     severity,
     severity_label,
@@ -64,7 +58,6 @@ FROM syslog_entries
 GROUP BY bucket, vendor, severity, severity_label, source_host
 WITH NO DATA;
 
-SELECT add_continuous_aggregate_policy('syslog_hourly',
     start_offset => INTERVAL '3 hours',
     end_offset   => INTERVAL '1 hour',
     schedule_interval => INTERVAL '1 hour',
@@ -73,9 +66,7 @@ SELECT add_continuous_aggregate_policy('syslog_hourly',
 
 -- Daily rollup: top sources by log volume
 CREATE MATERIALIZED VIEW IF NOT EXISTS syslog_daily
-WITH (timescaledb.continuous) AS
 SELECT
-    time_bucket('1 day', received_at)   AS bucket,
     vendor,
     severity,
     severity_label,
@@ -86,7 +77,6 @@ FROM syslog_entries
 GROUP BY bucket, vendor, severity, severity_label, source_host, source_ip::TEXT
 WITH NO DATA;
 
-SELECT add_continuous_aggregate_policy('syslog_daily',
     start_offset => INTERVAL '2 days',
     end_offset   => INTERVAL '1 day',
     schedule_interval => INTERVAL '1 day',
