@@ -95,13 +95,6 @@ export default function KnownHosts() {
         h.brand?.toLowerCase().includes(search.toLowerCase()))
     : hosts;
   const displayed = showAll ? filtered : filtered.slice(0, LIMIT);
-    ? hosts.filter(h =>
-        h.ip_address?.includes(search) ||
-        h.hostname?.toLowerCase().includes(search.toLowerCase()) ||
-        h.vendor?.toLowerCase().includes(search.toLowerCase()) ||
-        h.site_name?.toLowerCase().includes(search.toLowerCase()) ||
-        h.brand?.toLowerCase().includes(search.toLowerCase()))
-    : hosts;
 
   const nvSynced  = hosts.filter(h => h.synced_from_nv).length;
   const manualCount = hosts.filter(h => !h.synced_from_nv).length;
