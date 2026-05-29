@@ -183,3 +183,28 @@ WHERE severity <= 3
   AND received_at > NOW() - INTERVAL '24 hours'
 ORDER BY received_at DESC
 LIMIT 100;
+
+-- ── App Settings (branding) ───────────────────────────────────
+CREATE TABLE IF NOT EXISTS app_settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO app_settings (key, value) VALUES
+  ('app_name',      'LogVault'),
+  ('app_subtitle',  'Syslog & Log Analysis'),
+  ('primary_color', '#C8102E'),
+  ('sidebar_color', '#1a2744'),
+  ('logo_url',      '')
+ON CONFLICT (key) DO NOTHING;
+
+-- ── NetVault asset enrichment columns ────────────────────────
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS site_name        TEXT;
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS brand            TEXT;
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS model            TEXT;
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS device_status    TEXT;
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS lifecycle_status TEXT;
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS netvault_id      TEXT;
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS synced_from_nv   BOOLEAN DEFAULT FALSE;
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS last_synced      TIMESTAMPTZ;
