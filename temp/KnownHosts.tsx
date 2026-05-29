@@ -84,7 +84,17 @@ export default function KnownHosts() {
     setSyncing(false);
   };
 
+  const [showAll, setShowAll] = useState(false);
+  const LIMIT = 10;
   const filtered = search
+    ? hosts.filter(h =>
+        h.ip_address?.includes(search) ||
+        h.hostname?.toLowerCase().includes(search.toLowerCase()) ||
+        h.vendor?.toLowerCase().includes(search.toLowerCase()) ||
+        h.site_name?.toLowerCase().includes(search.toLowerCase()) ||
+        h.brand?.toLowerCase().includes(search.toLowerCase()))
+    : hosts;
+  const displayed = showAll ? filtered : filtered.slice(0, LIMIT);
     ? hosts.filter(h =>
         h.ip_address?.includes(search) ||
         h.hostname?.toLowerCase().includes(search.toLowerCase()) ||
@@ -203,7 +213,7 @@ export default function KnownHosts() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((h, i) => {
+              {displayed.map((h, i) => {
                 const statusStyle = STATUS_STYLE[h.device_status] || { bg: '#f3f4f6', color: '#6b7280' };
                 return (
                   <tr key={h.ip_address} style={{ borderBottom: '1px solid var(--border-light)',
@@ -273,6 +283,20 @@ export default function KnownHosts() {
               })}
             </tbody>
           </table>
+        )}
+
+        {/* Show more / less */}
+        {filtered.length > LIMIT && (
+          <div style={{ textAlign: 'center', marginTop: 12 }}>
+            <button onClick={() => setShowAll(s => !s)}
+              style={{ padding: '7px 20px', borderRadius: 7, border: '1px solid var(--border)',
+                cursor: 'pointer', fontSize: 12, fontWeight: 500,
+                background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
+              {showAll
+                ? `▲ Show less`
+                : `▼ Show ${filtered.length - LIMIT} more (${filtered.length} total)`}
+            </button>
+          </div>
         )}
       </div>
     </div>
