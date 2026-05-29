@@ -227,7 +227,7 @@ export default function Settings() {
                 placeholder="e.g. 192.168.1.1 or 8.8.8.8" />
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
                 Used for reverse lookups of IPs appearing in logs — both internal devices and external IPs.
-                Restart the Collector service after changing this setting.
+                Settings are applied automatically within 5 minutes — no restart needed.
               </div>
             </div>
           </div>

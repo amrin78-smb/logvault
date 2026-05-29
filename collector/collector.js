@@ -25,6 +25,32 @@ const { enrichIP, configureDNS } = require('./dnsLookup');
 // IPs seen this session — avoid re-enriching same IP repeatedly
 const seenIPs = new Set();
 
+// DNS settings cache — reloaded every 5 minutes
+let dnsSettings = { enabled: true, server: '' };
+let dnsSettingsLoadedAt = 0;
+const DNS_SETTINGS_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function getDNSSettings() {
+  const now = Date.now();
+  if (now - dnsSettingsLoadedAt < DNS_SETTINGS_TTL) return dnsSettings;
+  try {
+    const { rows } = await pool.query(
+      `SELECT key, value FROM app_settings WHERE key IN ('dns_server', 'dns_lookup_enabled')`
+    );
+    const s = Object.fromEntries(rows.map(r => [r.key, r.value]));
+    const newServer  = s.dns_server || '';
+    const newEnabled = s.dns_lookup_enabled !== 'false';
+    // Reconfigure DNS server if changed
+    if (newServer !== dnsSettings.server) {
+      configureDNS(newServer);
+      console.log(`[DNS] Server updated to: ${newServer || 'system default'}`);
+    }
+    dnsSettings = { enabled: newEnabled, server: newServer };
+    dnsSettingsLoadedAt = now;
+  } catch {}
+  return dnsSettings;
+}
+
 // ── Crash resilience ──────────────────────────────────────────
 process.on('uncaughtException', (err) => {
   console.error('[FATAL] Uncaught exception:', err.message, err.stack);
@@ -209,11 +235,12 @@ function processMessage(rawMsg, sourceIp) {
 
   // DNS reverse lookup for new IPs — best effort, non-blocking
   const ipKey = entry.source_ip;
-  if (ipKey && !seenIPs.has(ipKey) && dnsLookupEnabled) {
+  if (ipKey && !seenIPs.has(ipKey)) {
     seenIPs.add(ipKey);
-    // Limit seenIPs size to avoid unbounded memory
     if (seenIPs.size > 10000) seenIPs.clear();
-    enrichIP(ipKey, pool).catch(() => {});
+    getDNSSettings().then(s => {
+      if (s.enabled) enrichIP(ipKey, pool).catch(() => {});
+    });
   }
 
   // Run alert rules for medium+ severity
@@ -387,18 +414,6 @@ async function main() {
 
   flushTimer = setInterval(flushBuffer, BATCH_INTERVAL);
   await getAlertRules();
-
-  // Load DNS settings from app_settings
-  let dnsLookupEnabled = true;
-  try {
-    const { rows } = await pool.query(`SELECT key, value FROM app_settings WHERE key IN ('dns_server', 'dns_lookup_enabled')`);
-    const settings  = Object.fromEntries(rows.map(r => [r.key, r.value]));
-    dnsLookupEnabled = settings.dns_lookup_enabled !== 'false';
-    if (settings.dns_server) configureDNS(settings.dns_server);
-    console.log(`[DNS] Lookup ${dnsLookupEnabled ? 'enabled' : 'disabled'}${settings.dns_server ? ` — server: ${settings.dns_server}` : ' — using system DNS'}`);
-  } catch (err) {
-    console.error('[DNS] Failed to load settings:', err.message);
-  }
 
   // Sync NetVault assets immediately then every 15 minutes
   syncFromNetVault(pool).catch(err => console.error('[NetVaultSync] Initial sync error:', err.message));
