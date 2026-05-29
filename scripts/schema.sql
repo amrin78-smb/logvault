@@ -1,16 +1,15 @@
 -- ============================================================
 -- LogVault Database Schema
--- TimescaleDB (logvault database, separate from NetVault/SpanVault)
+-- Standard PostgreSQL 16 (logvault database)
 -- Run this as postgres superuser against the logvault database
 -- ============================================================
 
--- Enable TimescaleDB extension
 
 -- ============================================================
 -- CORE LOGS TABLE
 -- ============================================================
 CREATE TABLE IF NOT EXISTS syslog_entries (
-    id              BIGSERIAL,
+    id              BIGSERIAL PRIMARY KEY,
     received_at     TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     log_timestamp   TIMESTAMPTZ,                          -- timestamp from the log message itself
     source_ip       INET            NOT NULL,
@@ -36,52 +35,14 @@ CREATE INDEX IF NOT EXISTS idx_syslog_severity       ON syslog_entries (severity
 CREATE INDEX IF NOT EXISTS idx_syslog_vendor         ON syslog_entries (vendor, received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_syslog_source_host    ON syslog_entries (source_host, received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_syslog_structured     ON syslog_entries USING GIN (structured_data);
-CREATE INDEX IF NOT EXISTS idx_syslog_message_text   ON syslog_entries USING GIN (to_tsvector('english', message));
+CREATE INDEX IF NOT EXISTS idx_syslog_message        ON syslog_entries USING GIN (to_tsvector('english', message));
+CREATE INDEX IF NOT EXISTS idx_syslog_received       ON syslog_entries (received_at DESC);
 
--- ============================================================
--- RETENTION POLICY (90 days)
--- ============================================================
 
--- ============================================================
--- CONTINUOUS AGGREGATES (for dashboard performance)
--- ============================================================
 
--- Hourly rollup: count by severity and vendor
-CREATE MATERIALIZED VIEW IF NOT EXISTS syslog_hourly
-SELECT
-    vendor,
-    severity,
-    severity_label,
-    source_host,
-    COUNT(*)                            AS log_count
-FROM syslog_entries
-GROUP BY bucket, vendor, severity, severity_label, source_host
-WITH NO DATA;
 
-    start_offset => INTERVAL '3 hours',
-    end_offset   => INTERVAL '1 hour',
-    schedule_interval => INTERVAL '1 hour',
-    if_not_exists => TRUE
-);
 
--- Daily rollup: top sources by log volume
-CREATE MATERIALIZED VIEW IF NOT EXISTS syslog_daily
-SELECT
-    vendor,
-    severity,
-    severity_label,
-    source_host,
-    source_ip::TEXT                     AS source_ip,
-    COUNT(*)                            AS log_count
-FROM syslog_entries
-GROUP BY bucket, vendor, severity, severity_label, source_host, source_ip::TEXT
-WITH NO DATA;
 
-    start_offset => INTERVAL '2 days',
-    end_offset   => INTERVAL '1 day',
-    schedule_interval => INTERVAL '1 day',
-    if_not_exists => TRUE
-);
 
 -- ============================================================
 -- ALERT RULES TABLE
