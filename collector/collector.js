@@ -20,6 +20,10 @@ const { parseAruba }    = require('../parsers/aruba');
 const { parseSangfor }  = require('../parsers/sangfor');
 const { evaluateCorrelation } = require('./correlationEngine');
 const { syncFromNetVault }    = require('./netvaultSync');
+const { enrichIP, configureDNS } = require('./dnsLookup');
+
+// IPs seen this session — avoid re-enriching same IP repeatedly
+const seenIPs = new Set();
 
 // ── Crash resilience ──────────────────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -203,6 +207,15 @@ function processMessage(rawMsg, sourceIp) {
 
   enqueue(entry);
 
+  // DNS reverse lookup for new IPs — best effort, non-blocking
+  const ipKey = entry.source_ip;
+  if (ipKey && !seenIPs.has(ipKey) && dnsLookupEnabled) {
+    seenIPs.add(ipKey);
+    // Limit seenIPs size to avoid unbounded memory
+    if (seenIPs.size > 10000) seenIPs.clear();
+    enrichIP(ipKey, pool).catch(() => {});
+  }
+
   // Run alert rules for medium+ severity
   if (entry.severity <= 4) {
     checkAlertRules(entry).catch(err => console.error('[Alert] Rule check error:', err.message));
@@ -374,6 +387,18 @@ async function main() {
 
   flushTimer = setInterval(flushBuffer, BATCH_INTERVAL);
   await getAlertRules();
+
+  // Load DNS settings from app_settings
+  let dnsLookupEnabled = true;
+  try {
+    const { rows } = await pool.query(`SELECT key, value FROM app_settings WHERE key IN ('dns_server', 'dns_lookup_enabled')`);
+    const settings  = Object.fromEntries(rows.map(r => [r.key, r.value]));
+    dnsLookupEnabled = settings.dns_lookup_enabled !== 'false';
+    if (settings.dns_server) configureDNS(settings.dns_server);
+    console.log(`[DNS] Lookup ${dnsLookupEnabled ? 'enabled' : 'disabled'}${settings.dns_server ? ` — server: ${settings.dns_server}` : ' — using system DNS'}`);
+  } catch (err) {
+    console.error('[DNS] Failed to load settings:', err.message);
+  }
 
   // Sync NetVault assets immediately then every 15 minutes
   syncFromNetVault(pool).catch(err => console.error('[NetVaultSync] Initial sync error:', err.message));

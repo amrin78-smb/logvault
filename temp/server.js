@@ -854,7 +854,7 @@ app.get('/api/settings', asyncHandler(async (req, res) => {
 }));
 
 app.post('/api/settings', asyncHandler(async (req, res) => {
-  const allowed = ['app_name', 'app_subtitle', 'primary_color', 'sidebar_color', 'logo_url'];
+  const allowed = ['app_name', 'app_subtitle', 'primary_color', 'sidebar_color', 'logo_url', 'dns_server', 'dns_lookup_enabled'];
   for (const key of allowed) {
     if (req.body[key] !== undefined) {
       await pool.query(
