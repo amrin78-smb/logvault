@@ -173,3 +173,7 @@ ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS last_synced      TIMESTAMPTZ;
 -- DNS lookup settings
 INSERT INTO app_settings (key, value) VALUES ('dns_server', '') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value) VALUES ('dns_lookup_enabled', 'true') ON CONFLICT (key) DO NOTHING;
+
+-- Grant permissions to logvault_user
+GRANT ALL ON ALL TABLES IN SCHEMA public TO logvault_user;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO logvault_user;
