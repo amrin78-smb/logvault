@@ -258,7 +258,7 @@ const CORRELATION_RULES = [
 // ── Cooldown tracker to prevent duplicate alerts ──────────────
 // Map<ruleId_groupKey, lastFiredTimestamp>
 const cooldowns = new Map();
-const COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes between same-rule same-group alerts
+const COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes between same-rule same-group alerts
 
 // ── Main evaluation function ─────────────────────────────────
 async function evaluateCorrelation(entry, pool) {
@@ -357,12 +357,32 @@ async function evaluateCorrelation(entry, pool) {
           ruleId = ruleRow.rows[0].id;
         }
 
-        await pool.query(`
-          INSERT INTO alert_events (rule_id, source_host, source_ip, match_count, sample_message)
-          VALUES ($1, $2, $3, $4, $5)
-        `, [ruleId, alertData.source_host, alertData.source_ip, alertData.match_count, alertData.sample_message]);
+        // Check for existing open alert — update instead of inserting duplicate
+        const existing = await pool.query(`
+          SELECT id, match_count FROM alert_events
+          WHERE rule_id = $1
+            AND acknowledged = FALSE
+            AND source_ip = $2
+            AND fired_at > NOW() - INTERVAL '2 hours'
+          ORDER BY fired_at DESC LIMIT 1
+        `, [ruleId, alertData.source_ip]);
 
-        console.log(`[Correlation] Rule "${rule.name}" fired — ${alertData.sample_message}`);
+        if (existing.rows.length > 0) {
+          await pool.query(`
+            UPDATE alert_events
+            SET match_count    = match_count + $1,
+                sample_message = $2,
+                fired_at       = NOW()
+            WHERE id = $3
+          `, [alertData.match_count, alertData.sample_message, existing.rows[0].id]);
+          console.log(`[Correlation] Rule "${rule.name}" updated existing alert — ${alertData.sample_message}`);
+        } else {
+          await pool.query(`
+            INSERT INTO alert_events (rule_id, source_host, source_ip, match_count, sample_message)
+            VALUES ($1, $2, $3, $4, $5)
+          `, [ruleId, alertData.source_host, alertData.source_ip, alertData.match_count, alertData.sample_message]);
+          console.log(`[Correlation] Rule "${rule.name}" fired — ${alertData.sample_message}`);
+        }
 
         // Clear the buffer for this group after firing to avoid re-firing immediately
         for (const phase of rule.phases) {

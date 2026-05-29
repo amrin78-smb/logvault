@@ -99,18 +99,32 @@ function shouldDrop(entry) {
   if (vendor === 'fortinet') {
     // Always keep warning and above (0-4)
     if (severity <= 4) return false;
+
+    const sd = entry.structured_data || {};
+
     // Always keep UTM logs (IPS, webfilter, app-ctrl, antivirus)
-    if (/utm\//i.test(msg) || /type=utm/i.test(msg)) return false;
+    if (sd.type === 'utm' || /utm\//i.test(msg) || /type=utm/i.test(msg)) return false;
+
     // Always keep event logs (VPN, auth, system, config)
-    if (/event\//i.test(msg) || /type=event/i.test(msg)) return false;
+    if (sd.type === 'event' || /event\//i.test(msg) || /type=event/i.test(msg)) return false;
+
+    // Always keep IPS/threat logs regardless of format
+    if (sd.subtype === 'ips' || /subtype=ips/i.test(msg) || /utm\/ips/i.test(msg)) return false;
+
+    // Always keep VPN logs regardless of format
+    if (sd.subtype === 'vpn' || /subtype=vpn/i.test(msg) || /ssl.vpn/i.test(msg) || /ipsec/i.test(msg)) return false;
+
     // Always keep denied/blocked traffic
-    if (/action=(deny|block|drop|reset)/i.test(msg)) return false;
+    if (sd.action === 'deny' || /action=(deny|block|drop|reset)/i.test(msg)) return false;
+
     // Drop routine traffic accepts, closes, timeouts at notice/info
-    if (/traffic\/(forward|local|multicast)/i.test(msg)) {
+    if (/traffic\/(forward|local|multicast)/i.test(msg) ||
+        sd.type === 'traffic') {
       if (/action=(accept|close|timeout|server-rst|client-rst|passthrough|ip-conn|dns)/i.test(msg)) {
         return true;
       }
     }
+
     return false;
   }
 
@@ -214,6 +228,10 @@ async function getAlertRules() {
 }
 
 const recentEvents = new Map();
+// Suppression map — tracks last fired time per rule+source to prevent duplicate alerts
+// Key: ruleId__sourceIp, Value: timestamp last fired
+const suppressionMap = new Map();
+const THRESHOLD_SUPPRESSION_MS = 30 * 60 * 1000; // 30 min suppression per rule+source
 
 async function checkAlertRules(entry) {
   const rules = await getAlertRules();
@@ -250,6 +268,14 @@ async function checkAlertRules(entry) {
     recentEvents.set(key, fresh);
 
     if (fresh.length === rule.threshold_count) {
+      // Check suppression — don't re-fire same rule for same source within suppression window
+      const sourceKey     = `${rule.id}__${entry.source_ip || 'any'}`;
+      const lastFired     = suppressionMap.get(sourceKey) || 0;
+      if (now - lastFired < THRESHOLD_SUPPRESSION_MS) {
+        console.log(`[Alert] Rule "${rule.name}" suppressed for ${entry.source_ip} (cooldown active)`);
+        continue;
+      }
+      suppressionMap.set(sourceKey, now);
       await fireAlert(rule, entry, fresh.length);
     }
   }
@@ -272,12 +298,36 @@ function parseIntervalMs(interval) {
 
 async function fireAlert(rule, entry, matchCount) {
   try {
-    await pool.query(`
-      INSERT INTO alert_events (rule_id, source_host, source_ip, match_count, sample_message)
-      VALUES ($1, $2, $3, $4, $5)
-    `, [rule.id, entry.source_host || null, entry.source_ip, matchCount, entry.message.substring(0, 500)]);
-    console.log(`[Alert] Rule "${rule.name}" fired — ${entry.source_host || entry.source_ip}`);
-  } catch (err) { console.error('[Alert] Failed to insert alert event:', err.message); }
+    // Check if there's already an open (unacknowledged) alert for this rule + source
+    const existing = await pool.query(`
+      SELECT id, match_count FROM alert_events
+      WHERE rule_id = $1
+        AND acknowledged = FALSE
+        AND source_ip = $2
+        AND fired_at > NOW() - INTERVAL '2 hours'
+      ORDER BY fired_at DESC
+      LIMIT 1
+    `, [rule.id, entry.source_ip]);
+
+    if (existing.rows.length > 0) {
+      // Update existing alert — increment count, update sample message
+      await pool.query(`
+        UPDATE alert_events
+        SET match_count   = match_count + $1,
+            sample_message = $2,
+            fired_at       = NOW()
+        WHERE id = $3
+      `, [matchCount, entry.message.substring(0, 500), existing.rows[0].id]);
+      console.log(`[Alert] Rule "${rule.name}" updated existing alert — ${entry.source_host || entry.source_ip}`);
+    } else {
+      // Insert new alert
+      await pool.query(`
+        INSERT INTO alert_events (rule_id, source_host, source_ip, match_count, sample_message)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [rule.id, entry.source_host || null, entry.source_ip, matchCount, entry.message.substring(0, 500)]);
+      console.log(`[Alert] Rule "${rule.name}" fired — ${entry.source_host || entry.source_ip}`);
+    }
+  } catch (err) { console.error('[Alert] Failed to insert/update alert event:', err.message); }
 }
 
 // ── UDP Server ────────────────────────────────────────────────
