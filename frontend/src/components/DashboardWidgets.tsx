@@ -32,24 +32,38 @@ export function TopSecurityEvents({ hours, onNavigate }: { hours: number; onNavi
       .then(r => r.json()).then(d => setData(d.data || [])).catch(() => {});
   }, [hours]);
   const COLORS = ['#dc2626','#ea580c','#ca8a04','#7c3aed','#0891b2','#16a34a','#475569'];
+  const max = data[0] ? parseInt(data[0].count) : 1;
   return (
     <div style={CARD}>
       <div style={TITLE}>Top Security Events</div>
-      <div style={SUB}>Most frequent error/warning types — {hours}h · Click bar to investigate</div>
+      <div style={SUB}>Most frequent error/warning types — {hours}h · Click to investigate</div>
       {data.length === 0 ? (
-        <div style={{ height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 13 }}>No data</div>
+        <div style={{ height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No data</div>
       ) : (
-        <ResponsiveContainer width="100%" height={140}>
-          <BarChart data={data} layout="vertical" margin={{ top: 0, right: 36, left: 0, bottom: 0 }}
-            onClick={(d) => { if (d?.activePayload && onNavigate) onNavigate(); }}>
-            <XAxis type="number" tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-            <YAxis type="category" dataKey="event_type" width={115} tick={{ fontSize: 11, fill: '#4a5568' }} axisLine={false} tickLine={false} />
-            <Tooltip content={<CustomTooltip unit="events" />} />
-            <Bar dataKey="count" radius={[0, 3, 3, 0]} cursor={onNavigate ? 'pointer' : 'default'}>
-              {data.map((_: any, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {data.slice(0, 6).map((row, i) => {
+            const pct   = Math.round((parseInt(row.count) / max) * 100);
+            const color = COLORS[i % COLORS.length];
+            return (
+              <div key={i} onClick={() => onNavigate?.()}
+                style={{ cursor: onNavigate ? 'pointer' : 'default' }}
+                title={`${row.event_type} — ${parseInt(row.count).toLocaleString()} events`}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
+                    {row.event_type}
+                  </span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color, flexShrink: 0, marginLeft: 8 }}>
+                    {parseInt(row.count).toLocaleString()}
+                  </span>
+                </div>
+                <div style={{ height: 5, background: 'var(--border-light)', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2, transition: 'width 0.5s' }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

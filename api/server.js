@@ -795,6 +795,38 @@ app.get('/api/security/wireless-auth', asyncHandler(async (req, res) => {
   res.json({ failures: failures.rows, summary: summary.rows[0] });
 }));
 
+// ── DISK SPACE ───────────────────────────────────────────────
+const { execSync } = require('child_process');
+
+app.get('/api/stats/disk', asyncHandler(async (req, res) => {
+  try {
+    // Use PowerShell to get real disk info for C: drive
+    const ps = `powershell.exe -NonInteractive -Command "` +
+      `$d = Get-PSDrive C; ` +
+      `$used = $d.Used; $free = $d.Free; $total = $used + $free; ` +
+      `Write-Output ($used.ToString() + ',' + $free.ToString() + ',' + $total.ToString())" `;
+    const output = execSync(ps, { encoding: 'utf8', timeout: 10000 }).trim();
+    const [usedBytes, freeBytes, totalBytes] = output.split(',').map(v => parseInt(v.trim()));
+
+    const toGB = (b) => Math.round((b / 1024 / 1024 / 1024) * 100) / 100;
+
+    res.json({
+      drive:      'C:',
+      used_bytes:  usedBytes,
+      free_bytes:  freeBytes,
+      total_bytes: totalBytes,
+      used_gb:     toGB(usedBytes),
+      free_gb:     toGB(freeBytes),
+      total_gb:    toGB(totalBytes),
+      used_pct:    Math.round((usedBytes / totalBytes) * 100),
+    });
+  } catch (err) {
+    console.error('[Disk] PowerShell error:', err.message);
+    // Fallback — return null so frontend can handle gracefully
+    res.json({ drive: 'C:', used_gb: null, free_gb: null, total_gb: null, used_pct: null, error: 'Unable to read disk info' });
+  }
+}));
+
 // ── APP SETTINGS ─────────────────────────────────────────────
 
 app.get('/api/settings', asyncHandler(async (req, res) => {
