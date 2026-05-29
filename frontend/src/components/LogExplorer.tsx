@@ -1,6 +1,7 @@
 'use client';
 import { useState, useCallback, useEffect } from 'react';
 import type { ExplorerFilter } from '@/app/page';
+import LogDetailPanel from '@/components/LogDetailPanel';
 
 const SEV_COLORS: Record<string, string> = {
   emergency: '#dc2626', alert: '#dc2626', critical: '#dc2626',
@@ -48,7 +49,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
   const [logs,       setLogs]      = useState<any[]>([]);
   const [total,      setTotal]     = useState(0);
   const [loading,    setLoading]   = useState(false);
-  const [expanded,   setExpanded]  = useState<number | null>(null);
+  const [selectedLog, setSelectedLog] = useState<any | null>(null);
   const [searched,   setSearched]  = useState(false);
   const [error,      setError]     = useState<string | null>(null);
   const [hostInput,  setHostInput] = useState('');
@@ -287,96 +288,40 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
           </thead>
           <tbody>
             {logs.map((row, i) => (
-              <>
-                <tr key={i} onClick={() => setExpanded(expanded === i ? null : i)}
-                  style={{ borderBottom: '1px solid var(--border-light)', cursor: 'pointer',
-                    background: expanded === i ? '#eff6ff' : i % 2 === 0 ? 'transparent' : 'var(--bg-primary)' }}
-                  onMouseEnter={e => { if (expanded !== i) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
-                  onMouseLeave={e => { if (expanded !== i) (e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? 'transparent' : 'var(--bg-primary)'; }}>
-                  <td style={{ padding: '9px 12px', color: 'var(--text-muted)', whiteSpace: 'nowrap',
-                    fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>
-                    {new Date(row.received_at).toLocaleString()}
-                  </td>
-                  <td style={{ padding: '9px 12px', fontFamily: 'JetBrains Mono, monospace',
-                    fontSize: 11, fontWeight: 500, color: 'var(--text-primary)' }}>
-                    {row.source_host || row.source_ip}
-                  </td>
-                  <td style={{ padding: '9px 12px' }}>
-                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, textTransform: 'capitalize',
-                      background: `${VENDOR_COLORS[row.vendor] || '#6b7280'}18`,
-                      color: VENDOR_COLORS[row.vendor] || '#6b7280', fontWeight: 500 }}>
-                      {row.vendor}
-                    </span>
-                  </td>
-                  <td style={{ padding: '9px 12px' }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-                      color: SEV_COLORS[row.severity_label] || '#9ca3af' }}>
-                      {row.severity_label}
-                    </span>
-                  </td>
-                  <td style={{ padding: '9px 12px', color: 'var(--text-muted)', fontSize: 11 }}>
-                    {row.program || '-'}
-                  </td>
-                  <td style={{ padding: '9px 12px', color: 'var(--text-secondary)',
-                    maxWidth: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {row.message}
-                  </td>
-                </tr>
-                {expanded === i && (
-                  <tr key={`exp-${i}`}>
-                    <td colSpan={6} style={{ padding: '16px 24px', background: '#f0f7ff',
-                      borderBottom: '1px solid #bfdbfe' }}>
-                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--text-primary)' }}>
-                        <div style={{ marginBottom: 8 }}>
-                          <strong style={{ color: 'var(--text-muted)' }}>Message: </strong>
-                          <span style={{ wordBreak: 'break-all' }}>{row.message}</span>
-                        </div>
-                        {row.structured_data && Object.keys(row.structured_data).length > 0 && (
-                          <div style={{ marginBottom: 8 }}>
-                            <strong style={{ color: 'var(--text-muted)' }}>Parsed fields: </strong>
-                            <pre style={{ marginTop: 4, color: '#2563eb', overflow: 'auto',
-                              background: '#fff', padding: 8, borderRadius: 4, border: '1px solid #bfdbfe' }}>
-                              {JSON.stringify(row.structured_data, null, 2)}
-                            </pre>
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', gap: 20, marginTop: 8,
-                          color: 'var(--text-muted)', flexWrap: 'wrap' }}>
-                          <span>IP: {row.source_ip}</span>
-                          <span>Facility: {row.facility_label}</span>
-                          <span>Parsed: {row.is_parsed ? 'Yes' : 'No'}</span>
-                          {row.log_timestamp && <span>Device time: {new Date(row.log_timestamp).toLocaleString()}</span>}
-                        </div>
-                        {/* Quick filter buttons from expanded row */}
-                        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Filter by:</span>
-                          {row.source_ip && (
-                            <button onClick={() => { setHost(row.source_ip.replace('/32','')); setTimeout(() => triggerSearch(), 50); }}
-                              style={{ padding: '2px 8px', borderRadius: 10, border: '1px solid var(--border)',
-                                cursor: 'pointer', fontSize: 10, background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
-                              📍 {row.source_ip.replace('/32','')}
-                            </button>
-                          )}
-                          {row.vendor && (
-                            <button onClick={() => { setVendor(row.vendor); setTimeout(() => triggerSearch(), 50); }}
-                              style={{ padding: '2px 8px', borderRadius: 10, border: '1px solid var(--border)',
-                                cursor: 'pointer', fontSize: 10, background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
-                              🏷️ {row.vendor}
-                            </button>
-                          )}
-                          {row.severity_label && (
-                            <button onClick={() => { const s = SEVERITIES.find(x => x.label.toLowerCase() === row.severity_label); if(s) { setSev(s.value); setTimeout(() => triggerSearch(), 50); } }}
-                              style={{ padding: '2px 8px', borderRadius: 10, border: '1px solid var(--border)',
-                                cursor: 'pointer', fontSize: 10, background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
-                              🔴 {row.severity_label}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </>
+              <tr key={i} onClick={() => setSelectedLog(row)}
+                style={{ borderBottom: '1px solid var(--border-light)', cursor: 'pointer',
+                  background: selectedLog?.id === row.id ? '#eff6ff' : i % 2 === 0 ? 'transparent' : 'var(--bg-primary)' }}
+                onMouseEnter={e => { if (selectedLog?.id !== row.id) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
+                onMouseLeave={e => { if (selectedLog?.id !== row.id) (e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? 'transparent' : 'var(--bg-primary)'; }}>
+                <td style={{ padding: '9px 12px', color: 'var(--text-muted)', whiteSpace: 'nowrap',
+                  fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>
+                  {new Date(row.received_at).toLocaleString()}
+                </td>
+                <td style={{ padding: '9px 12px', fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 11, fontWeight: 500, color: 'var(--text-primary)' }}>
+                  {row.source_host || row.source_ip}
+                </td>
+                <td style={{ padding: '9px 12px' }}>
+                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, textTransform: 'capitalize',
+                    background: `${VENDOR_COLORS[row.vendor] || '#6b7280'}18`,
+                    color: VENDOR_COLORS[row.vendor] || '#6b7280', fontWeight: 500 }}>
+                    {row.vendor}
+                  </span>
+                </td>
+                <td style={{ padding: '9px 12px' }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                    color: SEV_COLORS[row.severity_label] || '#9ca3af' }}>
+                    {row.severity_label}
+                  </span>
+                </td>
+                <td style={{ padding: '9px 12px', color: 'var(--text-muted)', fontSize: 11 }}>
+                  {row.program || '-'}
+                </td>
+                <td style={{ padding: '9px 12px', color: 'var(--text-secondary)',
+                  maxWidth: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {row.message}
+                </td>
+              </tr>
             ))}
             {logs.length === 0 && !loading && searched && (
               <tr><td colSpan={6} style={{ padding: 48, textAlign: 'center', color: 'var(--text-muted)' }}>
@@ -391,6 +336,15 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
           </tbody>
         </table>
       </div>
+
+      {/* Slide-over detail panel */}
+      <LogDetailPanel
+        log={selectedLog}
+        onClose={() => setSelectedLog(null)}
+        onFilterIP={ip => { setHost(ip); setTimeout(() => triggerSearch(), 50); }}
+        onFilterVendor={v => { setVendor(v); setTimeout(() => triggerSearch(), 50); }}
+        onFilterSeverity={s => { setSev(s); setTimeout(() => triggerSearch(), 50); }}
+      />
     </div>
   );
 }
