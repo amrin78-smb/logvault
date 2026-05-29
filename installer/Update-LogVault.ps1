@@ -9,8 +9,8 @@ param(
   [string]$InstallDir = "C:\Apps\LogVault"
 )
 
-$AppDir      = "$InstallDir\app"
-$FrontendDir = "$AppDir\frontend"
+$AppDir      = $InstallDir
+$FrontendDir = "$InstallDir\frontend"
 $NssmExe     = "C:\Apps\NetVault\nssm\nssm-2.24\win64\nssm.exe"
 $LogDir      = "$InstallDir\logs"
 
