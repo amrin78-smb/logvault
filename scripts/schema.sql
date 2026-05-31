@@ -174,6 +174,14 @@ ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS last_synced      TIMESTAMPTZ;
 INSERT INTO app_settings (key, value) VALUES ('dns_server', '') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value) VALUES ('dns_lookup_enabled', 'true') ON CONFLICT (key) DO NOTHING;
 
+-- SMTP / email alerting settings
+INSERT INTO app_settings (key, value) VALUES ('smtp_host', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('smtp_port', '587') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('smtp_user', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('smtp_pass', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('smtp_from', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('smtp_enabled', 'false') ON CONFLICT (key) DO NOTHING;
+
 -- Grant permissions to logvault_user
 GRANT ALL ON ALL TABLES IN SCHEMA public TO logvault_user;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO logvault_user;

@@ -21,6 +21,7 @@ const { parseSangfor }  = require('../parsers/sangfor');
 const { evaluateCorrelation } = require('./correlationEngine');
 const { syncFromNetVault }    = require('./netvaultSync');
 const { enrichIP, configureDNS } = require('./dnsLookup');
+const { sendAlertEmail }         = require('./emailer');
 
 // IPs seen this session — avoid re-enriching same IP repeatedly
 const seenIPs = new Set();
@@ -367,6 +368,13 @@ async function fireAlert(rule, entry, matchCount) {
         VALUES ($1, $2, $3, $4, $5)
       `, [rule.id, entry.source_host || null, entry.source_ip, matchCount, entry.message.substring(0, 500)]);
       console.log(`[Alert] Rule "${rule.name}" fired — ${entry.source_host || entry.source_ip}`);
+    }
+
+    // Send email notification if the rule has a recipient configured.
+    // Best-effort — never blocks or breaks alert firing.
+    if (rule.notify_email) {
+      sendAlertEmail(rule, entry, matchCount, pool).catch(err =>
+        console.error('[Alert] Email notify error:', err.message));
     }
   } catch (err) { console.error('[Alert] Failed to insert/update alert event:', err.message); }
 }

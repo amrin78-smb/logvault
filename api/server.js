@@ -11,6 +11,7 @@ const cors     = require('cors');
 const { Pool } = require('pg');
 const http     = require('http');
 const { WebSocketServer } = require('ws');
+const { testEmail } = require('../collector/emailer');
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env.local') });
 
 // ── Crash resilience ──────────────────────────────────────────
@@ -854,7 +855,9 @@ app.get('/api/settings', asyncHandler(async (req, res) => {
 }));
 
 app.post('/api/settings', asyncHandler(async (req, res) => {
-  const allowed = ['app_name', 'app_subtitle', 'primary_color', 'sidebar_color', 'logo_url', 'dns_server', 'dns_lookup_enabled'];
+  const allowed = ['app_name', 'app_subtitle', 'primary_color', 'sidebar_color', 'logo_url',
+    'dns_server', 'dns_lookup_enabled',
+    'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'smtp_enabled'];
   for (const key of allowed) {
     if (req.body[key] !== undefined) {
       await pool.query(
@@ -865,6 +868,23 @@ app.post('/api/settings', asyncHandler(async (req, res) => {
     }
   }
   res.json({ ok: true });
+}));
+
+// Send a test email immediately using the provided (unsaved) SMTP settings.
+app.post('/api/settings/test-email', asyncHandler(async (req, res) => {
+  const { to, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from } = req.body;
+  if (!to || typeof to !== 'string') {
+    return res.status(400).json({ error: 'Recipient address (to) is required' });
+  }
+  const override = smtp_host
+    ? { host: smtp_host, port: smtp_port, user: smtp_user, pass: smtp_pass, from: smtp_from }
+    : undefined;
+  const result = await testEmail(to, pool, override);
+  if (result.ok) {
+    res.json({ ok: true });
+  } else {
+    res.status(400).json({ error: result.error || 'Failed to send test email' });
+  }
 }));
 
 // ── HEALTH CHECK ─────────────────────────────────────────────

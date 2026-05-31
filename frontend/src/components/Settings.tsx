@@ -10,6 +10,12 @@ interface Settings {
   logo_url:           string;
   dns_server:         string;
   dns_lookup_enabled: string;
+  smtp_host:          string;
+  smtp_port:          string;
+  smtp_user:          string;
+  smtp_pass:          string;
+  smtp_from:          string;
+  smtp_enabled:       string;
 }
 
 const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: 24, marginBottom: 16 };
@@ -25,17 +31,21 @@ export default function Settings() {
     app_name: 'LogVault', app_subtitle: 'Syslog & Log Analysis',
     primary_color: '#2563eb', sidebar_color: '#0f1b2d', logo_url: '',
     dns_server: '', dns_lookup_enabled: 'true',
+    smtp_host: '', smtp_port: '587', smtp_user: '', smtp_pass: '',
+    smtp_from: '', smtp_enabled: 'false',
   });
   const [preview,  setPreview]    = useState<string>('');
   const [saving,   setSaving]     = useState(false);
-  const [activeTab, setActiveTab] = useState<'branding' | 'about'>('branding');
+  const [activeTab, setActiveTab] = useState<'branding' | 'email' | 'about'>('branding');
+  const [testTo,   setTestTo]     = useState('');
+  const [testing,  setTesting]    = useState(false);
 
   useEffect(() => {
     fetch('/api/settings')
       .then(r => r.json())
       .then(d => {
         if (d.data) {
-          setSettings(d.data);
+          setSettings(s => ({ ...s, ...d.data }));
           setPreview(d.data.logo_url || '');
         }
       }).catch(() => {});
@@ -73,7 +83,35 @@ export default function Settings() {
     setSaving(false);
   };
 
-  const TABS = [{ id: 'branding', label: 'Branding' }, { id: 'about', label: 'About' }];
+  const sendTest = async () => {
+    if (!testTo.trim()) { toast('Enter a recipient address', 'error'); return; }
+    setTesting(true);
+    try {
+      const r = await fetch('/api/settings/test-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to:        testTo.trim(),
+          smtp_host: settings.smtp_host,
+          smtp_port: settings.smtp_port,
+          smtp_user: settings.smtp_user,
+          smtp_pass: settings.smtp_pass,
+          smtp_from: settings.smtp_from,
+        }),
+      });
+      if (r.ok) {
+        toast(`Test email sent to ${testTo.trim()}`, 'success');
+      } else {
+        const d = await r.json().catch(() => ({}));
+        toast(d.error || 'Failed to send test email', 'error');
+      }
+    } catch {
+      toast('Failed to send test email', 'error');
+    }
+    setTesting(false);
+  };
+
+  const TABS = [{ id: 'branding', label: 'Branding' }, { id: 'email', label: 'Email Alerts' }, { id: 'about', label: 'About' }];
 
   return (
     <div style={{ maxWidth: 800 }}>
@@ -229,6 +267,104 @@ export default function Settings() {
                 Used for reverse lookups of IPs appearing in logs — both internal devices and external IPs.
                 Settings are applied automatically within 5 minutes — no restart needed.
               </div>
+            </div>
+          </div>
+
+          {/* Save */}
+          <button onClick={save} disabled={saving}
+            style={{ padding: '10px 28px', borderRadius: 8, border: 'none', cursor: 'pointer',
+              fontSize: 13, fontWeight: 600, background: '#2563eb', color: '#fff',
+              opacity: saving ? 0.7 : 1, transition: 'all 0.15s' }}>
+            {saving ? 'Saving...' : 'Save Settings'}
+          </button>
+        </>
+      )}
+
+      {activeTab === 'email' && (
+        <>
+          {/* SMTP Settings */}
+          <div style={CARD}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>SMTP Server</div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input type="checkbox"
+                  checked={settings.smtp_enabled === 'true'}
+                  onChange={e => setSettings(s => ({ ...s, smtp_enabled: e.target.checked ? 'true' : 'false' }))}
+                  style={{ cursor: 'pointer', width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  {settings.smtp_enabled === 'true' ? 'Enabled' : 'Disabled'}
+                </span>
+              </label>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 18 }}>
+              Configure an SMTP server to send email notifications when alert rules fire.
+              Emails are only sent for rules that have a notification address set.
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 16 }}>
+              <div>
+                <label style={LABEL}>SMTP Host</label>
+                <input style={INPUT} value={settings.smtp_host}
+                  onChange={e => setSettings(s => ({ ...s, smtp_host: e.target.value }))}
+                  placeholder="e.g. smtp.gmail.com" />
+              </div>
+              <div>
+                <label style={LABEL}>Port</label>
+                <input style={INPUT} value={settings.smtp_port}
+                  onChange={e => setSettings(s => ({ ...s, smtp_port: e.target.value }))}
+                  placeholder="587" />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+              <div>
+                <label style={LABEL}>Username</label>
+                <input style={INPUT} value={settings.smtp_user}
+                  onChange={e => setSettings(s => ({ ...s, smtp_user: e.target.value }))}
+                  placeholder="user@example.com" autoComplete="off" />
+              </div>
+              <div>
+                <label style={LABEL}>Password</label>
+                <input style={INPUT} type="password" value={settings.smtp_pass}
+                  onChange={e => setSettings(s => ({ ...s, smtp_pass: e.target.value }))}
+                  placeholder="••••••••" autoComplete="new-password" />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 4 }}>
+              <label style={LABEL}>From Address</label>
+              <input style={INPUT} value={settings.smtp_from}
+                onChange={e => setSettings(s => ({ ...s, smtp_from: e.target.value }))}
+                placeholder="LogVault Alerts <alerts@example.com>" />
+            </div>
+
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 12 }}>
+              Common SMTP servers — Gmail: smtp.gmail.com:587 · Office365: smtp.office365.com:587 · Port 465 uses implicit TLS.
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+              Settings applied automatically within 5 minutes — no restart needed.
+            </div>
+          </div>
+
+          {/* Test Email */}
+          <div style={CARD}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Send Test Email</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 14 }}>
+              Sends a test message using the settings above (without saving them first).
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
+              <div style={{ flex: 1, maxWidth: 360 }}>
+                <label style={LABEL}>Recipient Address</label>
+                <input style={INPUT} type="email" value={testTo}
+                  onChange={e => setTestTo(e.target.value)}
+                  placeholder="you@example.com" />
+              </div>
+              <button onClick={sendTest} disabled={testing}
+                style={{ padding: '9px 20px', borderRadius: 7, border: '1px solid var(--border)', cursor: 'pointer',
+                  fontSize: 12, fontWeight: 600, background: 'var(--input-bg)', color: 'var(--text-primary)',
+                  opacity: testing ? 0.7 : 1, whiteSpace: 'nowrap' }}>
+                {testing ? 'Sending...' : 'Send Test'}
+              </button>
             </div>
           </div>
 
