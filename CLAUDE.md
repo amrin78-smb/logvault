@@ -1,0 +1,578 @@
+# LogVault — Claude Development Guide
+
+## What is LogVault
+
+LogVault is a syslog analyzer and log management platform, part of the **NocVault Network Intelligence Suite**. It collects syslog from network devices (Fortinet, Cisco, Palo Alto, Aruba, Sangfor), parses and stores them in PostgreSQL, and provides a real-time dashboard, log explorer, alerting, and asset enrichment via NetVault integration.
+
+**Live deployment:** `http://192.168.6.111:3004`  
+**GitHub repo:** `https://github.com/amrin78-smb/logvault`  
+**Primary customer:** Thai Union Group — ~2,500 network devices across APAC, EMEA, NAM
+
+---
+
+## NocVault Suite Context
+
+| Product | Purpose | Port |
+|---|---|---|
+| **NetVault** | Network asset management (devices, sites, circuits) | 3000 |
+| **LogVault** | Syslog analyzer | 3004 / 3005 |
+| **SpanVault** | Network monitoring | TBD |
+| **DDIVault** | DNS, DHCP, IPAM monitoring | 3006 / 3007 |
+
+All products:
+- Run on Windows Server `192.168.6.111`
+- Share the same PostgreSQL 16 instance (separate databases)
+- Share the same user authentication via NetVault's `users` table
+- Use SSO — log in once at NetVault hub, access all apps without re-authenticating
+
+---
+
+## Tech Stack
+
+### Backend (plain JavaScript — NOT TypeScript)
+- **Runtime:** Node.js v20.19.0
+- **API:** Express.js — `api/server.js` on port 3005 (internal only)
+- **Collector:** `collector/collector.js` — listens on UDP/TCP 514 and 1514
+- **Database:** PostgreSQL 16 — database `logvault`, user `logvault_user`
+- **Auth DB:** PostgreSQL 16 — database `netvault`, user `netvault` (read-only, for SSO)
+- **Service manager:** NSSM
+
+### Frontend (TypeScript)
+- **Framework:** Next.js 16
+- **Styling:** Inline styles ONLY — no Tailwind, no CSS modules
+- **Charts:** Recharts
+- **Auth:** NextAuth.js with JWT strategy
+
+### CRITICAL: Never use TypeScript syntax in `.js` files
+```javascript
+// WRONG — will crash Node.js
+function foo(bar: string): void { }
+const x = value as string;
+
+// CORRECT
+function foo(bar) { }
+const x = value;
+```
+
+---
+
+## Project Structure
+
+```
+C:\Apps\logvault\                    ← repo root = app root
+  api\
+    server.js                        ← Express REST API (port 3005)
+    netvaultSync.js                  ← NetVault asset sync for API
+  collector\
+    collector.js                     ← Syslog collector (514/1514)
+    correlationEngine.js             ← Alert correlation rules
+    netvaultSync.js                  ← NetVault asset sync for collector
+    dnsLookup.js                     ← Reverse DNS lookup utility
+    emailer.js                       ← SMTP email alerting
+  parsers\
+    fortinet.js
+    cisco.js
+    paloalto.js
+    aruba.js
+    sangfor.js
+    generic.js
+  frontend\
+    src\
+      app\
+        page.tsx                     ← Main app (sidebar + tab routing)
+        layout.tsx                   ← Root layout with AuthProvider
+        globals.css                  ← CSS variables + design tokens
+        sso\page.tsx                 ← SSO landing page
+        api\auth\[...nextauth]\route.ts
+      components\
+        Header.tsx                   ← Top bar with avatar dropdown
+        ThemeContext.tsx             ← Dark mode context
+        Toast.tsx                    ← Toast notifications
+        LogExplorer.tsx             ← Log search with smart filters
+        LogDetailPanel.tsx          ← Slide-over detail panel
+        DashboardWidgets.tsx        ← All dashboard chart widgets
+        StorageWidget.tsx           ← Storage & capacity widget
+        KnownHosts.tsx              ← Known hosts with NetVault sync
+        Settings.tsx                ← Settings page (branding, DNS, SMTP)
+        AlertsPanel.tsx             ← Alert events panel
+        SeverityChart.tsx           ← Severity distribution chart
+        TopTalkers.tsx              ← Top talkers widget
+        VendorBreakdown.tsx         ← Vendor breakdown chart
+      auth.ts                       ← NextAuth config
+      proxy.ts                      ← Auth middleware (replaces middleware.ts)
+      types\next-auth.d.ts
+    package.json                    ← Frontend dependencies
+    next.config.js                  ← Rewrites /api/* → port 3005
+    .next\                          ← Built output (next start)
+  scripts\
+    schema.sql                      ← SINGLE SOURCE OF TRUTH for DB schema
+    cleanup.js                      ← Data retention cleanup
+  installer\
+    Update-LogVault.ps1             ← Deployment update script
+  logs\                             ← NSSM service logs
+  package.json                      ← Root dependencies (collector + API)
+  .env.local                        ← Server-specific config (NOT committed)
+```
+
+---
+
+## Development Workflow — ALWAYS FOLLOW THIS
+
+```
+1. Make ALL changes in GitHub Codespaces
+2. Upload files to temp/ folder in Codespaces if coming from Claude chat
+3. Copy files to correct paths: cp temp/file.tsx frontend/src/components/file.tsx
+4. Run: cd frontend && npm run build  (verify no build errors)
+5. If build passes: cd .. && git add -A
+6. git commit -m "descriptive message"
+7. git push origin main
+8. On Windows Server: & "C:\Apps\logvault\installer\Update-LogVault.ps1" -InstallDir "C:\Apps\logvault"
+```
+
+**NEVER edit files directly on the Windows Server.**  
+**NEVER commit broken code.**  
+**ALWAYS fix build errors before committing.**
+
+### temp/ folder
+- Used to stage files uploaded from Claude chat to Codespaces
+- Listed in `.gitignore` — never committed
+- Copy pattern: `cp temp/filename destination/path`
+
+---
+
+## Update Script
+
+```powershell
+& "C:\Apps\logvault\installer\Update-LogVault.ps1" -InstallDir "C:\Apps\logvault"
+```
+
+The script:
+1. Stops services with `sc.exe` (never `Stop-Service` — causes terminal hang)
+2. Backs up `.env.local` to memory
+3. `git reset --hard origin/main` + `git clean`
+4. Restores `.env.local`
+5. `npm install` (root + frontend)
+6. `npm run build` — if fails, services NOT restarted (old version keeps running)
+7. Starts services in order: Collector → API → App
+8. Verifies status + health check
+
+### Backend-only changes (skip frontend rebuild)
+```powershell
+nssm stop LogVault-API
+cd C:\Apps\logvault
+git pull origin main
+nssm start LogVault-API
+Start-Sleep -Seconds 3
+Invoke-WebRequest -Uri "http://localhost:3005/api/health" -UseBasicParsing | Select-Object -ExpandProperty Content
+```
+
+---
+
+## Database
+
+### Connection details
+```
+Host:     localhost
+Port:     5432
+Database: logvault
+User:     logvault_user
+Password: NVAdmin@2026
+```
+
+### NetVault DB (read-only, for SSO + asset sync)
+```
+Database: netvault
+User:     netvault
+Password: PgAdmin@2026!
+```
+
+### Run psql commands
+```powershell
+$env:PGPASSWORD = "PgAdmin@2026!"
+& "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -d logvault -c "YOUR SQL HERE"
+```
+
+### Schema rules — CRITICAL
+- `scripts/schema.sql` is the **single source of truth**
+- Every `ALTER TABLE`, `CREATE TABLE`, `CREATE INDEX` run manually on the server **MUST** also be added to `schema.sql`
+- Use `IF NOT EXISTS` everywhere — schema must be idempotent (safe to run multiple times)
+- New `app_settings` keys must use: `INSERT INTO app_settings (key, value) VALUES ('key', 'default') ON CONFLICT (key) DO NOTHING;`
+- After any manual schema change on server, immediately update `schema.sql` in Codespaces and commit
+
+### Tables
+```sql
+syslog_entries    -- All log entries (main table, grows large)
+alert_rules       -- Alert rule definitions
+alert_events      -- Fired alert instances
+known_hosts       -- IP → hostname/vendor/site mapping
+app_settings      -- Key/value app configuration
+```
+
+### Permissions — fresh install requirement
+```sql
+GRANT ALL ON ALL TABLES IN SCHEMA public TO logvault_user;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO logvault_user;
+```
+
+---
+
+## NSSM Services
+
+| Service | Executable | Port | Notes |
+|---|---|---|---|
+| `LogVault-Collector` | node collector/collector.js | 514, 1514 | No HTTP port |
+| `LogVault-API` | node api/server.js | 3005 | Internal only |
+| `LogVault-App` | next start -p 3004 | 3004 | Public facing |
+
+### Service startup order
+`postgresql` → `LogVault-Collector` → `LogVault-API` → `LogVault-App`
+
+### Environment variables (set via NSSM AppEnvironmentExtra)
+
+**LogVault-Collector:**
+```
+NODE_ENV=production
+DB_HOST=localhost
+DB_PORT=5432
+LV_DB_NAME=logvault
+LV_DB_USER=logvault_user
+LV_DB_PASS=NVAdmin@2026
+NETVAULT_DB_HOST=localhost
+NETVAULT_DB_PORT=5432
+NETVAULT_DB_NAME=netvault
+NETVAULT_DB_USER=netvault
+NETVAULT_DB_PASS=PgAdmin@2026!
+```
+
+**LogVault-API:**
+```
+NODE_ENV=production
+DB_HOST=localhost
+DB_PORT=5432
+LV_DB_NAME=logvault
+LV_DB_USER=logvault_user
+LV_DB_PASS=NVAdmin@2026
+LV_APP_URL=http://192.168.6.111:3004
+NETVAULT_DB_HOST=localhost
+NETVAULT_DB_PORT=5432
+NETVAULT_DB_NAME=netvault
+NETVAULT_DB_USER=netvault
+NETVAULT_DB_PASS=PgAdmin@2026!
+```
+
+**LogVault-App:**
+```
+NODE_ENV=production
+NEXTAUTH_URL=http://192.168.6.111:3004
+NEXTAUTH_SECRET=bue3VdWszntJ24GMhfKg1QkPIEaZYC95
+NETVAULT_HUB_URL=http://192.168.6.111:3000
+NEXT_PUBLIC_NETVAULT_HUB_URL=http://192.168.6.111:3000
+NETVAULT_DB_HOST=localhost
+NETVAULT_DB_PORT=5432
+NETVAULT_DB_NAME=netvault
+NETVAULT_DB_USER=netvault
+NETVAULT_DB_PASS=PgAdmin@2026!
+LV_APP_PORT=3004
+```
+
+---
+
+## Authentication — SSO
+
+LogVault has NO local login. All auth goes through NetVault hub.
+
+**Flow:**
+1. User visits `http://192.168.6.111:3004`
+2. `proxy.ts` detects no session → redirects to `http://192.168.6.111:3000/login`
+3. User logs in at NetVault
+4. NetVault calls `/api/sso/logvault` → generates JWT → redirects to `http://192.168.6.111:3004/sso?token=xxx`
+5. LogVault SSO page validates JWT → creates NextAuth session
+6. User is now logged in
+
+**Key files:**
+- `frontend/src/auth.ts` — NextAuth config, reads from `netvault.users` table
+- `frontend/src/proxy.ts` — protects all pages (replaces middleware.ts)
+- `frontend/src/app/sso/page.tsx` — SSO landing (must be wrapped in Suspense)
+
+**Shared secret:** `bue3VdWszntJ24GMhfKg1QkPIEaZYC95`
+
+**Cookie name:** `nexvault.session-token` — DO NOT CHANGE (breaks existing sessions)
+
+**Hub URL:** Always use `process.env.NEXT_PUBLIC_NETVAULT_HUB_URL` — never hardcode `192.168.6.111:3000`
+
+---
+
+## NocVault Design System
+
+```css
+/* globals.css */
+:root {
+  --primary:        #C8102E;   /* TU Red — buttons, accents, active nav */
+  --primary-dark:   #a00d24;
+  --navy:           #1a2744;   /* Header + sidebar background */
+  --bg-primary:     #f8f8f8;   /* Page background */
+  --bg-card:        #ffffff;   /* Card background */
+  --border:         #e5e7eb;
+  --border-light:   #f3f4f6;
+  --text-primary:   #111827;
+  --text-secondary: #374151;
+  --text-muted:     #6b7280;
+  --input-bg:       #ffffff;
+  --bg-hover:       #f9fafb;
+  --shadow-sm:      0 1px 3px rgba(0,0,0,0.06);
+}
+[data-theme="dark"] {
+  --bg-primary:     #0f172a;
+  --bg-card:        #1e293b;
+  --border:         #334155;
+  --border-light:   #1e293b;
+  --text-primary:   #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted:     #64748b;
+  --input-bg:       #0f172a;
+  --bg-hover:       #253352;
+}
+```
+
+**Sidebar:** Navy `#1a2744`, active item = red left border `#C8102E` + red-tinted bg  
+**Cards:** white, `1px solid var(--border)`, `border-radius: 10px`, `box-shadow: var(--shadow-sm)`  
+**Tables:** `#f9fafb` header, uppercase labels, `#6b7280` color  
+**Buttons:** Red `#C8102E`, hover `#a00d24`  
+**Font:** `system-ui, -apple-system, sans-serif`
+
+---
+
+## API Rules — CRITICAL
+
+```javascript
+// NEVER interpolate user input into SQL
+// WRONG:
+pool.query(`WHERE time > NOW() - INTERVAL '${hours} hours'`)
+
+// CORRECT:
+pool.query(`WHERE time > NOW() - make_interval(hours => $1)`, [hours])
+
+// PostgreSQL counts $1 as ONE parameter even if it appears twice
+// Use JOIN instead of nested subquery with same parameter
+
+// Input validation
+function safeHours(val, max = 720) {
+  const n = Math.min(parseInt(val || '24') || 24, max);
+  return isNaN(n) || n <= 0 ? 24 : n;
+}
+
+// Generic errors to client — never leak stack traces
+app.use((err, req, res, _next) => {
+  console.error('[API Error]', err.message, err.stack);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+// CORS restricted to frontend only
+app.use(cors({ origin: 'http://localhost:3004' }));
+
+// Crash resilience in every .js service file
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL]', err.message, err.stack);
+  process.exit(1); // NSSM restarts automatically
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled rejection:', reason);
+});
+```
+
+---
+
+## next.config.js — API Proxy
+
+The frontend proxies all `/api/*` requests to the Express API on port 3005. This is why port 3005 does not need to be open in the firewall.
+
+```javascript
+async rewrites() {
+  return [
+    { source: '/api/:path*', destination: 'http://localhost:3005/api/:path*' }
+  ];
+}
+```
+
+If this rewrite is missing, all API calls return 404.
+
+---
+
+## Dynamic Settings — No Restart Pattern
+
+Settings stored in `app_settings` are reloaded automatically every 5 minutes. Never require a service restart for settings changes.
+
+```javascript
+// Pattern used in collector and emailer
+let settingsCache = {};
+let settingsLoadedAt = 0;
+const SETTINGS_TTL = 5 * 60 * 1000;
+
+async function getSettings() {
+  if (Date.now() - settingsLoadedAt < SETTINGS_TTL) return settingsCache;
+  const { rows } = await pool.query(`SELECT key, value FROM app_settings`);
+  settingsCache = Object.fromEntries(rows.map(r => [r.key, r.value]));
+  settingsLoadedAt = Date.now();
+  return settingsCache;
+}
+```
+
+---
+
+## Alert System
+
+### Deduplication rules
+- Same rule + same source IP → update existing open alert (increment match_count), not insert new row
+- 30-minute suppression window per rule + source IP
+- Correlation engine cooldown: 30 minutes
+
+### Alert firing
+- `collector/collector.js` → `checkAlertRules()` → `fireAlert()`
+- `collector/correlationEngine.js` → fires correlation alerts
+- `collector/emailer.js` → sends email if rule has `notify_email` set and SMTP configured
+
+### Alert rule matching
+Rules match on: severity array, vendor array, host pattern (ILIKE), message regex pattern, threshold count + window
+
+---
+
+## NetVault Asset Enrichment
+
+Collector syncs NetVault devices every 15 minutes into `known_hosts`:
+- Pulls: device name, IP, brand, model, site name, device status, lifecycle status
+- Maps brand names to syslog vendors (Fortinet → fortinet, Palo Alto → paloalto etc)
+- NetVault entries take priority — DNS lookup won't overwrite NetVault data
+
+```javascript
+// Brand → vendor mapping
+const BRAND_TO_VENDOR = {
+  'fortinet': 'fortinet', 'cisco': 'cisco',
+  'palo alto': 'paloalto', 'aruba': 'aruba', 'sangfor': 'sangfor'
+};
+```
+
+---
+
+## DNS Reverse Lookup
+
+- Enabled/disabled via Settings → DNS Lookup
+- DNS server IP configurable (or uses system default)
+- Settings reload dynamically every 5 minutes — no restart needed
+- Looks up every new unique IP seen in logs
+- Caches results for 1 hour
+- Never overwrites NetVault-synced hostnames
+- Works for both internal IPs and external IPs (e.g. 8.8.8.8 → dns.google)
+
+---
+
+## Firewall Rules
+
+| Port | Protocol | Direction | Purpose |
+|---|---|---|---|
+| 3004 | TCP | Inbound | LogVault frontend (public) |
+| 514 | UDP + TCP | Inbound | Syslog collection |
+| 1514 | UDP + TCP | Inbound | Syslog alternate port |
+| 3005 | — | — | DO NOT OPEN — internal API only |
+
+---
+
+## Known Bugs — Never Repeat
+
+| Bug | Fix |
+|---|---|
+| TypeScript in `.js` files | Never use type annotations in server/collector JS files |
+| `${hours}` in SQL | Use `make_interval(hours => $1)` |
+| Same `$1` twice in query | Use JOIN not nested subquery |
+| Wide-open CORS | Restrict to `localhost:3004` |
+| Stack traces to client | Always return generic `Internal server error` |
+| `any` types unchecked | Define proper interfaces in TypeScript |
+| `.env.local` not at runtime | Set vars in NSSM `AppEnvironmentExtra` |
+| Next.js API 404 | Add rewrites in `next.config.js` |
+| `middleware.ts` deprecated | Use `proxy.ts` in Next.js 16 |
+| `useSearchParams` without Suspense | Wrap in `<Suspense>` |
+| Port 3005 exposed | Internal only — never open in firewall |
+| `Stop-Service` hanging terminal | Use `sc.exe stop` always |
+| Em-dash in PS1 files | Use `-` not `—` in PowerShell scripts |
+| `new Date()` in render | Use `useMemo` |
+| Component defined inside component | Always define components at module level |
+| Alert spam (70+ rows) | 30-min suppression + upsert existing open alert |
+| Known hosts too long | Collapsible with show 10 / show all |
+
+---
+
+## Log Service Commands
+
+```powershell
+# Status
+nssm status LogVault-Collector
+nssm status LogVault-API
+nssm status LogVault-App
+
+# Restart individual service
+nssm restart LogVault-Collector
+nssm restart LogVault-API
+
+# View logs
+Get-Content "C:\Apps\logvault\logs\collector.log" -Tail 30
+Get-Content "C:\Apps\logvault\logs\api-err.log"   -Tail 30
+Get-Content "C:\Apps\logvault\logs\app.log"        -Tail 30
+
+# Health check
+Invoke-WebRequest -Uri "http://localhost:3005/api/health" -UseBasicParsing | Select-Object -ExpandProperty Content
+
+# Check ingestion
+$env:PGPASSWORD = "NVAdmin@2026"
+& "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U logvault_user -d logvault -c "SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - INTERVAL '1 hour';"
+```
+
+---
+
+## app_settings Keys Reference
+
+| Key | Default | Purpose |
+|---|---|---|
+| `app_name` | LogVault | App display name |
+| `app_subtitle` | Syslog & Log Analysis | Subtitle in header |
+| `primary_color` | #C8102E | Button/accent color |
+| `sidebar_color` | #1a2744 | Sidebar background |
+| `logo_url` | (empty) | Custom logo URL |
+| `dns_server` | (empty) | DNS server for reverse lookup |
+| `dns_lookup_enabled` | true | Enable/disable DNS lookup |
+| `smtp_host` | (empty) | SMTP server hostname |
+| `smtp_port` | 587 | SMTP port |
+| `smtp_user` | (empty) | SMTP username |
+| `smtp_pass` | (empty) | SMTP password |
+| `smtp_from` | (empty) | From email address |
+| `smtp_enabled` | false | Enable email alerts |
+
+---
+
+## Features Completed
+
+| Feature | Notes |
+|---|---|
+| Syslog collection UDP/TCP 514 + 1514 | Fortinet, Cisco, Palo Alto, Aruba, Sangfor, Generic parsers |
+| Real-time dashboard | Severity, top talkers, blocked destinations, connection failures, VPN stats, timeline |
+| Smart Log Explorer | Preset searches, vendor/severity chips, host filter, active filter tags |
+| Log detail slide-over panel | Parsed fields, copy buttons, quick actions, related logs |
+| Alert rules + correlation engine | Threshold rules + 8 correlation rules |
+| Alert deduplication + suppression | 30-min cooldown, upsert existing open alerts |
+| NetVault asset enrichment | Auto-sync every 15 min, brand/model/site/status |
+| DNS reverse lookup | Dynamic settings, 1hr cache, no restart needed |
+| Email alerting | SMTP configurable in Settings, per-rule notify_email |
+| SSO authentication | Via NetVault hub JWT |
+| Dark mode | Via ThemeContext |
+| Settings page | Branding, DNS, SMTP |
+| Storage & capacity widget | Real disk usage via PowerShell Get-PSDrive |
+| Known hosts | NetVault sync + manual, collapsible list |
+| NocVault rebrand | Throughout UI (cookie name unchanged) |
+
+## Pending / Planned
+
+| Feature | Priority |
+|---|---|
+| MITRE ATT&CK mapping on alerts | Medium |
+| Compliance reports (PCI-DSS, ISO 27001) | Medium |
+| Event taxonomy (category field on logs) | Low — revisit when 3+ vendors active |
+| Top talkers showing device names from NetVault | Next up |
+| Dashboard customization | Low |
