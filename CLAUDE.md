@@ -265,8 +265,8 @@ NETVAULT_DB_PASS=PgAdmin@2026!
 NODE_ENV=production
 NEXTAUTH_URL=http://192.168.6.111:3004
 NEXTAUTH_SECRET=bue3VdWszntJ24GMhfKg1QkPIEaZYC95
-NETVAULT_HUB_URL=http://192.168.6.111:3000
-NEXT_PUBLIC_NETVAULT_HUB_URL=http://192.168.6.111:3000
+NOCVAULT_HUB_URL=http://192.168.6.111:3000
+NEXT_PUBLIC_NOCVAULT_HUB_URL=http://192.168.6.111:3000
 NETVAULT_DB_HOST=localhost
 NETVAULT_DB_PORT=5432
 NETVAULT_DB_NAME=netvault
@@ -298,7 +298,26 @@ LogVault has NO local login. All auth goes through NetVault hub.
 
 **Cookie name:** `nexvault.session-token` — DO NOT CHANGE (breaks existing sessions)
 
-**Hub URL:** Always use `process.env.NEXT_PUBLIC_NETVAULT_HUB_URL` — never hardcode `192.168.6.111:3000`
+**Hub URL:** Always use `process.env.NEXT_PUBLIC_NOCVAULT_HUB_URL` (client) or `process.env.NOCVAULT_HUB_URL` (server) — never hardcode `192.168.6.111:3000`
+
+### Env var standard (NocVault suite — updated)
+
+The hub URL env var was standardized across all NocVault suite products to drop the
+product-specific `NETVAULT_` prefix in favor of the suite-wide `NOCVAULT_` prefix:
+
+| Old name | New name | Used in |
+|---|---|---|
+| `NETVAULT_HUB_URL` | `NOCVAULT_HUB_URL` | server-side (`auth.ts`, `proxy.ts`) |
+| `NEXT_PUBLIC_NETVAULT_HUB_URL` | `NEXT_PUBLIC_NOCVAULT_HUB_URL` | client-side (`Header.tsx`, `IdleTimeout.tsx`, `sso/page.tsx`) |
+
+> **Deployment note:** the NSSM `AppEnvironmentExtra` for `LogVault-App` MUST be updated
+> to the new names (see the install/update steps). Until it is, `HUB_URL` falls back to
+> `http://localhost:3000` and SSO will break. The NetVault DB vars (`NETVAULT_DB_*`) are
+> unchanged — only the hub URL var was renamed.
+
+Sign-out is done via a **manual CSRF flow** (`/api/auth/csrf` → POST `/api/auth/signout`),
+not the next-auth `signOut` helper, in both `Header.tsx` and `IdleTimeout.tsx` — this keeps
+the shared SSO cookie flow intact.
 
 ---
 

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useToast } from '@/components/Toast';
+import { PageHeader, TableSkeleton, EmptyState } from './ui';
 
 interface Host {
   ip_address:       string;
@@ -43,6 +44,7 @@ export default function KnownHosts() {
   const [editIp,   setEditIp]   = useState<string | null>(null);
   const [error,    setError]    = useState<string | null>(null);
   const [loading,  setLoading]  = useState(false);
+  const [listLoading, setListLoading] = useState(true);
   const [syncing,  setSyncing]  = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
 
@@ -53,7 +55,7 @@ export default function KnownHosts() {
       if (synced.length > 0) {
         setLastSync(synced[0].last_synced);
       }
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setListLoading(false));
   };
 
   useEffect(() => { fetchHosts(); }, []);
@@ -101,6 +103,8 @@ export default function KnownHosts() {
 
   return (
     <div>
+      <PageHeader title="Known Hosts" subtitle="IP-to-hostname mapping with NetVault asset sync" />
+
       {/* Add / Edit form */}
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: 20, marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
@@ -189,10 +193,10 @@ export default function KnownHosts() {
           </div>
         </div>
 
-        {filtered.length === 0 ? (
-          <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-            No hosts registered yet.
-          </div>
+        {listLoading ? (
+          <TableSkeleton rows={8} cols={5} />
+        ) : filtered.length === 0 ? (
+          <EmptyState title="No known hosts" message="Hosts will appear here as logs arrive or after NetVault sync." />
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
 import { useToast } from '@/components/Toast';
+import { PageHeader } from './ui';
 
 interface Settings {
   app_name:           string;
@@ -115,8 +116,7 @@ export default function Settings() {
 
   return (
     <div style={{ maxWidth: 800 }}>
-      <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Settings</div>
-      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 20 }}>Manage app branding and configuration</div>
+      <PageHeader title="Settings" subtitle="Branding, DNS lookup and SMTP email configuration" />
 
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--bg-card)',

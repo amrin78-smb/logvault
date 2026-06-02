@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import { useToast } from '@/components/Toast';
+import { PageHeader, TableSkeleton, EmptyState } from './ui';
 
 function formatInterval(val: any): string {
   if (!val) return '-';
@@ -70,8 +71,11 @@ export default function AlertEvents() {
   const correlationNames = new Set(CORRELATION_RULES.map(r => r.name));
 
   const fetchData = useCallback(() => {
-    fetch('/api/alerts/events').then(r => r.json()).then(d => setEvents(d.data || [])).catch(() => {});
-    fetch('/api/alerts/rules').then(r  => r.json()).then(d => setRules(d.data  || [])).catch(() => {});
+    setLoading(true);
+    Promise.all([
+      fetch('/api/alerts/events').then(r => r.json()).then(d => setEvents(d.data || [])).catch(() => {}),
+      fetch('/api/alerts/rules').then(r  => r.json()).then(d => setRules(d.data  || [])).catch(() => {}),
+    ]).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -190,10 +194,10 @@ export default function AlertEvents() {
         </div>
       )}
 
-      {groups.length === 0 ? (
-        <div style={{ padding: '48px 0', textAlign: 'center', color: '#16a34a', fontSize: 14, fontWeight: 500 }}>
-          ✓ No active alerts
-        </div>
+      {loading ? (
+        <TableSkeleton rows={8} cols={5} />
+      ) : groups.length === 0 ? (
+        <EmptyState title="No alerts" message="No alert events have fired yet." />
       ) : groups.map(group => {
         const isExpanded = expanded.has(group.rule_name);
         const displayEvents = showAcked ? group.events : group.events.filter(e => !e.acknowledged);
@@ -319,6 +323,8 @@ export default function AlertEvents() {
 
   return (
     <div>
+      <PageHeader title="Alerts" subtitle="Fired alert events and rule management" />
+
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: '#fff',
         border: '1px solid #e2e6ea', borderRadius: 10, padding: 6, alignItems: 'center' }}>

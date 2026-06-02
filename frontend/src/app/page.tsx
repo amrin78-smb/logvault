@@ -19,19 +19,21 @@ import AlertBanner     from '@/components/AlertBanner';
 import TimeRangePicker from '@/components/TimeRangePicker';
 import ErrorBoundary   from '@/components/ErrorBoundary';
 import { useTheme }    from '@/components/ThemeContext';
+import { PageHeader }  from '@/components/ui';
+import { version as APP_VERSION } from '../../package.json';
 
 type Tab = 'dashboard' | 'explorer' | 'livetail' | 'alerts' | 'health' | 'security' | 'hosts' | 'settings';
 export interface ExplorerFilter { severity?: string; vendor?: string; host?: string; hours?: string; }
 
 const Icons: Record<Tab, JSX.Element> = {
-  dashboard: (<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1" fill="currentColor"/><rect x="9" y="1" width="6" height="6" rx="1" fill="currentColor"/><rect x="1" y="9" width="6" height="6" rx="1" fill="currentColor"/><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor"/></svg>),
-  explorer:  (<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="1.5" rx="0.75" fill="currentColor"/><rect x="1" y="7" width="10" height="1.5" rx="0.75" fill="currentColor"/><rect x="1" y="11" width="12" height="1.5" rx="0.75" fill="currentColor"/></svg>),
-  livetail:  (<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3" fill="currentColor"/><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.5"/></svg>),
-  alerts:    (<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 1L1 13h14L8 1z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none"/><line x1="8" y1="6" x2="8" y2="9.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><circle cx="8" cy="11.5" r="0.8" fill="currentColor"/></svg>),
-  health:    (<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><polyline points="1,8 4,4 6,10 9,3 11,8 13,6 15,8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>),
-  security:  (<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 1L2 4v5c0 3.5 2.5 6.5 6 7.4C11.5 15.5 14 12.5 14 9V4L8 1z" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round"/><polyline points="5,8 7,10 11,6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>),
-  hosts:     (<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" fill="none"/><line x1="5" y1="13" x2="11" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><line x1="8" y1="10" x2="8" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
-  settings:  (<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.3" fill="none"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
+  dashboard: (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1" fill="currentColor"/><rect x="9" y="1" width="6" height="6" rx="1" fill="currentColor"/><rect x="1" y="9" width="6" height="6" rx="1" fill="currentColor"/><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor"/></svg>),
+  explorer:  (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="1.5" rx="0.75" fill="currentColor"/><rect x="1" y="7" width="10" height="1.5" rx="0.75" fill="currentColor"/><rect x="1" y="11" width="12" height="1.5" rx="0.75" fill="currentColor"/></svg>),
+  livetail:  (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3" fill="currentColor"/><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.5"/></svg>),
+  alerts:    (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M8 1L1 13h14L8 1z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none"/><line x1="8" y1="6" x2="8" y2="9.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><circle cx="8" cy="11.5" r="0.8" fill="currentColor"/></svg>),
+  health:    (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><polyline points="1,8 4,4 6,10 9,3 11,8 13,6 15,8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>),
+  security:  (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M8 1L2 4v5c0 3.5 2.5 6.5 6 7.4C11.5 15.5 14 12.5 14 9V4L8 1z" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round"/><polyline points="5,8 7,10 11,6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>),
+  hosts:     (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" fill="none"/><line x1="5" y1="13" x2="11" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><line x1="8" y1="10" x2="8" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
+  settings:  (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.3" fill="none"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
 };
 
 export default function Home() {
@@ -64,6 +66,22 @@ export default function Home() {
 
   useEffect(() => { fetchSummary(); fetchHealth(); }, [fetchSummary, fetchHealth]);
 
+  // Global "R" — refresh current tab (broadcasts to data components + dashboard)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'r' && e.key !== 'R') return;
+      const el = document.activeElement as HTMLElement | null;
+      const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      e.preventDefault();
+      window.dispatchEvent(new Event('nocvault:refresh'));
+      fetchSummary();
+      fetchHealth();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fetchSummary, fetchHealth]);
+
   const openExplorer = (filter: ExplorerFilter) => {
     setExplorerFilter({ ...filter, hours: String(hours) });
     setTab('explorer');
@@ -83,10 +101,10 @@ export default function Home() {
   ];
 
   const KPI = [
-    { label: 'TOTAL LOGS',     value: totalLogs.toLocaleString(),  color: '#1a2744', bg: '#f8f9fb', border: '#e5e7eb', filter: {} },
-    { label: 'CRITICAL/ALERT', value: critCount.toLocaleString(),  color: critCount  > 0 ? '#C8102E' : '#16a34a', bg: critCount  > 0 ? '#fff0f2' : '#f0fdf4', border: critCount  > 0 ? '#fca5a5' : '#bbf7d0', filter: { severity: '0,1,2' } },
-    { label: 'ERRORS',         value: errorCount.toLocaleString(), color: errorCount > 0 ? '#ea580c' : '#16a34a', bg: errorCount > 0 ? '#fff7ed' : '#f0fdf4', border: errorCount > 0 ? '#fed7aa' : '#bbf7d0', filter: { severity: '3' } },
-    { label: 'WARNINGS',       value: warnCount.toLocaleString(),  color: '#ca8a04', bg: '#fefce8', border: '#fde68a', filter: { severity: '4' } },
+    { label: 'Total Logs',       value: totalLogs.toLocaleString(),  accent: 'var(--navy)',                                  filter: {} },
+    { label: 'Critical / Alert', value: critCount.toLocaleString(),  accent: critCount  > 0 ? 'var(--red)'    : 'var(--green)', filter: { severity: '0,1,2' } },
+    { label: 'Errors',           value: errorCount.toLocaleString(), accent: errorCount > 0 ? 'var(--orange)' : 'var(--green)', filter: { severity: '3' } },
+    { label: 'Warnings',         value: warnCount.toLocaleString(),  accent: warnCount  > 0 ? 'var(--yellow)' : 'var(--green)', filter: { severity: '4' } },
   ];
 
   return (
@@ -96,43 +114,48 @@ export default function Home() {
 
       <div style={{ display: 'flex', minHeight: 'calc(100vh - 52px)' }}>
         {/* Sidebar */}
-        <div style={{ width: 200, background: '#1a2744', flexShrink: 0, display: 'flex', flexDirection: 'column', paddingTop: 8 }}>
+        <div style={{ width: 240, background: '#1a2744', flexShrink: 0, display: 'flex', flexDirection: 'column', paddingTop: 16 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '1.2px', padding: '0 24px', marginBottom: 10 }}>
+            NAVIGATION
+          </div>
           {TABS.map(t => {
             const active = tab === t.id;
             return (
               <button key={t.id} onClick={() => setTab(t.id)}
-                style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 16px',
-                  background: active ? 'rgba(200,16,46,0.15)' : 'transparent', border: 'none', cursor: 'pointer',
-                  fontSize: 12, fontWeight: active ? 600 : 400, color: active ? '#ffffff' : '#94a3b8',
-                  textAlign: 'left', borderLeft: active ? '3px solid #C8102E' : '3px solid transparent',
-                  transition: 'all 0.15s', width: '100%' }}
-                onMouseEnter={e => { if (!active) { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; (e.currentTarget as HTMLElement).style.color = '#cbd5e1'; } }}
-                onMouseLeave={e => { if (!active) { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = '#94a3b8'; } }}>
-                <span style={{ opacity: active ? 1 : 0.7, flexShrink: 0 }}>{Icons[t.id]}</span>
+                style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 11,
+                  padding: '11px 20px', margin: '1px 10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                  background: active ? 'rgba(200,16,46,0.15)' : 'transparent',
+                  fontSize: 13, fontWeight: active ? 600 : 500,
+                  color: active ? '#ffffff' : 'rgba(255,255,255,0.5)',
+                  textAlign: 'left', transition: 'all 0.15s' }}
+                onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; }}
+                onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
+                {active && <span style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 3, height: 20, borderRadius: '0 2px 2px 0', background: '#C8102E' }} />}
+                <span style={{ display: 'flex', flexShrink: 0, color: active ? '#C8102E' : 'currentColor' }}>{Icons[t.id]}</span>
                 {t.label}
               </button>
             );
           })}
 
-          <div style={{ margin: '10px 14px', borderTop: '1px solid #253352' }} />
-          <div style={{ padding: '0 12px' }}>
-            <div style={{ fontSize: 9, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>Time Range</div>
+          <div style={{ margin: '14px 16px 10px', borderTop: '1px solid rgba(255,255,255,0.08)' }} />
+          <div style={{ padding: '0 14px' }}>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700 }}>Time Range</div>
             {[{ label: '15 min', value: 0.25 }, { label: '1 hour', value: 1 }, { label: '6 hours', value: 6 },
               { label: '24 hours', value: 24 }, { label: '48 hours', value: 48 }, { label: '7 days', value: 168 }].map(h => (
               <button key={h.value} onClick={() => setHours(h.value)}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '5px 8px', marginBottom: 3,
-                  borderRadius: 5, border: '1px solid', fontSize: 11, cursor: 'pointer', textAlign: 'left',
+                style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '6px 10px', marginBottom: 3,
+                  borderRadius: 8, border: '1px solid', fontSize: 11.5, cursor: 'pointer', textAlign: 'left',
                   background: hours === h.value ? 'rgba(200,16,46,0.2)' : 'transparent',
-                  borderColor: hours === h.value ? '#C8102E' : '#253352',
-                  color: hours === h.value ? '#ffffff' : '#64748b' }}>
+                  borderColor: hours === h.value ? '#C8102E' : 'rgba(255,255,255,0.1)',
+                  color: hours === h.value ? '#ffffff' : 'rgba(255,255,255,0.5)' }}>
                 {h.label}
               </button>
             ))}
           </div>
 
           {health && (
-            <div style={{ margin: '10px 12px 14px', padding: '7px 10px', background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 7 }}>
-              <div style={{ fontSize: 9, color: '#64748b', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Ingestion</div>
+            <div style={{ margin: '12px 14px', padding: '8px 12px', background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 10 }}>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700 }}>Ingestion</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 5px #22c55e' }} />
                 <span style={{ fontSize: 12, color: '#22c55e', fontWeight: 600 }}>{health.logs_last_hour.toLocaleString()}</span>
@@ -140,6 +163,11 @@ export default function Home() {
               </div>
             </div>
           )}
+
+          <div style={{ flex: 1 }} />
+          <div style={{ padding: '14px 24px', fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.5px', fontWeight: 500 }}>
+            LogVault v{APP_VERSION}
+          </div>
         </div>
 
         {/* Main content */}
@@ -147,8 +175,7 @@ export default function Home() {
           {tab === 'dashboard' && (
             <>
               {/* Header row */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, position: 'relative' }}>
-                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Dashboard</div>
+              <PageHeader title="Dashboard" subtitle="Real-time syslog overview & traffic analysis">
                 <ErrorBoundary name="Time Range Picker">
                   <TimeRangePicker
                     hours={hours}
@@ -158,20 +185,17 @@ export default function Home() {
                     onRefreshNow={() => { fetchSummary(); fetchHealth(); }}
                   />
                 </ErrorBoundary>
-              </div>
+              </PageHeader>
 
               {/* KPI tiles */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 12 }}>
                 {KPI.map(kpi => (
-                  <div key={kpi.label} onClick={() => openExplorer(kpi.filter)}
-                    style={{ background: kpi.bg, border: `1px solid ${kpi.border}`, borderRadius: 8,
-                      padding: '12px 14px', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s',
-                      animation: kpiFlash ? 'kpiFlash 0.6s ease' : 'none' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'none'; (e.currentTarget as HTMLElement).style.boxShadow = 'none'; }}>
-                    <div style={{ fontSize: 9, color: '#718096', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.8px' }}>{kpi.label}</div>
-                    <div style={{ fontSize: 26, fontWeight: 700, color: kpi.color, lineHeight: 1 }}>{kpi.value}</div>
-                    <div style={{ fontSize: 9, color: kpi.color, marginTop: 5, fontWeight: 500 }}>last {hours}h → View logs</div>
+                  <div key={kpi.label} className="kpi-card" onClick={() => openExplorer(kpi.filter)}
+                    style={{ borderLeftColor: kpi.accent, cursor: 'pointer',
+                      animation: kpiFlash ? 'kpiFlash 0.6s ease' : 'none' }}>
+                    <div style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-1px', lineHeight: 1, color: kpi.accent }}>{kpi.value}</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginTop: 8 }}>{kpi.label}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>last {hours}h → View logs</div>
                   </div>
                 ))}
               </div>

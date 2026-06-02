@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { PageHeader, TableSkeleton, CardSkeleton, EmptyState } from './ui';
 
 const CARD = { background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 10, padding: 20, marginBottom: 16 };
 const TH   = { padding: '8px 12px', textAlign: 'left' as const, color: '#718096', fontWeight: 600, fontSize: 11 };
@@ -116,6 +117,8 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
 
   return (
     <div>
+      <PageHeader title="Security" subtitle="Threat events, blocked traffic and VPN activity" />
+
       {/* Section nav */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: '#fff',
         border: '1px solid #e2e6ea', borderRadius: 10, padding: 6, flexWrap: 'wrap' }}>
@@ -140,10 +143,22 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
       </div>
 
       {loading ? (
-        <div style={{ ...CARD, textAlign: 'center', padding: '48px 0', color: '#9ca3af' }}>Loading security data...</div>
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 16 }}>
+            <CardSkeleton count={6} />
+          </div>
+          <div style={CARD}>
+            <TableSkeleton rows={8} cols={5} />
+          </div>
+        </>
       ) : (
         <>
           {/* ── OVERVIEW ── */}
+          {activeSection === 'overview' && !summary && (
+            <div style={CARD}>
+              <EmptyState title="No security events" message="No security events for the selected time range." />
+            </div>
+          )}
           {activeSection === 'overview' && summary && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 16 }}>

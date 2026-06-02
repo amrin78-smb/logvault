@@ -259,6 +259,12 @@ app.get('/api/stats/alerts-summary', asyncHandler(async (req, res) => {
   res.json({ unacknowledged: parseInt(unacked.rows[0].count), total_24h: parseInt(total24h.rows[0].count), recent: recent.rows });
 }));
 
+// Lightweight count for the header notifications bell badge
+app.get('/api/alerts/unacked-count', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(`SELECT COUNT(*) AS count FROM alert_events WHERE acknowledged = FALSE`);
+  res.json({ count: parseInt(rows[0].count) });
+}));
+
 app.get('/api/stats/top-services', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const { rows } = await pool.query(`

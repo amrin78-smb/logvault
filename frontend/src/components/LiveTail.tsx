@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { PageHeader, EmptyState } from './ui';
 
 const SEV_COLORS: Record<string, string> = {
   emergency: '#dc2626', alert: '#dc2626', critical: '#dc2626',
@@ -69,6 +70,8 @@ export default function LiveTail() {
     : logs;
 
   return (
+    <>
+    <PageHeader title="Live Tail" subtitle="Real-time streaming syslog feed" />
     <div style={{ background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 10, padding: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 14, fontWeight: 600, color: '#1a202c' }}>Live Tail</span>
@@ -111,9 +114,7 @@ export default function LiveTail() {
         style={{ background: '#0d1117', borderRadius: 8, padding: '10px 14px', height: '60vh',
           overflowY: 'auto', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>
         {filtered.length === 0 && (
-          <div style={{ color: '#475569', padding: '48px 0', textAlign: 'center', fontFamily: 'Inter, sans-serif' }}>
-            {connected ? (paused ? 'Paused — click Resume to continue' : 'Waiting for log messages...') : 'Connecting...'}
-          </div>
+          <EmptyState title="Waiting for logs" message="Live entries will appear here as they arrive." />
         )}
         {filtered.map((log, i) => (
           <div key={`${log.id || i}-${i}`} style={{ display: 'flex', gap: 10, padding: '3px 0',
@@ -136,5 +137,6 @@ export default function LiveTail() {
         ))}
       </div>
     </div>
+    </>
   );
 }

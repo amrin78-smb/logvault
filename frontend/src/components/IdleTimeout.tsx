@@ -1,10 +1,25 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { signOut } from 'next-auth/react';
 
-const HUB_URL = process.env.NEXT_PUBLIC_NETVAULT_HUB_URL || 'http://localhost:3000';
+const HUB_URL = process.env.NEXT_PUBLIC_NOCVAULT_HUB_URL || 'http://localhost:3000';
 const WARNING_MS = 60 * 1000; // show warning 60s before expiry
+
+// Manual CSRF sign-out — same flow as Header. Do NOT use the next-auth
+// signOut helper (breaks the SSO cookie flow). Clears the session then returns to
+// the hub login with a timeout reason.
+async function csrfSignOut() {
+  try {
+    const csrfRes = await fetch('/api/auth/csrf');
+    const { csrfToken } = await csrfRes.json();
+    await fetch('/api/auth/signout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `csrfToken=${csrfToken}&callbackUrl=/`,
+    });
+  } catch {}
+  window.location.replace(`${HUB_URL}/login?reason=timeout`);
+}
 
 export default function IdleTimeout() {
   const [showWarning, setShowWarning] = useState(false);
@@ -35,7 +50,7 @@ export default function IdleTimeout() {
 
     const doSignOut = () => {
       clearTimers();
-      signOut({ callbackUrl: `${HUB_URL}/login?reason=timeout` });
+      csrfSignOut();
     };
 
     const startTimers = () => {

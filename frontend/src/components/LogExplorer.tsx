@@ -2,6 +2,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { ExplorerFilter } from '@/app/page';
 import LogDetailPanel from '@/components/LogDetailPanel';
+import { PageHeader, TableSkeleton, EmptyState } from './ui';
 
 const SEV_COLORS: Record<string, string> = {
   emergency: '#dc2626', alert: '#dc2626', critical: '#dc2626',
@@ -125,6 +126,8 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
   const hasFilters = activeFilters.length > 0;
 
   return (
+    <>
+    <PageHeader title="Log Explorer" subtitle="Search and filter syslog entries with smart presets" />
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10,
       padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
       <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Log Explorer</div>
@@ -274,6 +277,11 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
       {error && <div style={{ fontSize: 12, color: '#dc2626', marginBottom: 12 }}>Error: {error}</div>}
 
       {/* ── Log table ── */}
+      {loading && logs.length === 0 ? (
+        <TableSkeleton rows={8} cols={5} />
+      ) : searched && !loading && !error && logs.length === 0 ? (
+        <EmptyState title="No logs found" message="Try adjusting your filters or time range." />
+      ) : (
       <div style={{ overflowX: 'auto', maxHeight: '60vh', overflowY: 'auto',
         border: '1px solid var(--border)', borderRadius: 8 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -336,6 +344,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
           </tbody>
         </table>
       </div>
+      )}
 
       {/* Slide-over detail panel */}
       <LogDetailPanel
@@ -346,5 +355,6 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
         onFilterSeverity={s => { setSev(s); setTimeout(() => triggerSearch(), 50); }}
       />
     </div>
+    </>
   );
 }

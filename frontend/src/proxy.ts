@@ -11,8 +11,8 @@ export default withAuth(
       authorized: ({ token }) => !!token,
     },
     pages: {
-      signIn: process.env.NETVAULT_HUB_URL
-        ? `${process.env.NETVAULT_HUB_URL}/login`
+      signIn: process.env.NOCVAULT_HUB_URL
+        ? `${process.env.NOCVAULT_HUB_URL}/login`
         : 'http://localhost:3000/login',
     },
   }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { PageHeader, TableSkeleton, CardSkeleton, EmptyState } from './ui';
 
 // ── Shared styles ─────────────────────────────────────────────
 const CARD  = { background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 10, padding: 20, marginBottom: 16 };
@@ -131,6 +132,8 @@ export default function NetworkHealth({ hours }: { hours: number }) {
 
   return (
     <div>
+      <PageHeader title="Network Health" subtitle="Interface events, link state and device connectivity" />
+
       {/* Section nav */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: '#fff',
         border: '1px solid #e2e6ea', borderRadius: 10, padding: 6, flexWrap: 'wrap' }}>
@@ -155,7 +158,14 @@ export default function NetworkHealth({ hours }: { hours: number }) {
       </div>
 
       {loading ? (
-        <div style={{ ...CARD, textAlign: 'center', padding: '48px 0', color: '#9ca3af' }}>Loading network health data...</div>
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+            <CardSkeleton count={4} />
+          </div>
+          <div style={CARD}>
+            <TableSkeleton rows={8} cols={5} />
+          </div>
+        </>
       ) : (
         <>
           {/* ── OVERVIEW ── */}
@@ -269,6 +279,9 @@ export default function NetworkHealth({ hours }: { hours: number }) {
               <div style={{ fontSize: 11, color: '#718096', marginBottom: 16 }}>
                 Last log received per device — red = silent &gt;60min, yellow = silent &gt;15min
               </div>
+              {deviceStatus.length === 0 ? (
+                <EmptyState title="No data" message="No network health events for the selected time range." />
+              ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid #f0f2f5' }}>
@@ -304,6 +317,7 @@ export default function NetworkHealth({ hours }: { hours: number }) {
                   })}
                 </tbody>
               </table>
+              )}
             </div>
           )}
 
@@ -351,6 +365,9 @@ export default function NetworkHealth({ hours }: { hours: number }) {
               <div style={CARD}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: '#1a202c', marginBottom: 2 }}>Interface Event Log</div>
                 <div style={{ fontSize: 11, color: '#718096', marginBottom: 16 }}>All interface state changes</div>
+                {interfaces.length === 0 ? (
+                  <EmptyState title="No data" message="No network health events for the selected time range." />
+                ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid #f0f2f5' }}>
@@ -358,9 +375,7 @@ export default function NetworkHealth({ hours }: { hours: number }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {interfaces.length === 0 ? (
-                      <tr><td colSpan={5} style={{ ...TD, textAlign: 'center', color: '#9ca3af', padding: 32 }}>No interface events in this period</td></tr>
-                    ) : interfaces.map((r, i) => (
+                    {interfaces.map((r, i) => (
                       <tr key={i} style={{ borderBottom: '1px solid #f0f2f5', background: i % 2 === 0 ? '#fafbfc' : '#fff' }}>
                         <td style={{ ...TD, ...MONO, fontSize: 11, color: '#9ca3af', whiteSpace: 'nowrap' }}>{new Date(r.received_at).toLocaleTimeString()}</td>
                         <td style={{ ...TD, ...MONO, fontWeight: 500, color: '#1a202c' }}>{r.source_host || r.source_ip}</td>
@@ -371,6 +386,7 @@ export default function NetworkHealth({ hours }: { hours: number }) {
                     ))}
                   </tbody>
                 </table>
+                )}
               </div>
             </>
           )}
