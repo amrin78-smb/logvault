@@ -155,19 +155,28 @@ export default function Header() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
 
         {/* Notifications bell */}
-        <div style={{ position: 'relative' }}>
+        <button
+          aria-label="View alerts"
+          onClick={() => window.dispatchEvent(new CustomEvent('nocvault:navigate', { detail: { tab: 'alerts' } }))}
+          style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 34, height: 34, borderRadius: 8, background: 'transparent', border: 'none',
+            cursor: 'pointer', transition: 'background 0.15s, transform 0.1s' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.1)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+          onMouseDown={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.95)'; }}
+          onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}>
           <svg width="19" height="19" viewBox="0 0 20 20" fill="none" style={{ color: '#94a3b8' }}>
             <path d="M10 2a5 5 0 0 0-5 5v3l-1.5 2.5h13L15 10V7a5 5 0 0 0-5-5z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none" />
             <path d="M8 15a2 2 0 0 0 4 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
           </svg>
           {unacked > 0 && (
-            <span style={{ position: 'absolute', top: -5, right: -6, minWidth: 16, height: 16, padding: '0 4px',
+            <span style={{ position: 'absolute', top: 0, right: 0, minWidth: 16, height: 16, padding: '0 4px',
               borderRadius: 8, background: '#C8102E', color: '#fff', fontSize: 10, fontWeight: 700,
               display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>
               {unacked > 99 ? '99+' : unacked}
             </span>
           )}
-        </div>
+        </button>
 
         {/* Dark mode toggle */}
         <button onClick={toggle} aria-label="Toggle dark mode"

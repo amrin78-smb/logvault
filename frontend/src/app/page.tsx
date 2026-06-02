@@ -82,6 +82,16 @@ export default function Home() {
     return () => window.removeEventListener('keydown', onKey);
   }, [fetchSummary, fetchHealth]);
 
+  // Cross-component navigation — e.g. notifications bell jumps to Alerts tab
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.tab) setTab(detail.tab as Tab);
+    };
+    window.addEventListener('nocvault:navigate', handler);
+    return () => window.removeEventListener('nocvault:navigate', handler);
+  }, []);
+
   const openExplorer = (filter: ExplorerFilter) => {
     setExplorerFilter({ ...filter, hours: String(hours) });
     setTab('explorer');
