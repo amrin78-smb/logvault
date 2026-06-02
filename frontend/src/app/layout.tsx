@@ -3,6 +3,7 @@ import './globals.css';
 import { ThemeProvider }   from '@/components/ThemeContext';
 import { ToastProvider }   from '@/components/Toast';
 import AuthProvider        from '@/components/AuthProvider';
+import IdleTimeout         from '@/components/IdleTimeout';
 
 export const metadata: Metadata = {
   title: 'LogVault — Syslog Analyzer',
@@ -16,6 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AuthProvider>
           <ThemeProvider>
             <ToastProvider>
+              <IdleTimeout />
               {children}
             </ToastProvider>
           </ThemeProvider>
