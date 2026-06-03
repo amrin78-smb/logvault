@@ -92,16 +92,20 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
   const triggerSearch = async (filter?: ExplorerFilter) => {
     setLoading(true); setError(null); setSearched(true);
     const f = filter || {};
+    // Explicitly-provided keys (even '') override current state. This lets a toggled-off
+    // chip clear its filter instead of falling back to stale closure state.
+    const effQ        = 'q'        in f ? (f.q        || '') : q;
+    const effVendor   = 'vendor'   in f ? (f.vendor   || '') : vendor;
+    const effSeverity = 'severity' in f ? (f.severity || '') : severity;
+    const effCategory = 'category' in f ? (f.category || '') : category;
+    const effHost     = 'host'     in f ? (f.host     || '') : host;
     try {
-      const params = new URLSearchParams({
-        hours: f.hours || hours,
-        limit: '200',
-        ...(q                        && { q }),
-        ...(f.vendor   || vendor     ? { vendor:   f.vendor   || vendor   } : {}),
-        ...(f.severity || severity   ? { severity: f.severity || severity } : {}),
-        ...(f.category || category   ? { category: f.category || category } : {}),
-        ...(f.host     || host       ? { host:     f.host     || host     } : {}),
-      });
+      const params = new URLSearchParams({ hours: f.hours || hours, limit: '200' });
+      if (effQ)        params.set('q', effQ);
+      if (effVendor)   params.set('vendor', effVendor);
+      if (effSeverity) params.set('severity', effSeverity);
+      if (effCategory) params.set('category', effCategory);
+      if (effHost)     params.set('host', effHost);
       const r = await fetch(`/api/logs?${params}`);
       if (!r.ok) throw new Error(`API error: ${r.status}`);
       const d = await r.json();
@@ -122,12 +126,13 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
   };
 
   const removeFilter = (type: string) => {
-    if (type === 'vendor')   { setVendor('');   }
-    if (type === 'severity') { setSev('');       }
-    if (type === 'category') { setCategory('');  }
-    if (type === 'host')     { setHost('');      }
-    if (type === 'q')        { setQ('');         }
-    setTimeout(() => triggerSearch(), 50);
+    const override: ExplorerFilter = {};
+    if (type === 'vendor')   { setVendor('');   override.vendor = '';   }
+    if (type === 'severity') { setSev('');       override.severity = ''; }
+    if (type === 'category') { setCategory('');  override.category = ''; }
+    if (type === 'host')     { setHost('');      override.host = '';     }
+    if (type === 'q')        { setQ('');         override.q = '';        }
+    setTimeout(() => triggerSearch(override), 50);
   };
 
   const clearAll = () => {
@@ -270,7 +275,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
       <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500, marginRight: 2 }}>Category:</span>
         {CATEGORIES.map(c => (
-          <button key={c.value} onClick={() => { setCategory(category === c.value ? '' : c.value); setTimeout(() => triggerSearch(), 50); }}
+          <button key={c.value} onClick={() => { const next = category === c.value ? '' : c.value; setCategory(next); setTimeout(() => triggerSearch({ category: next }), 50); }}
             style={{ padding: '4px 10px', borderRadius: 16,
               border: `1px solid ${category === c.value ? c.color : 'var(--border)'}`,
               cursor: 'pointer', fontSize: 11, fontWeight: category === c.value ? 600 : 400,
