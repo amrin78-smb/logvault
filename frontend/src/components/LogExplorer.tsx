@@ -1,5 +1,5 @@
 'use client';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { ExplorerFilter } from '@/app/page';
 import LogDetailPanel from '@/components/LogDetailPanel';
 import { PageHeader, TableSkeleton, EmptyState } from './ui';
@@ -89,7 +89,10 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
     }
   }, [initialFilter]);
 
+  const reqSeq = useRef(0);
+
   const triggerSearch = async (filter?: ExplorerFilter) => {
+    const seq = ++reqSeq.current;            // only the latest request may write state
     setLoading(true); setError(null); setSearched(true);
     const f = filter || {};
     // Explicitly-provided keys (even '') override current state. This lets a toggled-off
@@ -109,9 +112,10 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
       const r = await fetch(`/api/logs?${params}`);
       if (!r.ok) throw new Error(`API error: ${r.status}`);
       const d = await r.json();
+      if (seq !== reqSeq.current) return;    // a newer search superseded this one — discard
       setLogs(d.data || []); setTotal(d.total || 0);
-    } catch (e: any) { setError(e.message); }
-    setLoading(false);
+    } catch (e: any) { if (seq === reqSeq.current) setError(e.message); }
+    if (seq === reqSeq.current) setLoading(false);
   };
 
   const search = useCallback(() => triggerSearch(), [q, vendor, severity, category, host, hours]);
@@ -275,7 +279,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
       <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500, marginRight: 2 }}>Category:</span>
         {CATEGORIES.map(c => (
-          <button key={c.value} onClick={() => { const next = category === c.value ? '' : c.value; setCategory(next); setTimeout(() => triggerSearch({ category: next }), 50); }}
+          <button key={c.value} onClick={() => { const next = category === c.value ? '' : c.value; setCategory(next); triggerSearch({ category: next }); }}
             style={{ padding: '4px 10px', borderRadius: 16,
               border: `1px solid ${category === c.value ? c.color : 'var(--border)'}`,
               cursor: 'pointer', fontSize: 11, fontWeight: category === c.value ? 600 : 400,
