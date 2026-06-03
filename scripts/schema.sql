@@ -9,6 +9,11 @@
 -- CORE LOGS TABLE
 -- Supported vendors: fortinet, cisco, paloalto, aruba, sangfor,
 --                    forcepoint, checkpoint, juniper, windows, sonicwall, generic
+--
+-- Valid category values for syslog_entries.category:
+--   authentication, vpn, firewall, interface, routing, configuration,
+--   security, wireless, system, dns, web, email, dlp, network
+-- (assigned by collector/taxonomy.js; 'network' is the fallback)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS syslog_entries (
     id              BIGSERIAL PRIMARY KEY,

@@ -30,16 +30,19 @@ const BATCH = 1000;
 
 async function run() {
   let total = 0;
+  let lastId = 0;  // cursor — advances every batch so rows that stay 'network' aren't re-selected forever
   for (;;) {
     const { rows } = await pool.query(
       `SELECT id, vendor, message, severity, structured_data
          FROM syslog_entries
-        WHERE category IS NULL OR category = ''
+        WHERE (category IS NULL OR category = '' OR category = 'network')
+          AND id > $1
         ORDER BY id
-        LIMIT $1`,
-      [BATCH]
+        LIMIT $2`,
+      [lastId, BATCH]
     );
     if (rows.length === 0) break;
+    lastId = rows[rows.length - 1].id;
 
     const ids = [], cats = [], risks = [];
     for (const r of rows) {
