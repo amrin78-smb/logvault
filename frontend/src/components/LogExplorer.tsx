@@ -89,10 +89,14 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
     }
   }, [initialFilter]);
 
-  const reqSeq = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   const triggerSearch = async (filter?: ExplorerFilter) => {
-    const seq = ++reqSeq.current;            // only the latest request may write state
+    // Cancel any in-flight search so an older response can't clobber a newer one.
+    if (abortRef.current) abortRef.current.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
     setLoading(true); setError(null); setSearched(true);
     const f = filter || {};
     // Explicitly-provided keys (even '') override current state. This lets a toggled-off
@@ -109,13 +113,17 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
       if (effSeverity) params.set('severity', effSeverity);
       if (effCategory) params.set('category', effCategory);
       if (effHost)     params.set('host', effHost);
-      const r = await fetch(`/api/logs?${params}`);
+      const r = await fetch(`/api/logs?${params}`, { signal: ctrl.signal });
       if (!r.ok) throw new Error(`API error: ${r.status}`);
       const d = await r.json();
-      if (seq !== reqSeq.current) return;    // a newer search superseded this one — discard
       setLogs(d.data || []); setTotal(d.total || 0);
-    } catch (e: any) { if (seq === reqSeq.current) setError(e.message); }
-    if (seq === reqSeq.current) setLoading(false);
+    } catch (e: any) {
+      if (e.name === 'AbortError') return;   // superseded by a newer search — it owns the UI
+      setError(e.message);
+    } finally {
+      // Only the most recent search controls the loading flag, so it never sticks.
+      if (abortRef.current === ctrl) setLoading(false);
+    }
   };
 
   const search = useCallback(() => triggerSearch(), [q, vendor, severity, category, host, hours]);
@@ -279,7 +287,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
       <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500, marginRight: 2 }}>Category:</span>
         {CATEGORIES.map(c => (
-          <button key={c.value} onClick={() => { const next = category === c.value ? '' : c.value; setCategory(next); triggerSearch({ category: next }); }}
+          <button key={c.value} onClick={() => { const next = category === c.value ? '' : c.value; setCategory(next); setTimeout(() => triggerSearch({ category: next }), 50); }}
             style={{ padding: '4px 10px', borderRadius: 16,
               border: `1px solid ${category === c.value ? c.color : 'var(--border)'}`,
               cursor: 'pointer', fontSize: 11, fontWeight: category === c.value ? 600 : 400,
