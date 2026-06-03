@@ -7,6 +7,8 @@
 
 -- ============================================================
 -- CORE LOGS TABLE
+-- Supported vendors: fortinet, cisco, paloalto, aruba, sangfor,
+--                    forcepoint, checkpoint, juniper, windows, sonicwall, generic
 -- ============================================================
 CREATE TABLE IF NOT EXISTS syslog_entries (
     id              BIGSERIAL PRIMARY KEY,
@@ -25,8 +27,14 @@ CREATE TABLE IF NOT EXISTS syslog_entries (
     raw_message     TEXT,                                  -- original unprocessed syslog line
     structured_data JSONB,                                 -- RFC5424 SD-elements or vendor parsed fields
     is_parsed       BOOLEAN         DEFAULT FALSE,
-    parser_version  TEXT
+    parser_version  TEXT,
+    category        TEXT,                                  -- universal event taxonomy (auth, vpn, firewall, ...)
+    risk_score      SMALLINT        DEFAULT 0              -- 0-100 computed risk score
 );
+
+-- Universal taxonomy + risk scoring columns (idempotent for existing installs)
+ALTER TABLE syslog_entries ADD COLUMN IF NOT EXISTS category   TEXT;
+ALTER TABLE syslog_entries ADD COLUMN IF NOT EXISTS risk_score SMALLINT DEFAULT 0;
 
 
 -- Indexes for common query patterns
@@ -37,6 +45,8 @@ CREATE INDEX IF NOT EXISTS idx_syslog_source_host    ON syslog_entries (source_h
 CREATE INDEX IF NOT EXISTS idx_syslog_structured     ON syslog_entries USING GIN (structured_data);
 CREATE INDEX IF NOT EXISTS idx_syslog_message        ON syslog_entries USING GIN (to_tsvector('english', message));
 CREATE INDEX IF NOT EXISTS idx_syslog_received       ON syslog_entries (received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_syslog_category       ON syslog_entries (category, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_syslog_risk_score     ON syslog_entries (risk_score DESC, received_at DESC);
 
 
 

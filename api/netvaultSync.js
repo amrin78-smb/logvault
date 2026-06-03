@@ -19,8 +19,13 @@ const BRAND_TO_VENDOR = {
   'cisco': 'cisco', 'fortinet': 'fortinet',
   'palo alto': 'paloalto', 'palo alto networks': 'paloalto',
   'aruba': 'aruba', 'aruba networks': 'aruba',
-  'sangfor': 'sangfor', 'forcepoint': 'generic',
-  'juniper': 'generic', 'hp': 'generic',
+  'sangfor': 'sangfor',
+  'forcepoint': 'forcepoint', 'websense': 'forcepoint',
+  'check point': 'checkpoint', 'checkpoint': 'checkpoint',
+  'juniper': 'juniper', 'juniper networks': 'juniper',
+  'microsoft': 'windows', 'windows': 'windows',
+  'sonicwall': 'sonicwall', 'sonic wall': 'sonicwall',
+  'hp': 'generic', 'hewlett packard': 'generic',
 };
 
 function brandToVendor(brandName) {

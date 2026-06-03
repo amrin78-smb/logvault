@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 const VENDOR_COLORS: Record<string, string> = {
   cisco: '#2563eb', paloalto: '#ea580c', fortinet: '#dc2626',
   aruba: '#7c3aed', sangfor: '#0891b2', generic: '#9ca3af', unknown: '#9ca3af',
+  forcepoint: '#003087', checkpoint: '#E31937', juniper: '#84BD00',
+  windows: '#0078D4', sonicwall: '#FF6600',
 };
 
 export default function VendorBreakdown({ hours, onVendorClick, compact }: {

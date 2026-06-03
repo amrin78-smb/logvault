@@ -2,7 +2,7 @@
 
 ## What is LogVault
 
-LogVault is a syslog analyzer and log management platform, part of the **NocVault Network Intelligence Suite**. It collects syslog from network devices (Fortinet, Cisco, Palo Alto, Aruba, Sangfor), parses and stores them in PostgreSQL, and provides a real-time dashboard, log explorer, alerting, and asset enrichment via NetVault integration.
+LogVault is a syslog analyzer and log management platform, part of the **NocVault Network Intelligence Suite**. It collects syslog from network devices (Fortinet, Cisco, Palo Alto, Aruba, Sangfor, Forcepoint, Check Point, Juniper, Windows, SonicWall), parses and stores them in PostgreSQL, and provides a real-time dashboard, log explorer, alerting, universal event taxonomy, risk scoring, and asset enrichment via NetVault integration.
 
 **Live deployment:** `http://192.168.6.111:3004`  
 **GitHub repo:** `https://github.com/amrin78-smb/logvault`  
@@ -75,7 +75,15 @@ C:\Apps\logvault\                    ← repo root = app root
     paloalto.js
     aruba.js
     sangfor.js
+    forcepoint.js
+    checkpoint.js
+    juniper.js
+    windows.js
+    sonicwall.js
     generic.js
+  collector\
+    taxonomy.js                      ← Universal event category assignment
+    riskScorer.js                    ← 0-100 risk score per log entry
   frontend\
     src\
       app\
@@ -202,11 +210,17 @@ $env:PGPASSWORD = "PgAdmin@2026!"
 ### Tables
 ```sql
 syslog_entries    -- All log entries (main table, grows large)
+                  --   includes category TEXT + risk_score SMALLINT columns
 alert_rules       -- Alert rule definitions
 alert_events      -- Fired alert instances
 known_hosts       -- IP → hostname/vendor/site mapping
 app_settings      -- Key/value app configuration
 ```
+
+`syslog_entries.category` holds the universal taxonomy value (authentication, vpn,
+firewall, interface, routing, configuration, security, wireless, system, dns, web,
+email, dlp, network). `syslog_entries.risk_score` is a 0-100 score from
+`collector/riskScorer.js`. Both are written by the collector and indexed.
 
 ### Permissions — fresh install requirement
 ```sql
@@ -570,7 +584,10 @@ $env:PGPASSWORD = "NVAdmin@2026"
 
 | Feature | Notes |
 |---|---|
-| Syslog collection UDP/TCP 514 + 1514 | Fortinet, Cisco, Palo Alto, Aruba, Sangfor, Generic parsers |
+| Syslog collection UDP/TCP 514 + 1514 | Fortinet, Cisco, Palo Alto, Aruba, Sangfor, Forcepoint, Check Point, Juniper, Windows, SonicWall, Generic parsers |
+| Universal event taxonomy | `collector/taxonomy.js` assigns standard `category` to every entry (auth, vpn, firewall, security, …) |
+| Risk scoring | `collector/riskScorer.js` computes 0-100 `risk_score` per entry; shown as badge in Log Detail panel |
+| Category filter | Log Explorer category chips + `category` API filter |
 | Real-time dashboard | Severity, top talkers, blocked destinations, connection failures, VPN stats, timeline |
 | Smart Log Explorer | Preset searches, vendor/severity chips, host filter, active filter tags |
 | Log detail slide-over panel | Parsed fields, copy buttons, quick actions, related logs |
@@ -592,6 +609,5 @@ $env:PGPASSWORD = "NVAdmin@2026"
 |---|---|
 | MITRE ATT&CK mapping on alerts | Medium |
 | Compliance reports (PCI-DSS, ISO 27001) | Medium |
-| Event taxonomy (category field on logs) | Low — revisit when 3+ vendors active |
 | Top talkers showing device names from NetVault | Next up |
 | Dashboard customization | Low |

@@ -15,6 +15,15 @@ interface LogRow {
   message:         string;
   structured_data: Record<string, any>;
   is_parsed:       boolean;
+  category:        string;
+  risk_score:      number;
+}
+
+function riskBadge(score: number): { label: string; color: string; bg: string } {
+  if (score >= 81) return { label: 'Critical Risk', color: '#dc2626', bg: '#fef2f2' };
+  if (score >= 61) return { label: 'High Risk',     color: '#ea580c', bg: '#fff7ed' };
+  if (score >= 31) return { label: 'Medium Risk',   color: '#ca8a04', bg: '#fefce8' };
+  return { label: 'Low Risk', color: '#16a34a', bg: '#f0fdf4' };
 }
 
 interface Props {
@@ -39,6 +48,8 @@ const SEV_COLORS: Record<string, { color: string; bg: string }> = {
 const VENDOR_COLORS: Record<string, string> = {
   fortinet: '#ee4d2d', cisco: '#1ba0d7', paloalto: '#fa582d',
   aruba: '#f47920', sangfor: '#005bac', generic: '#6b7280',
+  forcepoint: '#003087', checkpoint: '#E31937', juniper: '#84BD00',
+  windows: '#0078D4', sonicwall: '#FF6600',
 };
 
 function Field({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
@@ -94,6 +105,7 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
   if (!log) return null;
 
   const sevStyle  = SEV_COLORS[log.severity_label] || { color: '#9ca3af', bg: '#f9fafb' };
+  const risk      = riskBadge(log.risk_score || 0);
   const cleanIP   = log.source_ip?.replace('/32', '');
   const sdEntries = log.structured_data ? Object.entries(log.structured_data).filter(([, v]) => v !== null && v !== '') : [];
 
@@ -124,6 +136,13 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {typeof log.risk_score === 'number' && (
+              <span title={`Risk score: ${log.risk_score}/100`}
+                style={{ padding: '3px 10px', borderRadius: 16, fontSize: 11, fontWeight: 700,
+                  background: risk.bg, color: risk.color }}>
+                {risk.label} · {log.risk_score}
+              </span>
+            )}
             <span style={{ padding: '3px 10px', borderRadius: 16, fontSize: 11, fontWeight: 700,
               background: sevStyle.bg, color: sevStyle.color, textTransform: 'uppercase' }}>
               {log.severity_label}
@@ -160,6 +179,7 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
               <Field label="Source IP"    value={cleanIP}             mono />
               <Field label="Hostname"     value={log.source_host}     mono />
               <Field label="Vendor"       value={log.vendor} />
+              <Field label="Category"     value={log.category} />
               <Field label="Program"      value={log.program} />
               <Field label="Severity"     value={log.severity_label} />
               <Field label="Facility"     value={log.facility_label} />

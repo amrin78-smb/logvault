@@ -318,7 +318,7 @@ app.get('/api/stats/storage', asyncHandler(async (req, res) => {
 // ── LOG SEARCH ───────────────────────────────────────────────
 
 app.get('/api/logs', asyncHandler(async (req, res) => {
-  const { q, vendor, severity, host, ip } = req.query;
+  const { q, vendor, severity, host, ip, category } = req.query;
   const hours  = safeHours(req.query.hours, 720);
   const page   = Math.max(parseInt(req.query.page || '1'), 1);
   const limit  = safeInt(req.query.limit, 100, 500);
@@ -330,6 +330,7 @@ app.get('/api/logs', asyncHandler(async (req, res) => {
 
   if (q)        { conditions.push(`to_tsvector('english', se.message) @@ plainto_tsquery('english', $${p++})`); params.push(q); }
   if (vendor)   { conditions.push(`se.vendor = $${p++}`);                        params.push(vendor); }
+  if (category) { conditions.push(`se.category = $${p++}`);                      params.push(category); }
   if (severity) {
     const sevs = String(severity).split(',').map(Number).filter(n => !isNaN(n) && n >= 0 && n <= 7);
     if (sevs.length) { conditions.push(`se.severity = ANY($${p++}::int[])`);     params.push(sevs); }
@@ -346,7 +347,8 @@ app.get('/api/logs', asyncHandler(async (req, res) => {
     SELECT se.id, se.received_at, se.log_timestamp, se.source_ip::TEXT,
       COALESCE(kh.hostname, se.source_host) AS source_host,
       se.facility_label, se.severity, se.severity_label, se.vendor,
-      se.program, se.message, se.structured_data, se.is_parsed
+      se.program, se.message, se.structured_data, se.is_parsed,
+      se.category, se.risk_score
     FROM syslog_entries se
     LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
     WHERE ${conditions.join(' AND ')}

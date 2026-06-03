@@ -27,6 +27,8 @@ const INPUT = { padding: '8px 12px', borderRadius: 7, border: '1px solid var(--b
 const VENDOR_COLORS: Record<string, string> = {
   fortinet: '#ee4d2d', cisco: '#1ba0d7', paloalto: '#fa582d',
   aruba: '#f47920', sangfor: '#005bac', generic: '#6b7280',
+  forcepoint: '#003087', checkpoint: '#E31937', juniper: '#84BD00',
+  windows: '#0078D4', sonicwall: '#FF6600',
 };
 
 const STATUS_STYLE: Record<string, { bg: string; color: string }> = {

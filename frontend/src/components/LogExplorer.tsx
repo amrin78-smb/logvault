@@ -13,21 +13,40 @@ const SEV_COLORS: Record<string, string> = {
 const VENDOR_COLORS: Record<string, string> = {
   fortinet: '#ee4d2d', cisco: '#1ba0d7', paloalto: '#fa582d',
   aruba: '#f47920', sangfor: '#005bac', generic: '#6b7280',
+  forcepoint: '#003087', checkpoint: '#E31937', juniper: '#84BD00',
+  windows: '#0078D4', sonicwall: '#FF6600',
 };
 
 // ── Preset saved searches ─────────────────────────────────────
 const PRESETS = [
-  { label: '🔐 Failed Logins',      q: 'login failed',           vendor: '',          severity: '0,1,2,3,4' },
-  { label: '🛡️ VPN Failures',       q: 'vpn fail',               vendor: 'fortinet',  severity: '3' },
-  { label: '⚠️ SSL Alerts',         q: 'ssl-alert',              vendor: 'fortinet',  severity: '' },
-  { label: '🔌 Connection Failures', q: 'Connection Failed',      vendor: 'fortinet',  severity: '4' },
-  { label: '⚙️ Config Changes',     q: 'configured from',        vendor: '',          severity: '' },
-  { label: '🚫 IPS Threats',        q: '',                       vendor: 'fortinet',  severity: '3', extra: { structuredType: 'utm' } },
-  { label: '🔴 Critical Only',      q: '',                       vendor: '',          severity: '0,1,2' },
-  { label: '🌐 DNS Failures',       q: 'dns',                    vendor: 'fortinet',  severity: '4' },
+  { label: '🔐 Failed Logins',       category: 'authentication', severity: '3,4', q: 'fail', vendor: '' },
+  { label: '🛡️ VPN Events',          category: 'vpn',            severity: '',    q: '',     vendor: '' },
+  { label: '⚠️ SSL Alerts',          category: 'security',       severity: '',    q: 'ssl',  vendor: '' },
+  { label: '🔌 Connection Failures', category: 'firewall',       severity: '',    q: 'fail', vendor: '' },
+  { label: '⚙️ Config Changes',      category: 'configuration',  severity: '',    q: '',     vendor: '' },
+  { label: '🚫 IPS/Security',        category: 'security',       severity: '',    q: '',     vendor: '' },
+  { label: '🔴 Critical Only',       category: '',               severity: '0,1,2', q: '',   vendor: '' },
+  { label: '🌐 DNS Events',          category: 'dns',            severity: '',    q: '',     vendor: '' },
+  { label: '💻 Windows Events',      category: '',               severity: '',    q: '',     vendor: 'windows' },
+  { label: '🔥 Check Point',         category: '',               severity: '',    q: '',     vendor: 'checkpoint' },
 ];
 
-const VENDORS    = ['cisco', 'paloalto', 'fortinet', 'aruba', 'sangfor', 'generic'];
+const VENDORS = [
+  'fortinet', 'cisco', 'paloalto', 'aruba', 'sangfor',
+  'forcepoint', 'checkpoint', 'juniper', 'windows', 'sonicwall', 'generic',
+];
+
+const CATEGORIES = [
+  { label: 'Auth',      value: 'authentication', color: '#7c3aed' },
+  { label: 'VPN',       value: 'vpn',            color: '#0891b2' },
+  { label: 'Firewall',  value: 'firewall',       color: '#dc2626' },
+  { label: 'Security',  value: 'security',       color: '#ea580c' },
+  { label: 'Config',    value: 'configuration',  color: '#ca8a04' },
+  { label: 'Interface', value: 'interface',      color: '#16a34a' },
+  { label: 'DNS',       value: 'dns',            color: '#2563eb' },
+  { label: 'Web',       value: 'web',            color: '#0891b2' },
+  { label: 'System',    value: 'system',         color: '#6b7280' },
+];
 const SEVERITIES = [
   { label: 'Critical',  value: '0,1,2', color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
   { label: 'Error',     value: '3',     color: '#ea580c', bg: '#fff7ed', border: '#fed7aa' },
@@ -36,7 +55,7 @@ const SEVERITIES = [
   { label: 'Info',      value: '6',     color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
 ];
 
-interface ActiveFilter { type: 'vendor' | 'severity' | 'host' | 'q'; value: string; label: string; }
+interface ActiveFilter { type: 'vendor' | 'severity' | 'category' | 'host' | 'q'; value: string; label: string; }
 
 export default function LogExplorer({ initialFilter, onFilterUsed }: {
   initialFilter?: ExplorerFilter;
@@ -45,6 +64,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
   const [q,          setQ]         = useState('');
   const [vendor,     setVendor]    = useState('');
   const [severity,   setSev]       = useState('');
+  const [category,   setCategory]  = useState('');
   const [host,       setHost]      = useState('');
   const [hours,      setHours]     = useState('24');
   const [logs,       setLogs]      = useState<any[]>([]);
@@ -61,6 +81,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
     if (initialFilter && Object.keys(initialFilter).length > 0) {
       if (initialFilter.severity !== undefined) setSev(initialFilter.severity);
       if (initialFilter.vendor   !== undefined) setVendor(initialFilter.vendor);
+      if (initialFilter.category !== undefined) setCategory(initialFilter.category);
       if (initialFilter.host     !== undefined) setHost(initialFilter.host);
       if (initialFilter.hours    !== undefined) setHours(initialFilter.hours);
       if (onFilterUsed) onFilterUsed();
@@ -78,6 +99,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
         ...(q                        && { q }),
         ...(f.vendor   || vendor     ? { vendor:   f.vendor   || vendor   } : {}),
         ...(f.severity || severity   ? { severity: f.severity || severity } : {}),
+        ...(f.category || category   ? { category: f.category || category } : {}),
         ...(f.host     || host       ? { host:     f.host     || host     } : {}),
       });
       const r = await fetch(`/api/logs?${params}`);
@@ -88,26 +110,28 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
     setLoading(false);
   };
 
-  const search = useCallback(() => triggerSearch(), [q, vendor, severity, host, hours]);
+  const search = useCallback(() => triggerSearch(), [q, vendor, severity, category, host, hours]);
 
   const applyPreset = (preset: typeof PRESETS[0]) => {
     setQ(preset.q);
     setVendor(preset.vendor);
     setSev(preset.severity);
+    setCategory(preset.category);
     setShowPresets(false);
-    setTimeout(() => triggerSearch({ q: preset.q, vendor: preset.vendor, severity: preset.severity } as any), 50);
+    setTimeout(() => triggerSearch({ q: preset.q, vendor: preset.vendor, severity: preset.severity, category: preset.category } as any), 50);
   };
 
   const removeFilter = (type: string) => {
     if (type === 'vendor')   { setVendor('');   }
     if (type === 'severity') { setSev('');       }
+    if (type === 'category') { setCategory('');  }
     if (type === 'host')     { setHost('');      }
     if (type === 'q')        { setQ('');         }
     setTimeout(() => triggerSearch(), 50);
   };
 
   const clearAll = () => {
-    setVendor(''); setSev(''); setHost(''); setQ(''); setHostInput('');
+    setVendor(''); setSev(''); setCategory(''); setHost(''); setQ(''); setHostInput('');
     setTimeout(() => triggerSearch({ hours } as any), 50);
   };
 
@@ -119,6 +143,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
   const activeFilters: ActiveFilter[] = [
     ...(vendor   ? [{ type: 'vendor'   as const, value: vendor,   label: `vendor: ${vendor}` }]   : []),
     ...(severity ? [{ type: 'severity' as const, value: severity, label: `severity: ${SEVERITIES.find(s => s.value === severity)?.label || severity}` }] : []),
+    ...(category ? [{ type: 'category' as const, value: category, label: `category: ${CATEGORIES.find(c => c.value === category)?.label || category}` }] : []),
     ...(host     ? [{ type: 'host'     as const, value: host,     label: `host: ${host}` }]         : []),
     ...(q        ? [{ type: 'q'        as const, value: q,        label: `search: "${q}"` }]         : []),
   ];
@@ -180,7 +205,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
 
         {/* CSV export */}
         <button onClick={() => {
-          const params = new URLSearchParams({ hours, ...(q && { q }), ...(vendor && { vendor }), ...(severity && { severity }), ...(host && { host }) });
+          const params = new URLSearchParams({ hours, ...(q && { q }), ...(vendor && { vendor }), ...(severity && { severity }), ...(category && { category }), ...(host && { host }) });
           window.open(`/api/logs/export?${params}`, '_blank');
         }} title="Export to CSV"
           style={{ padding: '9px 12px', borderRadius: 7, border: '1px solid var(--border)',
@@ -239,6 +264,21 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
             </button>
           )}
         </div>
+      </div>
+
+      {/* ── Category chips row ── */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500, marginRight: 2 }}>Category:</span>
+        {CATEGORIES.map(c => (
+          <button key={c.value} onClick={() => { setCategory(category === c.value ? '' : c.value); setTimeout(() => triggerSearch(), 50); }}
+            style={{ padding: '4px 10px', borderRadius: 16,
+              border: `1px solid ${category === c.value ? c.color : 'var(--border)'}`,
+              cursor: 'pointer', fontSize: 11, fontWeight: category === c.value ? 600 : 400,
+              background: category === c.value ? `${c.color}18` : 'transparent',
+              color: category === c.value ? c.color : 'var(--text-muted)', transition: 'all 0.15s' }}>
+            {c.label}
+          </button>
+        ))}
       </div>
 
       {/* ── Active filter tags (removable) ── */}

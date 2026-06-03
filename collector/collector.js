@@ -18,6 +18,13 @@ const { parsePaloAlto } = require('../parsers/paloalto');
 const { parseFortinet } = require('../parsers/fortinet');
 const { parseAruba }    = require('../parsers/aruba');
 const { parseSangfor }  = require('../parsers/sangfor');
+const { parseForcepoint, detectForcepoint } = require('../parsers/forcepoint');
+const { parseCheckPoint, detectCheckPoint } = require('../parsers/checkpoint');
+const { parseJuniper, detectJuniper }       = require('../parsers/juniper');
+const { parseWindows, detectWindows }       = require('../parsers/windows');
+const { parseSonicWall, detectSonicWall }   = require('../parsers/sonicwall');
+const { getCategory } = require('./taxonomy');
+const { scoreLog }    = require('./riskScorer');
 const { evaluateCorrelation } = require('./correlationEngine');
 const { syncFromNetVault }    = require('./netvaultSync');
 const { enrichIP, configureDNS } = require('./dnsLookup');
@@ -90,12 +97,13 @@ async function flushBuffer() {
   let p = 1;
 
   for (const row of toFlush) {
-    values.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
+    values.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
     params.push(
       row.received_at, row.log_timestamp, row.source_ip, row.source_host,
       row.facility, row.severity, row.severity_label, row.facility_label,
       row.vendor, row.program, row.message, row.raw_message,
-      JSON.stringify(row.structured_data || {}), row.is_parsed
+      JSON.stringify(row.structured_data || {}), row.is_parsed,
+      row.category || null, row.risk_score || 0
     );
   }
 
@@ -104,7 +112,7 @@ async function flushBuffer() {
       INSERT INTO syslog_entries
         (received_at, log_timestamp, source_ip, source_host, facility, severity,
          severity_label, facility_label, vendor, program, message, raw_message,
-         structured_data, is_parsed)
+         structured_data, is_parsed, category, risk_score)
       VALUES ${values.join(',')}
     `, params);
   } catch (err) {
@@ -207,15 +215,47 @@ function shouldDrop(entry) {
 }
 
 // ── Parser chain ─────────────────────────────────────────────
-const PARSERS = [parseCisco, parsePaloAlto, parseFortinet, parseAruba, parseSangfor, parseGeneric];
+// Order matters — most specific vendors first, generic last.
+// Entries with a `detect` run it before `parse` (fast boolean guard);
+// legacy parsers self-detect by returning null when they don't match.
+const PARSERS = [
+  { parse: parseFortinet },
+  { parse: parseCisco },
+  { parse: parsePaloAlto },
+  { parse: parseAruba },
+  { parse: parseSangfor },
+  { detect: detectForcepoint, parse: parseForcepoint },
+  { detect: detectCheckPoint, parse: parseCheckPoint },
+  { detect: detectJuniper,    parse: parseJuniper },
+  { detect: detectWindows,    parse: parseWindows },
+  { detect: detectSonicWall,  parse: parseSonicWall },
+  { parse: parseGeneric },
+];
+
+// Ensure every parsed entry has the fields the DB writer expects.
+// Some parsers (e.g. Forcepoint CEF) omit transport-level fields.
+function normalizeEntry(entry, raw, sourceIp) {
+  if (!entry.source_ip)               entry.source_ip = sourceIp;
+  if (entry.source_host === undefined) entry.source_host = null;
+  if (entry.facility == null)          entry.facility = 23;
+  if (entry.facility_label == null)    entry.facility_label = 'local7';
+  if (entry.raw_message == null)       entry.raw_message = raw;
+  if (entry.log_timestamp === undefined) entry.log_timestamp = null;
+  if (!entry.structured_data)          entry.structured_data = {};
+  return entry;
+}
 
 function processMessage(rawMsg, sourceIp) {
   const raw = rawMsg.toString('utf8').trim();
   if (!raw) return;
 
   let entry = null;
-  for (const parser of PARSERS) {
-    try { entry = parser(raw, sourceIp); if (entry) break; } catch (_) {}
+  for (const p of PARSERS) {
+    try {
+      if (p.detect && !p.detect(raw)) continue;
+      entry = p.parse(raw, sourceIp);
+      if (entry) break;
+    } catch (_) {}
   }
 
   if (!entry) {
@@ -226,6 +266,13 @@ function processMessage(rawMsg, sourceIp) {
       is_parsed: false, log_timestamp: null,
     };
   }
+
+  normalizeEntry(entry, raw, sourceIp);
+
+  // ── Universal taxonomy + risk scoring ──
+  entry.structured_data.category = getCategory(entry.vendor, entry.structured_data, entry.message);
+  entry.category   = entry.structured_data.category || 'network';
+  entry.risk_score = scoreLog(entry);
 
   entry.received_at = new Date();
 
