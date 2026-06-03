@@ -459,7 +459,7 @@ app.get('/api/alerts/events/recent-unacked', asyncHandler(async (req, res) => {
 
 // CSV export
 app.get('/api/logs/export', asyncHandler(async (req, res) => {
-  const { q, vendor, severity, host, ip } = req.query;
+  const { q, vendor, severity, host, ip, category } = req.query;
   const hours = safeHours(req.query.hours, 720);
 
   const conditions = [`se.received_at > NOW() - make_interval(hours => $1)`];
@@ -468,6 +468,7 @@ app.get('/api/logs/export', asyncHandler(async (req, res) => {
 
   if (q)        { conditions.push(`to_tsvector('english', se.message) @@ plainto_tsquery('english', $${p++})`); params.push(q); }
   if (vendor)   { conditions.push(`se.vendor = $${p++}`);                   params.push(vendor); }
+  if (category) { conditions.push(`se.category = $${p++}`);                 params.push(category); }
   if (severity) {
     const sevs = String(severity).split(',').map(Number).filter(n => !isNaN(n) && n >= 0 && n <= 7);
     if (sevs.length) { conditions.push(`se.severity = ANY($${p++}::int[])`); params.push(sevs); }
@@ -480,7 +481,8 @@ app.get('/api/logs/export', asyncHandler(async (req, res) => {
 
   const { rows } = await pool.query(`
     SELECT se.received_at, COALESCE(kh.hostname, se.source_host) AS source_host,
-      se.source_ip::TEXT, se.severity_label, se.vendor, se.program, se.message
+      se.source_ip::TEXT, se.severity_label, se.vendor, se.program,
+      se.category, se.risk_score, se.message
     FROM syslog_entries se
     LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
     WHERE ${conditions.join(' AND ')}
@@ -489,10 +491,11 @@ app.get('/api/logs/export', asyncHandler(async (req, res) => {
   `, params);
 
   // Build CSV
-  const header = 'Time,Host,Source IP,Severity,Vendor,Program,Message\n';
+  const header = 'Time,Host,Source IP,Severity,Vendor,Program,Category,Risk Score,Message\n';
   const csvRows = rows.map(r => [
     r.received_at, r.source_host || '', r.source_ip || '',
     r.severity_label, r.vendor, r.program || '',
+    r.category || '', r.risk_score != null ? r.risk_score : '',
     `"${(r.message || '').replace(/"/g, '""')}"`,
   ].join(','));
 
