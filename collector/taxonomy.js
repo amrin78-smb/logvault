@@ -73,6 +73,9 @@ function byVendor(vendor, s, msg) {
       }
       if (type === 'event') {
         if (sub === 'user')     return 'authentication';
+        // Login/logout events override the generic subtype mapping below
+        if (sub === 'system' && ['login', 'logout', 'failed-login'].includes(action)) return 'authentication';
+        if (sub === 'vpn' && /login|fail/.test(action)) return 'authentication';
         if (sub === 'system')   return 'system';
         if (sub === 'router')   return 'routing';
         if (sub === 'wireless') return 'wireless';
