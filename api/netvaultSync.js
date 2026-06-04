@@ -40,7 +40,7 @@ function brandToVendor(brandName) {
 async function syncFromNetVault(lvPool) {
   const { rows: devices } = await nvPool.query(`
     SELECT d.id::TEXT AS netvault_id, d.name AS device_name, d.ip_address,
-      d.model, d.device_status, d.lifecycle_status,
+      d.model, d.device_status, d.lifecycle_status, d.site_id,
       b.name AS brand_name, s.name AS site_name, s.city AS site_city
     FROM devices d
     LEFT JOIN brands b ON b.id = d.brand_id
@@ -59,12 +59,13 @@ async function syncFromNetVault(lvPool) {
       await lvPool.query(`
         INSERT INTO known_hosts (
           ip_address, hostname, vendor, description,
-          site_name, brand, model, device_status, lifecycle_status,
+          site_name, site_id, brand, model, device_status, lifecycle_status,
           netvault_id, synced_from_nv, last_synced, last_seen
-        ) VALUES ($1::inet,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,NOW(),NOW())
+        ) VALUES ($1::inet,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,TRUE,NOW(),NOW())
         ON CONFLICT (ip_address) DO UPDATE SET
           hostname=EXCLUDED.hostname, vendor=EXCLUDED.vendor,
           description=EXCLUDED.description, site_name=EXCLUDED.site_name,
+          site_id=EXCLUDED.site_id,
           brand=EXCLUDED.brand, model=EXCLUDED.model,
           device_status=EXCLUDED.device_status,
           lifecycle_status=EXCLUDED.lifecycle_status,
@@ -72,7 +73,8 @@ async function syncFromNetVault(lvPool) {
           synced_from_nv=TRUE, last_synced=NOW()
       `, [ipAddr, device.device_name, vendor,
           `${device.brand_name || ''} ${device.model || ''}`.trim() || null,
-          siteName || null, device.brand_name || null, device.model || null,
+          siteName || null, device.site_id != null ? device.site_id : null,
+          device.brand_name || null, device.model || null,
           device.device_status || null, device.lifecycle_status || null,
           device.netvault_id]);
       synced++;

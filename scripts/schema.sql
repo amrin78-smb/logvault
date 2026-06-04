@@ -184,6 +184,8 @@ ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS lifecycle_status TEXT;
 ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS netvault_id      TEXT;
 ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS synced_from_nv   BOOLEAN DEFAULT FALSE;
 ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS last_synced      TIMESTAMPTZ;
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS site_id INTEGER;
+CREATE INDEX IF NOT EXISTS idx_known_hosts_site_id ON known_hosts (site_id);
 
 -- DNS lookup settings
 INSERT INTO app_settings (key, value) VALUES ('dns_server', '') ON CONFLICT (key) DO NOTHING;
