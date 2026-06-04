@@ -8,15 +8,11 @@ const nextConfig = {
       process.env.NEXT_PUBLIC_NOCVAULT_HUB_URL || process.env.NEXT_PUBLIC_NETVAULT_HUB_URL,
   },
 
-  // Proxy all /api/* requests (except /api/auth) to the Express API on port 3005
-  async rewrites() {
-    return [
-      {
-        source:      '/api/:path((?!auth).*)',
-        destination: 'http://localhost:3005/api/:path*',
-      },
-    ];
-  },
+  // NOTE: /api/* is no longer rewritten directly to the Express API. The
+  // authenticated proxy route at src/app/api/[...path]/route.ts forwards each
+  // request to http://localhost:3005 after attaching the user's RBAC headers
+  // (X-User-Id / X-User-Role). /api/auth/* is handled by the next-auth route.
+  // A rewrite cannot attach per-request session headers, so it was removed.
 };
 
 module.exports = nextConfig;

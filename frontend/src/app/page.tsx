@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSession }  from 'next-auth/react';
 import SeverityChart   from '@/components/SeverityChart';
 import TimelineChart   from '@/components/TimelineChart';
 import TopTalkers      from '@/components/TopTalkers';
@@ -38,6 +39,9 @@ const Icons: Record<Tab, JSX.Element> = {
 
 export default function Home() {
   const { theme } = useTheme();
+  const { data: session } = useSession();
+  const role        = ((session?.user as any)?.role as string) || 'user';
+  const isAdmin     = role === 'admin' || role === 'super_admin';
   const [tab, setTab]                       = useState<Tab>('dashboard');
   const [hours, setHours]                   = useState(24);
   const [summary, setSummary]               = useState<any[]>([]);
@@ -107,7 +111,8 @@ export default function Home() {
     { id: 'livetail',  label: 'Live Tail' }, { id: 'alerts',   label: 'Alerts' },
     { id: 'health',    label: 'Network Health' }, { id: 'security', label: 'Security' },
     { id: 'hosts',     label: 'Known Hosts' },
-    { id: 'settings',  label: 'Settings' },
+    // Settings is admin-only (super_admin / admin)
+    ...(isAdmin ? [{ id: 'settings' as Tab, label: 'Settings' }] : []),
   ];
 
   const KPI = [
@@ -121,6 +126,18 @@ export default function Home() {
     <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', fontFamily: 'Inter, system-ui, sans-serif', color: 'var(--text-primary)' }}>
       <Header />
       <AlertBanner />
+
+      {/* Site-restriction notice for regular users */}
+      {role === 'user' && (
+        <div style={{ background: '#1a2744', color: '#ffffff', padding: '8px 20px',
+          fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M8 1L2 4v5c0 3.5 2.5 6.5 6 7.4C11.5 15.5 14 12.5 14 9V4L8 1z"
+              stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round" />
+          </svg>
+          Your access is restricted to your assigned sites only
+        </div>
+      )}
 
       <div style={{ display: 'flex', minHeight: 'calc(100vh - 52px)' }}>
         {/* Sidebar */}
@@ -277,7 +294,7 @@ export default function Home() {
           {tab === 'health'    && <ErrorBoundary name="Network Health"><NetworkHealth hours={hours} /></ErrorBoundary>}
           {tab === 'security'  && <ErrorBoundary name="Security"><SecurityAnalysis hours={hours} /></ErrorBoundary>}
           {tab === 'hosts'     && <ErrorBoundary name="Known Hosts"><KnownHosts /></ErrorBoundary>}
-          {tab === 'settings'  && <ErrorBoundary name="Settings"><Settings /></ErrorBoundary>}
+          {tab === 'settings'  && isAdmin && <ErrorBoundary name="Settings"><Settings /></ErrorBoundary>}
         </div>
       </div>
     </div>

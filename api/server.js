@@ -12,6 +12,7 @@ const { Pool } = require('pg');
 const http     = require('http');
 const { WebSocketServer } = require('ws');
 const { testEmail } = require('../collector/emailer');
+const { rbacMiddleware, requireSuperAdmin, getSiteFilter } = require('./rbac');
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env.local') });
 
 // ── Crash resilience ──────────────────────────────────────────
@@ -30,6 +31,10 @@ const port = parseInt(process.env.LV_API_PORT || '3005');
 const allowedOrigin = process.env.LV_APP_URL || 'http://localhost:3004';
 app.use(cors({ origin: allowedOrigin, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
+
+// RBAC — attaches req.rbac (role + allowed site IDs) from the proxy's
+// X-User-Id / X-User-Role headers. Must run before any route handler.
+app.use(rbacMiddleware);
 
 const pool = new Pool({
   host:     process.env.DB_HOST    || 'localhost',
@@ -57,12 +62,14 @@ function safeInt(val, def = 10, max = 500) {
 
 app.get('/api/stats/summary', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
   const { rows } = await pool.query(`
     SELECT severity, severity_label, COUNT(*) AS log_count
     FROM syslog_entries
     WHERE received_at > NOW() - make_interval(hours => $1)
+    ${sf.clause}
     GROUP BY severity, severity_label ORDER BY severity
-  `, [hours]);
+  `, [hours, ...sf.params]);
   res.json({ hours, data: rows });
 }));
 
@@ -71,6 +78,7 @@ app.get('/api/stats/timeline', asyncHandler(async (req, res) => {
   const bucket = hours <= 6 ? '5 minutes' : hours <= 48 ? '1 hour' : '6 hours';
   const trunc  = hours <= 6 ? 'minute' : 'hour';
   const mod    = hours <= 6 ? 5 : hours <= 48 ? 1 : 6;
+  const sf = getSiteFilter(req.rbac, 3, 'syslog_entries');
   const { rows } = await pool.query(`
     SELECT
       date_trunc('${trunc}', received_at)
@@ -79,15 +87,17 @@ app.get('/api/stats/timeline', asyncHandler(async (req, res) => {
       COUNT(*) AS log_count
     FROM syslog_entries
     WHERE received_at > NOW() - make_interval(hours => $1)
+    ${sf.clause}
     GROUP BY bucket, severity_label
     ORDER BY bucket
-  `, [hours, mod]);
+  `, [hours, mod, ...sf.params]);
   res.json({ hours, bucket, data: rows });
 }));
 
 app.get('/api/stats/top-talkers', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const limit = safeInt(req.query.limit, 10, 50);
+  const sf = getSiteFilter(req.rbac, 3, 'se');
   const { rows } = await pool.query(`
     SELECT
       COALESCE(kh.hostname, se.source_host, se.source_ip::TEXT) AS host,
@@ -98,10 +108,11 @@ app.get('/api/stats/top-talkers', asyncHandler(async (req, res) => {
     FROM syslog_entries se
     LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
     WHERE se.received_at > NOW() - make_interval(hours => $1)
+    ${sf.clause}
     GROUP BY se.source_host, se.source_ip, kh.hostname, kh.vendor, se.vendor
     ORDER BY log_count DESC
     LIMIT $2
-  `, [hours, limit]);
+  `, [hours, limit, ...sf.params]);
   res.json({ hours, data: rows });
 }));
 
@@ -122,6 +133,7 @@ app.get('/api/stats/by-vendor', asyncHandler(async (req, res) => {
 
 app.get('/api/stats/top-security-events', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
   const { rows } = await pool.query(`
     SELECT
       CASE
@@ -139,15 +151,17 @@ app.get('/api/stats/top-security-events', asyncHandler(async (req, res) => {
     FROM syslog_entries
     WHERE received_at > NOW() - make_interval(hours => $1)
       AND severity <= 4
+    ${sf.clause}
     GROUP BY event_type
     ORDER BY count DESC
     LIMIT 7
-  `, [hours]);
+  `, [hours, ...sf.params]);
   res.json({ data: rows });
 }));
 
 app.get('/api/stats/top-failures', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
   const { rows } = await pool.query(`
     SELECT
       COALESCE(structured_data->>'dstip', 'unknown') AS dst_ip,
@@ -177,15 +191,17 @@ app.get('/api/stats/top-failures', asyncHandler(async (req, res) => {
         ))
       )
       AND structured_data->>'dstip' IS NOT NULL
+    ${sf.clause}
     GROUP BY structured_data->>'dstip', structured_data->>'service'
     ORDER BY fail_count DESC
     LIMIT 5
-  `, [hours]);
+  `, [hours, ...sf.params]);
   res.json({ data: rows });
 }));
 
 app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
   const { rows } = await pool.query(`
     SELECT
       COALESCE(structured_data->>'dstip', 'unknown') AS dst_ip,
@@ -226,10 +242,11 @@ app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
         ))
       )
       AND structured_data->>'dstip' IS NOT NULL
+    ${sf.clause}
     GROUP BY structured_data->>'dstip', structured_data->>'service', vendor
     ORDER BY deny_count DESC
     LIMIT 5
-  `, [hours]);
+  `, [hours, ...sf.params]);
   res.json({ data: rows });
 }));
 
@@ -341,6 +358,10 @@ app.get('/api/logs', asyncHandler(async (req, res) => {
   }
   if (ip)       { conditions.push(`se.source_ip::TEXT ILIKE $${p++}`);           params.push(`%${ip}%`); }
 
+  // RBAC site filter — restrict to the user's allowed sites
+  const sf = getSiteFilter(req.rbac, p, 'se');
+  if (sf.clause) { conditions.push(sf.clause.replace(/^AND\s+/i, '')); params.push(...sf.params); p = sf.nextParamIndex; }
+
   params.push(limit, offset);
 
   const { rows } = await pool.query(`
@@ -418,13 +439,16 @@ app.patch('/api/alerts/rules/:id', asyncHandler(async (req, res) => {
 }));
 
 app.get('/api/alerts/events', asyncHandler(async (req, res) => {
+  const sf = getSiteFilter(req.rbac, 1, 'ae');
   const { rows } = await pool.query(`
     SELECT ae.*, ar.name AS rule_name
     FROM alert_events ae
     LEFT JOIN alert_rules ar ON ar.id = ae.rule_id
+    WHERE TRUE
+    ${sf.clause}
     ORDER BY ae.acknowledged ASC, ae.fired_at DESC
     LIMIT 500
-  `);
+  `, sf.params);
   res.json({ data: rows });
 }));
 
@@ -478,6 +502,10 @@ app.get('/api/logs/export', asyncHandler(async (req, res) => {
     params.push(`%${host}%`, `%${host}%`, `%${host}%`); p += 2;
   }
   if (ip) { conditions.push(`se.source_ip::TEXT ILIKE $${p++}`); params.push(`%${ip}%`); }
+
+  // RBAC site filter — restrict export to the user's allowed sites
+  const sf = getSiteFilter(req.rbac, p, 'se');
+  if (sf.clause) { conditions.push(sf.clause.replace(/^AND\s+/i, '')); params.push(...sf.params); p = sf.nextParamIndex; }
 
   const { rows } = await pool.query(`
     SELECT se.received_at, COALESCE(kh.hostname, se.source_host) AS source_host,
@@ -536,7 +564,7 @@ app.put('/api/hosts', asyncHandler(async (req, res) => {
 
 // Manual trigger for NetVault sync
 const { syncFromNetVault } = require('./netvaultSync');
-app.post('/api/hosts/sync-netvault', asyncHandler(async (req, res) => {
+app.post('/api/hosts/sync-netvault', requireSuperAdmin, asyncHandler(async (req, res) => {
   try {
     const result = await syncFromNetVault(pool);
     res.json({ ok: true, synced: result?.synced || 0 });
@@ -865,7 +893,7 @@ app.get('/api/settings', asyncHandler(async (req, res) => {
   res.json({ data });
 }));
 
-app.post('/api/settings', asyncHandler(async (req, res) => {
+app.post('/api/settings', requireSuperAdmin, asyncHandler(async (req, res) => {
   const allowed = ['app_name', 'app_subtitle', 'primary_color', 'sidebar_color', 'logo_url',
     'dns_server', 'dns_lookup_enabled',
     'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'smtp_enabled'];
@@ -882,7 +910,7 @@ app.post('/api/settings', asyncHandler(async (req, res) => {
 }));
 
 // Send a test email immediately using the provided (unsaved) SMTP settings.
-app.post('/api/settings/test-email', asyncHandler(async (req, res) => {
+app.post('/api/settings/test-email', requireSuperAdmin, asyncHandler(async (req, res) => {
   const { to, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from } = req.body;
   if (!to || typeof to !== 'string') {
     return res.status(400).json({ error: 'Recipient address (to) is required' });

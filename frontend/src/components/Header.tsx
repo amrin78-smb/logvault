@@ -47,6 +47,12 @@ export default function Header() {
   const { theme, toggle } = useTheme();
   const { data: session } = useSession();
   const user = session?.user as any;
+  const role = (user?.role as string) || 'user';
+  const roleBadge = role === 'super_admin'
+    ? { label: 'Super Admin', bg: 'rgba(200,16,46,0.18)', fg: '#ef4444' }
+    : role === 'admin'
+    ? { label: 'Admin', bg: 'rgba(59,130,246,0.18)', fg: '#3b82f6' }
+    : { label: 'User', bg: 'rgba(148,163,184,0.18)', fg: '#94a3b8' };
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [collectorOnline, setCollectorOnline] = useState(false);
@@ -219,9 +225,11 @@ export default function Header() {
               <div style={{ fontSize: 12, color: '#f1f5f9', fontWeight: 600, lineHeight: 1.2 }}>
                 {user?.name || user?.email?.split('@')[0] || 'User'}
               </div>
-              <div style={{ fontSize: 10, color: '#94a3b8', textTransform: 'capitalize' }}>
-                {user?.role?.replace(/_/g, ' ') || 'user'}
-              </div>
+              <span style={{ display: 'inline-block', fontSize: 9.5, fontWeight: 700,
+                padding: '1px 7px', borderRadius: 6, background: roleBadge.bg, color: roleBadge.fg,
+                textTransform: 'uppercase', letterSpacing: '0.4px', marginTop: 2 }}>
+                {roleBadge.label}
+              </span>
             </div>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none"
               style={{ color: '#64748b', transform: dropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>

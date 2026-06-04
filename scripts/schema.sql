@@ -187,6 +187,10 @@ ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS last_synced      TIMESTAMPTZ;
 ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS site_id INTEGER;
 CREATE INDEX IF NOT EXISTS idx_known_hosts_site_id ON known_hosts (site_id);
 
+-- RBAC: site filtering uses known_hosts.site_id (int) matching
+--       NetVault user_sites.site_id. No additional LogVault tables needed —
+--       roles and user→site assignments live in the NetVault DB.
+
 -- DNS lookup settings
 INSERT INTO app_settings (key, value) VALUES ('dns_server', '') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value) VALUES ('dns_lookup_enabled', 'true') ON CONFLICT (key) DO NOTHING;

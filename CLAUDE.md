@@ -335,6 +335,94 @@ the shared SSO cookie flow intact.
 
 ---
 
+## Role-Based Access Control (RBAC)
+
+Users, roles, and site assignments are managed **in NetVault**. LogVault only
+**enforces** them — there are no RBAC tables in the LogVault DB.
+
+### Roles (`netvault.users.role`)
+
+| Role | Sees |
+|---|---|
+| `super_admin` | Everything. Only role that can modify Settings / trigger NetVault sync |
+| `admin` | Everything (all sites, all logs) — but not Settings writes |
+| `user` | Only logs from devices in their assigned sites (`netvault.user_sites`) |
+
+### How identity reaches the API — header proxy (NOT cookie decode)
+
+`next-auth` v4 with `session.strategy: 'jwt'` stores the session cookie as an
+**encrypted JWE** (A256GCM, key derived from `NEXTAUTH_SECRET`). A plain
+`jsonwebtoken.decode()` **cannot** read it — it returns `null`. So the Express
+API does **not** parse the cookie, and `cookie-parser` / `jsonwebtoken` are
+**not** added to the backend.
+
+Instead, identity flows through a server-side proxy:
+
+```
+Browser → /api/*  →  frontend/src/app/api/[...path]/route.ts
+                       (reads session via getServerSession — decrypts the JWE)
+                       attaches X-User-Id + X-User-Role headers
+                     → Express API (localhost:3005)
+                       rbacMiddleware reads those headers → req.rbac
+```
+
+- The old `/api/*` rewrite in `next.config.js` was **removed** — a rewrite
+  cannot attach per-request session headers. `/api/auth/*` is still served by
+  the more-specific next-auth route.
+- The API is internal-only (port 3005, never firewalled open), so the proxy is
+  the sole trusted caller of those headers.
+
+### `api/rbac.js`
+
+- `rbacMiddleware` — sets `req.rbac = { userId, role, isSuperAdmin, isAdmin, allowedSiteIds }`.
+  `allowedSiteIds` is `null` for admins (no filter), `[]` for a user with no
+  sites (sees nothing), or an array of site IDs. User→site lookups are cached 5 min.
+- `requireSuperAdmin` — 403s non-super-admins. Applied to `POST /api/settings`,
+  `POST /api/settings/test-email`, `POST /api/hosts/sync-netvault`.
+- Fails **open** on lookup errors (logs, then treats as admin/no-filter) so a
+  NetVault DB blip never locks everyone out.
+
+### `getSiteFilter(rbac, startParamIndex, tableAlias)` helper
+
+Returns `{ clause, params, nextParamIndex }` to append to a query:
+
+```javascript
+// Simple WHERE-append (alias 'se', or pass the table name when there is no alias)
+const sf = getSiteFilter(req.rbac, 2, 'se');
+const { rows } = await pool.query(`
+  SELECT ... FROM syslog_entries se
+  WHERE se.received_at > NOW() - make_interval(hours => $1)
+  ${sf.clause}
+`, [hours, ...sf.params]);
+
+// conditions-array style (e.g. /api/logs) — strip the leading "AND "
+const sf = getSiteFilter(req.rbac, p, 'se');
+if (sf.clause) { conditions.push(sf.clause.replace(/^AND\s+/i, '')); params.push(...sf.params); p = sf.nextParamIndex; }
+```
+
+- `clause` is `''` for admins (no filter), `AND 1=0` for a user with no sites,
+  or an `IN (SELECT ip_address FROM known_hosts WHERE site_id = ANY($n::int[]))`
+  subquery. **Never breaks an existing query** — if `req.rbac` is undefined it
+  returns an empty clause.
+- Site filtering links logs → sites via
+  `syslog_entries.source_ip → known_hosts.ip_address → known_hosts.site_id`.
+- Applied to: `/api/logs`, `/api/logs/export`, `/api/stats/summary`,
+  `/api/stats/timeline`, `/api/stats/top-talkers`, `/api/stats/top-blocked`,
+  `/api/stats/top-failures`, `/api/stats/top-security-events`,
+  `/api/alerts/events` (filtered by `ae.source_ip`).
+
+### Frontend
+
+- `page.tsx` reads `session.user.role`: hides the **Settings** tab for
+  non-admins and shows a navy "access is restricted to your assigned sites"
+  banner for `user`.
+- `Header.tsx` shows a coloured role badge (Super Admin = red, Admin = blue,
+  User = grey).
+
+> RBAC enforcement is server-side; the frontend hiding is cosmetic only.
+
+---
+
 ## NocVault Design System
 
 ```css
