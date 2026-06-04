@@ -267,12 +267,17 @@ LV_DB_NAME=logvault
 LV_DB_USER=logvault_user
 LV_DB_PASS=NVAdmin@2026
 LV_APP_URL=http://192.168.6.111:3004
+NOCVAULT_HUB_URL=http://192.168.6.111:3000
 NETVAULT_DB_HOST=localhost
 NETVAULT_DB_PORT=5432
 NETVAULT_DB_NAME=netvault
 NETVAULT_DB_USER=netvault
 NETVAULT_DB_PASS=PgAdmin@2026!
 ```
+
+> `NOCVAULT_HUB_URL` lets the API reach the NocVault hub for license enforcement
+> (`api/licenseCheck.js` → `GET {hub}/api/license`). If unset, it falls back to
+> `http://localhost:3000`, which only works when the hub is on the same server.
 
 **LogVault-App:**
 ```
@@ -371,6 +376,13 @@ Browser → /api/*  →  frontend/src/app/api/[...path]/route.ts
   the more-specific next-auth route.
 - The API is internal-only (port 3005, never firewalled open), so the proxy is
   the sole trusted caller of those headers.
+
+> **No `next.config.js` rewrite for `/api/*`.** The authenticated proxy route
+> at `frontend/src/app/api/[...path]/route.ts` is the *only* path browser API
+> calls take to Express — it reads the session server-side, forwards
+> `X-User-Id` + `X-User-Role` to `http://localhost:3005`, and relays the
+> upstream status (so e.g. a `402` license response passes through). New API
+> endpoints work automatically; do **not** re-add an `/api/*` rewrite.
 
 ### `api/rbac.js`
 
