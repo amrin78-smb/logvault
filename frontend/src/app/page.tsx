@@ -20,6 +20,7 @@ import AlertBanner     from '@/components/AlertBanner';
 import TimeRangePicker from '@/components/TimeRangePicker';
 import ErrorBoundary   from '@/components/ErrorBoundary';
 import { useTheme }    from '@/components/ThemeContext';
+import { useLicense, LicenseDisabledScreen } from '@/components/LicenseGuard';
 import { PageHeader }  from '@/components/ui';
 import { version as APP_VERSION } from '../../package.json';
 
@@ -40,6 +41,7 @@ const Icons: Record<Tab, JSX.Element> = {
 export default function Home() {
   const { theme } = useTheme();
   const { data: session } = useSession();
+  const { state: licenseState, loading: licenseLoading } = useLicense();
   const role        = ((session?.user as any)?.role as string) || 'user';
   const isAdmin     = role === 'admin' || role === 'super_admin';
   const [tab, setTab]                       = useState<Tab>('dashboard');
@@ -121,6 +123,10 @@ export default function Home() {
     { label: 'Errors',           value: errorCount.toLocaleString(), accent: errorCount > 0 ? 'var(--orange)' : 'var(--green)', filter: { severity: '3' } },
     { label: 'Warnings',         value: warnCount.toLocaleString(),  accent: warnCount  > 0 ? 'var(--yellow)' : 'var(--green)', filter: { severity: '4' } },
   ];
+
+  if (!licenseLoading && licenseState.disabled) {
+    return <LicenseDisabledScreen />;
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', fontFamily: 'Inter, system-ui, sans-serif', color: 'var(--text-primary)' }}>

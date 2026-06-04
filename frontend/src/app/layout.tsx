@@ -4,6 +4,7 @@ import { ThemeProvider }   from '@/components/ThemeContext';
 import { ToastProvider }   from '@/components/Toast';
 import AuthProvider        from '@/components/AuthProvider';
 import IdleTimeout         from '@/components/IdleTimeout';
+import { LicenseProvider, LicenseBanner } from '@/components/LicenseGuard';
 
 export const metadata: Metadata = {
   title: 'LogVault — Syslog Analyzer',
@@ -15,12 +16,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <AuthProvider>
-          <ThemeProvider>
-            <ToastProvider>
-              <IdleTimeout />
-              {children}
-            </ToastProvider>
-          </ThemeProvider>
+          <LicenseProvider>
+            <ThemeProvider>
+              <ToastProvider>
+                <LicenseBanner />
+                <IdleTimeout />
+                {children}
+              </ToastProvider>
+            </ThemeProvider>
+          </LicenseProvider>
         </AuthProvider>
       </body>
     </html>

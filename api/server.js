@@ -13,6 +13,7 @@ const http     = require('http');
 const { WebSocketServer } = require('ws');
 const { testEmail } = require('../collector/emailer');
 const { rbacMiddleware, requireSuperAdmin, getSiteFilter } = require('./rbac');
+const { getLicense, getLicenseState } = require('./licenseCheck');
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env.local') });
 
 // ── Crash resilience ──────────────────────────────────────────
@@ -57,6 +58,55 @@ function safeInt(val, def = 10, max = 500) {
   const n = parseInt(val || String(def));
   return isNaN(n) || n <= 0 ? def : Math.min(n, max);
 }
+
+// ── LICENSE ENFORCEMENT ──────────────────────────────────────
+// Pulls the license from the NocVault hub (24h server cache). Never blocks on
+// network failure — an unreachable hub means full access.
+getLicense(true).then(lic => {
+  const state = getLicenseState(lic);
+  console.log(`[License] Status: ${lic?.status || 'unreachable'}, mode: ${state.mode}`);
+});
+setInterval(() => getLicense(true), 24 * 60 * 60 * 1000);
+
+// License status endpoint — exempt from enforcement (read-only, GET).
+app.get('/api/license-status', asyncHandler(async (req, res) => {
+  const license = await getLicense();
+  const state   = getLicenseState(license);
+  res.json({ license, state });
+}));
+
+// Enforce license on business routes. Runs after rbacMiddleware, before routes.
+async function enforceLicense(req, res, next) {
+  const license = await getLicense();
+  const state   = getLicenseState(license);
+  req.licenseState = state;
+  req.license      = license;
+
+  if (!state.canWrite && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    // Alert acknowledgement must remain available during the grace period.
+    // LogVault's acknowledge routes are PATCH (not POST as in DDIVault), so the
+    // method is intentionally not constrained here.
+    const isAck = req.path.includes('acknowledge');
+    if (!isAck) {
+      return res.status(402).json({
+        error: 'License expired — write operations disabled',
+        license_status: license?.status,
+        days_remaining: license?.daysRemaining,
+      });
+    }
+  }
+
+  const exemptPaths = ['/api/health', '/api/license-status'];
+  if (state.disabled && !exemptPaths.some(p => req.path.startsWith(p))) {
+    return res.status(402).json({
+      error: 'License has expired. Please renew your NocVault license.',
+      license_status: license?.status,
+    });
+  }
+  next();
+}
+
+app.use(enforceLicense);
 
 // ── DASHBOARD STATS ──────────────────────────────────────────
 
