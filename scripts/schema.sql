@@ -53,6 +53,16 @@ CREATE INDEX IF NOT EXISTS idx_syslog_received       ON syslog_entries (received
 CREATE INDEX IF NOT EXISTS idx_syslog_category       ON syslog_entries (category, received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_syslog_risk_score     ON syslog_entries (risk_score DESC, received_at DESC);
 
+-- Composite indexes for time-ordered dashboard stat queries (received_at DESC leading
+-- column). Created CONCURRENTLY on the live server to avoid locking the large table;
+-- run these manually (CONCURRENTLY cannot run inside a transaction block).
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_syslog_received_vendor
+  ON syslog_entries (received_at DESC, vendor);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_syslog_received_severity
+  ON syslog_entries (received_at DESC, severity);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_syslog_received_category
+  ON syslog_entries (received_at DESC, category);
+
 
 
 

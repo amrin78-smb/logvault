@@ -49,6 +49,25 @@ const pool = new Pool({
 
 const asyncHandler = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
+// ── In-memory stat cache ──────────────────────────────────────
+// Dashboard stat endpoints scan ~1.9M rows on every dashboard load. Cache their
+// results for a short TTL so repeated loads don't re-run the same heavy query.
+const statCache = new Map();
+async function getCached(key, ttlMs, fn) {
+  const cached = statCache.get(key);
+  if (cached && Date.now() - cached.at < ttlMs) return cached.data;
+  const data = await fn();
+  statCache.set(key, { data, at: Date.now() });
+  return data;
+}
+
+// RBAC scope suffix for cache keys — keeps site-restricted results from leaking
+// across users. null allowedSiteIds (admins) = 'all'; otherwise the sorted site list.
+function rbacCacheKey(rbac) {
+  if (!rbac || rbac.allowedSiteIds == null) return 'all';
+  return 'sites:' + [...rbac.allowedSiteIds].sort((a, b) => a - b).join(',');
+}
+
 // ── Input validation helpers ──────────────────────────────────
 function safeHours(val, max = 720) {
   const n = Math.min(parseInt(val || '24') || 24, max);
@@ -113,14 +132,18 @@ app.use(enforceLicense);
 app.get('/api/stats/summary', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
-  const { rows } = await pool.query(`
-    SELECT severity, severity_label, COUNT(*) AS log_count
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
-    ${sf.clause}
-    GROUP BY severity, severity_label ORDER BY severity
-  `, [hours, ...sf.params]);
-  res.json({ hours, data: rows });
+  const cacheKey = `summary:${hours}:${rbacCacheKey(req.rbac)}`;
+  const data = await getCached(cacheKey, 30000, async () => {
+    const { rows } = await pool.query(`
+      SELECT severity, severity_label, COUNT(*) AS log_count
+      FROM syslog_entries
+      WHERE received_at > NOW() - make_interval(hours => $1)
+      ${sf.clause}
+      GROUP BY severity, severity_label ORDER BY severity
+    `, [hours, ...sf.params]);
+    return { hours, data: rows };
+  });
+  res.json(data);
 }));
 
 app.get('/api/stats/timeline', asyncHandler(async (req, res) => {
@@ -129,41 +152,49 @@ app.get('/api/stats/timeline', asyncHandler(async (req, res) => {
   const trunc  = hours <= 6 ? 'minute' : 'hour';
   const mod    = hours <= 6 ? 5 : hours <= 48 ? 1 : 6;
   const sf = getSiteFilter(req.rbac, 3, 'syslog_entries');
-  const { rows } = await pool.query(`
-    SELECT
-      date_trunc('${trunc}', received_at)
-        - (EXTRACT(${trunc === 'minute' ? 'MINUTE' : 'HOUR'} FROM received_at)::int % $2) * INTERVAL '1 ${trunc}' AS bucket,
-      severity_label,
-      COUNT(*) AS log_count
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
-    ${sf.clause}
-    GROUP BY bucket, severity_label
-    ORDER BY bucket
-  `, [hours, mod, ...sf.params]);
-  res.json({ hours, bucket, data: rows });
+  const cacheKey = `timeline:${hours}:${rbacCacheKey(req.rbac)}`;
+  const data = await getCached(cacheKey, 30000, async () => {
+    const { rows } = await pool.query(`
+      SELECT
+        date_trunc('${trunc}', received_at)
+          - (EXTRACT(${trunc === 'minute' ? 'MINUTE' : 'HOUR'} FROM received_at)::int % $2) * INTERVAL '1 ${trunc}' AS bucket,
+        severity_label,
+        COUNT(*) AS log_count
+      FROM syslog_entries
+      WHERE received_at > NOW() - make_interval(hours => $1)
+      ${sf.clause}
+      GROUP BY bucket, severity_label
+      ORDER BY bucket
+    `, [hours, mod, ...sf.params]);
+    return { hours, bucket, data: rows };
+  });
+  res.json(data);
 }));
 
 app.get('/api/stats/top-talkers', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const limit = safeInt(req.query.limit, 10, 50);
   const sf = getSiteFilter(req.rbac, 3, 'se');
-  const { rows } = await pool.query(`
-    SELECT
-      COALESCE(kh.hostname, se.source_host, se.source_ip::TEXT) AS host,
-      se.source_ip::TEXT AS source_ip,
-      COALESCE(kh.vendor, se.vendor) AS vendor,
-      COUNT(*) AS log_count,
-      MAX(se.received_at) AS last_seen
-    FROM syslog_entries se
-    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
-    WHERE se.received_at > NOW() - make_interval(hours => $1)
-    ${sf.clause}
-    GROUP BY se.source_host, se.source_ip, kh.hostname, kh.vendor, se.vendor
-    ORDER BY log_count DESC
-    LIMIT $2
-  `, [hours, limit, ...sf.params]);
-  res.json({ hours, data: rows });
+  const cacheKey = `top-talkers:${hours}:${limit}:${rbacCacheKey(req.rbac)}`;
+  const data = await getCached(cacheKey, 30000, async () => {
+    const { rows } = await pool.query(`
+      SELECT
+        COALESCE(kh.hostname, se.source_host, se.source_ip::TEXT) AS host,
+        se.source_ip::TEXT AS source_ip,
+        COALESCE(kh.vendor, se.vendor) AS vendor,
+        COUNT(*) AS log_count,
+        MAX(se.received_at) AS last_seen
+      FROM syslog_entries se
+      LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+      WHERE se.received_at > NOW() - make_interval(hours => $1)
+      ${sf.clause}
+      GROUP BY se.source_host, se.source_ip, kh.hostname, kh.vendor, se.vendor
+      ORDER BY log_count DESC
+      LIMIT $2
+    `, [hours, limit, ...sf.params]);
+    return { hours, data: rows };
+  });
+  res.json(data);
 }));
 
 app.get('/api/stats/by-vendor', asyncHandler(async (req, res) => {
@@ -184,120 +215,132 @@ app.get('/api/stats/by-vendor', asyncHandler(async (req, res) => {
 app.get('/api/stats/top-security-events', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
-  const { rows } = await pool.query(`
-    SELECT
-      CASE
-        WHEN message ILIKE '%ssl-alert%'     THEN 'SSL Alert'
-        WHEN message ILIKE '%ssl exit error%' THEN 'SSL Exit Error'
-        WHEN message ILIKE '%ipsec%phase 1%'  THEN 'IPSec Phase 1 Error'
-        WHEN message ILIKE '%login failed%'   THEN 'Login Failed'
-        WHEN message ILIKE '%action=deny%'    THEN 'Traffic Denied'
-        WHEN message ILIKE '%utm/ips%'        THEN 'IPS Threat'
-        WHEN message ILIKE '%negotiate%'      THEN 'VPN Negotiate'
-        WHEN structured_data->>'subtype' IS NOT NULL THEN structured_data->>'subtype'
-        ELSE 'Other'
-      END AS event_type,
-      COUNT(*) AS count
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
-      AND severity <= 4
-    ${sf.clause}
-    GROUP BY event_type
-    ORDER BY count DESC
-    LIMIT 7
-  `, [hours, ...sf.params]);
-  res.json({ data: rows });
+  const cacheKey = `top-security-events:${hours}:${rbacCacheKey(req.rbac)}`;
+  const data = await getCached(cacheKey, 30000, async () => {
+    const { rows } = await pool.query(`
+      SELECT
+        CASE
+          WHEN message ILIKE '%ssl-alert%'     THEN 'SSL Alert'
+          WHEN message ILIKE '%ssl exit error%' THEN 'SSL Exit Error'
+          WHEN message ILIKE '%ipsec%phase 1%'  THEN 'IPSec Phase 1 Error'
+          WHEN message ILIKE '%login failed%'   THEN 'Login Failed'
+          WHEN message ILIKE '%action=deny%'    THEN 'Traffic Denied'
+          WHEN message ILIKE '%utm/ips%'        THEN 'IPS Threat'
+          WHEN message ILIKE '%negotiate%'      THEN 'VPN Negotiate'
+          WHEN structured_data->>'subtype' IS NOT NULL THEN structured_data->>'subtype'
+          ELSE 'Other'
+        END AS event_type,
+        COUNT(*) AS count
+      FROM syslog_entries
+      WHERE received_at > NOW() - make_interval(hours => $1)
+        AND severity <= 4
+      ${sf.clause}
+      GROUP BY event_type
+      ORDER BY count DESC
+      LIMIT 7
+    `, [hours, ...sf.params]);
+    return { data: rows };
+  });
+  res.json(data);
 }));
 
 app.get('/api/stats/top-failures', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
-  const { rows } = await pool.query(`
-    SELECT
-      COALESCE(structured_data->>'dstip', 'unknown') AS dst_ip,
-      COALESCE(structured_data->>'service', '') AS service,
-      COUNT(*) AS fail_count
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
-      AND (
-        -- Fortinet connection failures
-        (vendor = 'fortinet' AND message ILIKE '%Connection Failed%')
-        OR
-        -- Palo Alto session end with no bytes
-        (vendor = 'paloalto' AND message ILIKE '%session_end%' AND message ILIKE '%bytes%0%')
-        OR
-        -- Cisco TCP unreachable / timeout
-        (vendor = 'cisco' AND (
-          message ILIKE '%unreachable%'
-          OR message ILIKE '%timed out%'
-        ))
-        OR
-        -- Generic connection failure indicators
-        (vendor NOT IN ('fortinet','paloalto','cisco') AND (
-          message ILIKE '%connection failed%'
-          OR message ILIKE '%connection refused%'
-          OR message ILIKE '%host unreachable%'
-          OR message ILIKE '%timed out%'
-        ))
-      )
-      AND structured_data->>'dstip' IS NOT NULL
-    ${sf.clause}
-    GROUP BY structured_data->>'dstip', structured_data->>'service'
-    ORDER BY fail_count DESC
-    LIMIT 5
-  `, [hours, ...sf.params]);
-  res.json({ data: rows });
+  const cacheKey = `top-failures:${hours}:${rbacCacheKey(req.rbac)}`;
+  const data = await getCached(cacheKey, 30000, async () => {
+    const { rows } = await pool.query(`
+      SELECT
+        COALESCE(structured_data->>'dstip', 'unknown') AS dst_ip,
+        COALESCE(structured_data->>'service', '') AS service,
+        COUNT(*) AS fail_count
+      FROM syslog_entries
+      WHERE received_at > NOW() - make_interval(hours => $1)
+        AND (
+          -- Fortinet connection failures
+          (vendor = 'fortinet' AND message ILIKE '%Connection Failed%')
+          OR
+          -- Palo Alto session end with no bytes
+          (vendor = 'paloalto' AND message ILIKE '%session_end%' AND message ILIKE '%bytes%0%')
+          OR
+          -- Cisco TCP unreachable / timeout
+          (vendor = 'cisco' AND (
+            message ILIKE '%unreachable%'
+            OR message ILIKE '%timed out%'
+          ))
+          OR
+          -- Generic connection failure indicators
+          (vendor NOT IN ('fortinet','paloalto','cisco') AND (
+            message ILIKE '%connection failed%'
+            OR message ILIKE '%connection refused%'
+            OR message ILIKE '%host unreachable%'
+            OR message ILIKE '%timed out%'
+          ))
+        )
+        AND structured_data->>'dstip' IS NOT NULL
+      ${sf.clause}
+      GROUP BY structured_data->>'dstip', structured_data->>'service'
+      ORDER BY fail_count DESC
+      LIMIT 5
+    `, [hours, ...sf.params]);
+    return { data: rows };
+  });
+  res.json(data);
 }));
 
 app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
-  const { rows } = await pool.query(`
-    SELECT
-      COALESCE(structured_data->>'dstip', 'unknown') AS dst_ip,
-      COALESCE(structured_data->>'service', '') AS service,
-      vendor,
-      COUNT(*) AS deny_count
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
-      AND (
-        -- Fortinet: policy deny or UTM block
-        (vendor = 'fortinet' AND (
-          structured_data->>'action' = 'deny'
-          OR structured_data->>'action' = 'blocked'
-          OR message ILIKE '%action=deny%'
-          OR message ILIKE '%action=blocked%'
-        ))
-        OR
-        -- Palo Alto: deny or drop in traffic logs
-        (vendor = 'paloalto' AND (
-          structured_data->>'action' = 'deny'
-          OR structured_data->>'action' = 'drop'
-          OR message ILIKE '%action=deny%'
-          OR message ILIKE '%action=drop%'
-        ))
-        OR
-        -- Cisco: ACL deny messages
-        (vendor = 'cisco' AND (
-          message ILIKE '%denied%'
-          OR message ILIKE '%ACL%deny%'
-        ))
-        OR
-        -- Generic: any vendor with explicit deny/block action
-        (vendor NOT IN ('fortinet','paloalto','cisco') AND (
-          structured_data->>'action' IN ('deny','block','drop','blocked')
-          OR message ILIKE '%action=deny%'
-          OR message ILIKE '%action=block%'
-          OR message ILIKE '%denied%'
-        ))
-      )
-      AND structured_data->>'dstip' IS NOT NULL
-    ${sf.clause}
-    GROUP BY structured_data->>'dstip', structured_data->>'service', vendor
-    ORDER BY deny_count DESC
-    LIMIT 5
-  `, [hours, ...sf.params]);
-  res.json({ data: rows });
+  const cacheKey = `top-blocked:${hours}:${rbacCacheKey(req.rbac)}`;
+  const data = await getCached(cacheKey, 30000, async () => {
+    const { rows } = await pool.query(`
+      SELECT
+        COALESCE(structured_data->>'dstip', 'unknown') AS dst_ip,
+        COALESCE(structured_data->>'service', '') AS service,
+        vendor,
+        COUNT(*) AS deny_count
+      FROM syslog_entries
+      WHERE received_at > NOW() - make_interval(hours => $1)
+        AND (
+          -- Fortinet: policy deny or UTM block
+          (vendor = 'fortinet' AND (
+            structured_data->>'action' = 'deny'
+            OR structured_data->>'action' = 'blocked'
+            OR message ILIKE '%action=deny%'
+            OR message ILIKE '%action=blocked%'
+          ))
+          OR
+          -- Palo Alto: deny or drop in traffic logs
+          (vendor = 'paloalto' AND (
+            structured_data->>'action' = 'deny'
+            OR structured_data->>'action' = 'drop'
+            OR message ILIKE '%action=deny%'
+            OR message ILIKE '%action=drop%'
+          ))
+          OR
+          -- Cisco: ACL deny messages
+          (vendor = 'cisco' AND (
+            message ILIKE '%denied%'
+            OR message ILIKE '%ACL%deny%'
+          ))
+          OR
+          -- Generic: any vendor with explicit deny/block action
+          (vendor NOT IN ('fortinet','paloalto','cisco') AND (
+            structured_data->>'action' IN ('deny','block','drop','blocked')
+            OR message ILIKE '%action=deny%'
+            OR message ILIKE '%action=block%'
+            OR message ILIKE '%denied%'
+          ))
+        )
+        AND structured_data->>'dstip' IS NOT NULL
+      ${sf.clause}
+      GROUP BY structured_data->>'dstip', structured_data->>'service', vendor
+      ORDER BY deny_count DESC
+      LIMIT 5
+    `, [hours, ...sf.params]);
+    return { data: rows };
+  });
+  res.json(data);
 }));
 
 app.get('/api/stats/vpn-summary', asyncHandler(async (req, res) => {
