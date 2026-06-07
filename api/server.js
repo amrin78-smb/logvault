@@ -948,6 +948,7 @@ app.get('/api/security/wireless-auth', asyncHandler(async (req, res) => {
 
 // ── DISK SPACE ───────────────────────────────────────────────
 const { execSync } = require('child_process');
+const path = require('path');
 
 app.get('/api/stats/disk', asyncHandler(async (req, res) => {
   try {
@@ -975,6 +976,67 @@ app.get('/api/stats/disk', asyncHandler(async (req, res) => {
     console.error('[Disk] PowerShell error:', err.message);
     // Fallback — return null so frontend can handle gracefully
     res.json({ drive: 'C:', used_gb: null, free_gb: null, total_gb: null, used_pct: null, error: 'Unable to read disk info' });
+  }
+}));
+
+// ── SYSTEM UPDATES (Check for Updates) ───────────────────────
+// Compares the local checkout against origin/main via git, and launches the
+// updater through a one-time Windows Scheduled Task running as SYSTEM (fully
+// detached from this service's process tree, so it survives the service stop).
+// Super-admin only. No RBAC site filtering applies to these endpoints.
+const appRoot = path.join(__dirname, '..');
+
+app.get('/api/system/update-status', requireSuperAdmin, asyncHandler(async (req, res) => {
+  const git = (cmd) => execSync(cmd, { cwd: appRoot, encoding: 'utf8', timeout: 30000 }).trim();
+  try {
+    git('git fetch origin main');
+    const current = git('git rev-parse --short HEAD');
+    const latest  = git('git rev-parse --short origin/main');
+    const behind  = parseInt(git('git rev-list HEAD..origin/main --count'), 10) || 0;
+    const log     = git('git log HEAD..origin/main --oneline');
+    const changes = log ? log.split('\n').map(l => l.trim()).filter(Boolean) : [];
+    res.json({
+      current_version: current,
+      latest_version:  latest,
+      commits_behind:  behind,
+      up_to_date:      behind === 0,
+      changes,
+    });
+  } catch (err) {
+    console.error('[update-status] git check failed:', err.message);
+    res.json({ error: 'Could not check for updates', up_to_date: true });
+  }
+}));
+
+app.post('/api/system/update', requireSuperAdmin, asyncHandler(async (req, res) => {
+  const serverIp = process.env.SERVER_IP || '';
+  if (!serverIp) {
+    return res.status(400).json({ error: 'SERVER_IP not configured in .env.local' });
+  }
+
+  const scriptPath = path.join(appRoot, 'installer', 'Update-LogVault.ps1').replace(/\//g, '\\');
+  try {
+    // Remove any leftover task from a previous run (ignore "not found").
+    try { execSync('schtasks /delete /tn "LogVaultUpdate" /f', { stdio: 'ignore' }); } catch (_e) { /* none */ }
+
+    // Create a one-time task under the SYSTEM account (full permissions, detached).
+    execSync(
+      `schtasks /create /tn "LogVaultUpdate" ` +
+      `/tr "powershell.exe -NonInteractive -ExecutionPolicy Bypass ` +
+      `-File \\"${scriptPath}\\" -InstallDir \\"C:\\\\Apps\\\\logvault\\" ` +
+      `-ServerIp \\"${serverIp}\\"" ` +
+      `/sc once /st 00:00 /f /ru SYSTEM`,
+      { stdio: 'pipe' }
+    );
+
+    // Run it immediately.
+    execSync('schtasks /run /tn "LogVaultUpdate"', { stdio: 'pipe' });
+
+    console.log('[Update] Task scheduled under SYSTEM, ServerIp:', serverIp);
+    res.json({ started: true });
+  } catch (err) {
+    console.error('[Update] schtasks error:', err.message);
+    res.status(500).json({ error: 'Failed to schedule update: ' + err.message });
   }
 }));
 

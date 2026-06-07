@@ -6,7 +6,8 @@
 # ============================================================
 
 param(
-  [string]$InstallDir = "C:\Apps\logvault"
+  [string]$InstallDir = "C:\Apps\logvault",
+  [string]$ServerIp   = ""
 )
 
 $AppDir      = $InstallDir
@@ -34,6 +35,10 @@ if (-not $isAdmin) {
     Write-Err "This script must be run as Administrator"
     exit 1
 }
+
+# Brief delay so the API can return its response before services are stopped
+Write-Host "=== Update starting in 5 seconds ===" -ForegroundColor Cyan
+Start-Sleep -Seconds 5
 
 # Ensure log directory exists
 if (-not (Test-Path $LogDir)) {
@@ -133,6 +138,13 @@ if ($null -ne $envFrontend) {
 } elseif ($null -ne $envRoot) {
     Set-Content -Path $frontendEnvPath -Value $envRoot -NoNewline
     Write-OK "Synced root .env.local to frontend"
+}
+
+# Persist SERVER_IP (passed by the in-app updater) if not already present
+if ($ServerIp -and (Test-Path $rootEnvPath) -and -not (Get-Content $rootEnvPath -Raw).Contains('SERVER_IP=')) {
+    Add-Content -Path $rootEnvPath "`nSERVER_IP=$ServerIp"
+    Add-Content -Path $frontendEnvPath "`nSERVER_IP=$ServerIp"
+    Write-OK "Wrote SERVER_IP=$ServerIp to .env.local"
 }
 
 # Step 5: Install root dependencies

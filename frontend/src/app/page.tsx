@@ -38,6 +38,36 @@ const Icons: Record<Tab, JSX.Element> = {
   settings:  (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.3" fill="none"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
 };
 
+// Dismissible success banner shown after the in-app updater redirects here with
+// ?updated=true. Reads the query param on mount (no useSearchParams → no Suspense
+// requirement) and strips it so a refresh won't re-show it. Auto-dismisses after
+// 5 seconds. Defined at module level — never inside another component.
+function UpdatedNotice() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('updated') === 'true') {
+      setShow(true);
+      window.history.replaceState({}, '', window.location.pathname);
+      const t = setTimeout(() => setShow(false), 5000);
+      return () => clearTimeout(t);
+    }
+  }, []);
+  if (!show) return null;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px',
+      background: '#16a34a', color: '#ffffff', fontSize: 13, fontWeight: 600 }}>
+      <span aria-hidden>✓</span>
+      <span style={{ flex: 1 }}>LogVault updated successfully</span>
+      <button onClick={() => setShow(false)} aria-label="Dismiss"
+        style={{ background: 'transparent', border: 'none', color: '#ffffff', fontSize: 16,
+          lineHeight: 1, cursor: 'pointer', padding: 0 }}>
+        ×
+      </button>
+    </div>
+  );
+}
+
 export default function Home() {
   const { theme } = useTheme();
   const { data: session } = useSession();
@@ -132,6 +162,7 @@ export default function Home() {
     <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', fontFamily: 'Inter, system-ui, sans-serif', color: 'var(--text-primary)' }}>
       <Header />
       <AlertBanner />
+      <UpdatedNotice />
 
       {/* Site-restriction notice for regular users */}
       {role === 'user' && (
