@@ -100,6 +100,11 @@ if (Test-Path $frontendEnvPath) {
     Write-Warn "No .env.local at $frontendEnvPath"
 }
 
+# Ensure git safe.directory is set for SYSTEM account
+try {
+    $null = git config --global --add safe.directory C:/Apps/logvault 2>&1
+} catch {}
+
 # Step 3: Pull latest from GitHub
 Write-Step "Pulling latest code from GitHub"
 

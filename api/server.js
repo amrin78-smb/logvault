@@ -989,6 +989,11 @@ const appRoot = path.join(__dirname, '..');
 app.get('/api/system/update-status', requireSuperAdmin, asyncHandler(async (req, res) => {
   const git = (cmd) => execSync(cmd, { cwd: appRoot, encoding: 'utf8', timeout: 30000 }).trim();
   try {
+    // Self-heal: git refuses to operate when the repo owner differs from the
+    // calling account (clone user vs. SYSTEM). Mark the repo as safe first.
+    try {
+      execSync('git config --global --add safe.directory C:/Apps/logvault', { cwd: appRoot, stdio: 'ignore' });
+    } catch {}
     git('git fetch origin main');
     const current = git('git rev-parse --short HEAD');
     const latest  = git('git rev-parse --short origin/main');
