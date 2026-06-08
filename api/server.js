@@ -1021,17 +1021,22 @@ app.get('/api/stats/disk', asyncHandler(async (req, res) => {
 // Super-admin only. No RBAC site filtering applies to these endpoints.
 const appRoot = path.join(__dirname, '..');
 
-// ── Semver-based update check (package.json version + CHANGELOG.md) ──────────
-// Mirrors the NocVault suite convention: the running version is compared to the
-// version published on the GitHub main branch. Never blocks on network failure.
+// ── Git-commit-based update check (commit hash + package.json + CHANGELOG.md) ─
+// Update detection compares the local git commit hash against the latest commit
+// on GitHub's main branch — ANY new commit counts as an update, even when the
+// package.json version is unchanged (fixes updates being missed when code is
+// pushed without bumping the version). The version + changelog are display-only.
+// Never blocks on network failure.
 
-// Compare two "MAJOR.MINOR.PATCH" strings — true when remote is newer than local.
-function isNewer(remote, local) {
-  const [rM, rm, rp] = String(remote).split('.').map(Number);
-  const [lM, lm, lp] = String(local).split('.').map(Number);
-  if (rM !== lM) return rM > lM;
-  if (rm !== lm) return rm > lm;
-  return rp > lp;
+// Local short git commit hash for the deployed checkout, or null if git is
+// unavailable (e.g. a non-git deploy). Update detection degrades gracefully.
+function localCommitHash() {
+  try {
+    return execSync('git rev-parse HEAD', { cwd: appRoot })
+      .toString().trim().slice(0, 7);
+  } catch {
+    return null;
+  }
 }
 
 // Pull the latest version's section out of CHANGELOG.md — everything from the
@@ -1057,10 +1062,22 @@ let updateAvailable = null;
 
 async function checkForUpdates() {
   try {
-    const res = await fetch(`${GH_RAW}/package.json`, { cache: 'no-store' });
-    const remote = await res.json();
-    updateAvailable = isNewer(remote.version, version)
-      ? { current: version, latest: remote.version }
+    const localHash = localCommitHash();
+    const [commitRes, pkgRes] = await Promise.all([
+      fetch('https://api.github.com/repos/amrin78-smb/logvault/commits/main', {
+        headers: { 'Accept': 'application/vnd.github.v3+json' },
+        cache: 'no-store',
+      }),
+      fetch(`${GH_RAW}/package.json?cb=${Date.now()}`, { cache: 'no-store' }),
+    ]);
+    const commit = await commitRes.json();
+    const remoteHash = commit && commit.sha ? String(commit.sha).slice(0, 7) : null;
+    const remotePkg = await pkgRes.json();
+
+    // Any differing commit = update available. If either hash is missing,
+    // keep the last known state so a blip never shows a false banner.
+    updateAvailable = (localHash && remoteHash && remoteHash !== localHash)
+      ? { current: version, latest: remotePkg.version }
       : null;
   } catch {
     // never block on network failure — keep the last known state
@@ -1076,18 +1093,29 @@ app.get('/api/system/update-available', (_req, res) => {
   }
 });
 
+// Compares the local git commit hash against the latest commit on GitHub's main
+// branch. ANY differing commit counts as an update available — package.json
+// version is for display only. Never 500s the Settings page — a fetch failure
+// degrades to "up to date" with an error string.
 app.get('/api/system/update-status', requireSuperAdmin, asyncHandler(async (req, res) => {
-  // Semver check (package.json + CHANGELOG.md off GitHub) — best-effort, never
-  // throws. This drives the version display and changelog in the Settings UI.
-  let semver = { current_version: version };
+  const localVersion = version;
+  const localHash = localCommitHash();
   try {
-    const [pkgRes, clRes] = await Promise.all([
-      fetch(`${GH_RAW}/package.json`, { cache: 'no-store' }),
-      fetch(`${GH_RAW}/CHANGELOG.md`, { cache: 'no-store' }),
+    // Cache-bust so GitHub's raw CDN can't return a stale copy — the Settings
+    // "Re-check" button must reflect a freshly pushed commit immediately.
+    const bust = Date.now();
+    const [commitRes, pkgRes, clRes] = await Promise.all([
+      fetch('https://api.github.com/repos/amrin78-smb/logvault/commits/main', {
+        headers: { 'Accept': 'application/vnd.github.v3+json' },
+        cache: 'no-store',
+      }),
+      fetch(`${GH_RAW}/package.json?cb=${bust}`, { cache: 'no-store' }),
+      fetch(`${GH_RAW}/CHANGELOG.md?cb=${bust}`, { cache: 'no-store' }),
     ]);
+    const commit = await commitRes.json();
+    const remoteHash = commit && commit.sha ? String(commit.sha).slice(0, 7) : null;
     const remotePkg = await pkgRes.json();
-    const remote    = remotePkg.version;
-    const available = isNewer(remote, version);
+    const remoteVersion = remotePkg.version;
 
     let changelog = '';
     let release_date = null;
@@ -1097,47 +1125,25 @@ app.get('/api/system/update-status', requireSuperAdmin, asyncHandler(async (req,
       release_date = parsed.release_date;
     } catch { /* changelog is best-effort */ }
 
-    semver = {
-      current_version:  version,
-      latest_version:   remote,
+    // Any differing commit = update available. If either hash is missing
+    // (e.g. git unavailable or API error), treat as up to date to avoid
+    // false alarms.
+    const available = !!remoteHash && !!localHash && remoteHash !== localHash;
+    // Keep the cached banner state in sync with this on-demand check.
+    updateAvailable = available ? { current: localVersion, latest: remoteVersion } : null;
+    res.json({
+      current_version:  localVersion,
+      latest_version:   remoteVersion,
+      current_commit:   localHash,
+      latest_commit:    remoteHash,
       up_to_date:       !available,
       update_available: available,
       changelog,
       release_date,
-    };
-    // Keep the cached banner state in sync with this on-demand check.
-    updateAvailable = available ? { current: version, latest: remote } : null;
-  } catch (err) {
-    console.error('[update-status] version check failed:', err.message);
-  }
-
-  // Git commit-based check (kept alongside the semver check). Reports how many
-  // commits the local checkout is behind origin/main + the commit subjects.
-  const git = (cmd) => execSync(cmd, { cwd: appRoot, encoding: 'utf8', timeout: 30000 }).trim();
-  try {
-    // Self-heal: git refuses to operate when the repo owner differs from the
-    // calling account (clone user vs. SYSTEM). Mark the repo as safe first.
-    try {
-      execSync('git config --global --add safe.directory C:/Apps/logvault', { cwd: appRoot, stdio: 'ignore' });
-    } catch {}
-    git('git fetch origin main');
-    const behind  = parseInt(git('git rev-list HEAD..origin/main --count'), 10) || 0;
-    const log     = git('git log HEAD..origin/main --oneline');
-    const changes = log ? log.split('\n').map(l => l.trim()).filter(Boolean) : [];
-    res.json({
-      ...semver,
-      // up_to_date reflects the semver check when available; otherwise fall back
-      // to the git commit count so the UI still works before a version bump.
-      up_to_date:     semver.up_to_date != null ? semver.up_to_date : behind === 0,
-      git_current:    git('git rev-parse --short HEAD'),
-      git_latest:     git('git rev-parse --short origin/main'),
-      commits_behind: behind,
-      changes,
     });
   } catch (err) {
-    console.error('[update-status] git check failed:', err.message);
-    // Git failed, but the semver check may have succeeded — return what we have.
-    res.json({ ...semver, up_to_date: semver.up_to_date != null ? semver.up_to_date : true });
+    console.error('[update-status] version check failed:', err.message);
+    res.json({ current_version: localVersion, up_to_date: true, error: 'Could not check for updates' });
   }
 }));
 

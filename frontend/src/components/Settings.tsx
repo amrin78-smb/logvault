@@ -28,22 +28,16 @@ const INPUT = { width: '100%', padding: '9px 12px', borderRadius: 7, border: '1p
 interface UpdateStatus {
   current_version?:  string;
   latest_version?:   string;
-  commits_behind?:   number;
+  current_commit?:   string;
+  latest_commit?:    string;
   up_to_date?:       boolean;
   update_available?: boolean;
   changelog?:        string;
   release_date?:     string;
-  changes?:          string[];
   error?:            string;
 }
 
 const UPDATE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
-
-// Strip the leading short-hash from a "abc1234 subject" change line.
-function changeSubject(line: string): string {
-  const m = line.match(/^([0-9a-f]{7,40})\s+(.*)$/i);
-  return m ? m[2] : line;
-}
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
@@ -316,11 +310,9 @@ export default function Settings() {
 
   const TABS = [{ id: 'branding', label: 'Branding' }, { id: 'email', label: 'Email Alerts' }, { id: 'updates', label: 'Updates' }, { id: 'about', label: 'About' }];
 
-  const commitsBehind = updateStatus?.commits_behind ?? 0;
   const hasUpdateError = !!updateStatus?.error;
   const upToDate       = !hasUpdateError && !!updateStatus?.up_to_date;
-  const updatesAvailable = !hasUpdateError && !upToDate &&
-    (!!updateStatus?.update_available || commitsBehind > 0);
+  const updatesAvailable = !hasUpdateError && !!updateStatus?.update_available;
 
   return (
     <div style={{ maxWidth: 800 }}>
@@ -629,16 +621,19 @@ export default function Settings() {
           ) : updatesAvailable ? (
             <div>
               <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
-                🔄 Update available
-                {updateStatus?.latest_version && (
-                  <>: <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>v{updateStatus?.current_version}</code>
-                  {' → '}
-                  <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>v{updateStatus?.latest_version}</code></>
-                )}
+                {updateStatus?.current_version === updateStatus?.latest_version
+                  ? <>🔄 Patches available since <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>v{updateStatus?.current_version}</code></>
+                  : <>🔄 Update available: <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>v{updateStatus?.current_version}</code>
+                    {' → '}
+                    <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>v{updateStatus?.latest_version}</code></>}
               </div>
-              {commitsBehind > 0 && (
+              {(updateStatus?.current_commit || updateStatus?.latest_commit) && (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
-                  {commitsBehind} commit{commitsBehind === 1 ? '' : 's'} behind origin/main
+                  Current: v{updateStatus?.current_version}
+                  {updateStatus?.current_commit && <> (<code style={{ fontFamily: 'JetBrains Mono, monospace' }}>{updateStatus.current_commit}</code>)</>}
+                  {'  →  '}
+                  Latest: v{updateStatus?.latest_version}
+                  {updateStatus?.latest_commit && <> (<code style={{ fontFamily: 'JetBrains Mono, monospace' }}>{updateStatus.latest_commit}</code>)</>}
                 </div>
               )}
 
@@ -657,17 +652,6 @@ export default function Settings() {
                       Released: {fmtReleaseDate(updateStatus.release_date)}
                     </div>
                   )}
-                </div>
-              )}
-
-              {updateStatus?.changes && updateStatus.changes.length > 0 && (
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Recent commits</div>
-                  <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12.5, color: 'var(--text-primary)' }}>
-                    {updateStatus.changes.map((c, i) => (
-                      <li key={i} style={{ marginBottom: 3 }}>{changeSubject(c)}</li>
-                    ))}
-                  </ul>
                 </div>
               )}
 
