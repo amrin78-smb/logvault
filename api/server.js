@@ -773,24 +773,32 @@ app.get('/api/health/routing', asyncHandler(async (req, res) => {
 }));
 
 app.get('/api/health/device-status', asyncHandler(async (req, res) => {
-  const { rows } = await pool.query(`
-    SELECT
-      COALESCE(kh.hostname, se.source_host, se.source_ip::TEXT) AS host,
-      se.source_ip::TEXT,
-      kh.vendor AS known_vendor, se.vendor, kh.description,
-      MAX(se.received_at) AS last_seen,
-      COUNT(*) FILTER (WHERE se.received_at > NOW() - make_interval(hours => 1))   AS logs_1h,
-      COUNT(*) FILTER (WHERE se.received_at > NOW() - make_interval(hours => 24))  AS logs_24h,
-      COUNT(*) FILTER (WHERE se.severity <= 2 AND se.received_at > NOW() - make_interval(hours => 24)) AS critical_24h,
-      COUNT(*) FILTER (WHERE se.severity = 3  AND se.received_at > NOW() - make_interval(hours => 24)) AS error_24h,
-      EXTRACT(EPOCH FROM (NOW() - MAX(se.received_at)))/60 AS minutes_since_last_log
-    FROM syslog_entries se
-    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
-    WHERE se.received_at > NOW() - make_interval(days => 7)
-    GROUP BY se.source_host, se.source_ip, kh.hostname, kh.vendor, kh.description, se.vendor
-    ORDER BY last_seen DESC
-  `);
-  res.json({ data: rows });
+  // Heavy 7-day aggregation over the full syslog table — cache for 30s so
+  // dashboard refreshes don't re-run it on every load. Fixed 7-day window,
+  // so the only cache-key variation is the RBAC scope.
+  const hours = 168; // 7 days — fixed window for this endpoint
+  const cacheKey = `device-health:${hours}:${rbacCacheKey(req.rbac)}`;
+  const data = await getCached(cacheKey, 30000, async () => {
+    const { rows } = await pool.query(`
+      SELECT
+        COALESCE(kh.hostname, se.source_host, se.source_ip::TEXT) AS host,
+        se.source_ip::TEXT,
+        kh.vendor AS known_vendor, se.vendor, kh.description,
+        MAX(se.received_at) AS last_seen,
+        COUNT(*) FILTER (WHERE se.received_at > NOW() - make_interval(hours => 1))   AS logs_1h,
+        COUNT(*) FILTER (WHERE se.received_at > NOW() - make_interval(hours => 24))  AS logs_24h,
+        COUNT(*) FILTER (WHERE se.severity <= 2 AND se.received_at > NOW() - make_interval(hours => 24)) AS critical_24h,
+        COUNT(*) FILTER (WHERE se.severity = 3  AND se.received_at > NOW() - make_interval(hours => 24)) AS error_24h,
+        EXTRACT(EPOCH FROM (NOW() - MAX(se.received_at)))/60 AS minutes_since_last_log
+      FROM syslog_entries se
+      LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+      WHERE se.received_at > NOW() - make_interval(days => 7)
+      GROUP BY se.source_host, se.source_ip, kh.hostname, kh.vendor, kh.description, se.vendor
+      ORDER BY last_seen DESC
+    `);
+    return { data: rows };
+  });
+  res.json(data);
 }));
 
 app.get('/api/health/summary', asyncHandler(async (req, res) => {

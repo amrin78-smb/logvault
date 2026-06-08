@@ -63,6 +63,29 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_syslog_received_severity
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_syslog_received_category
   ON syslog_entries (received_at DESC, category);
 
+-- Slow-query fixes (perf EXPLAIN audit). All CONCURRENTLY — run one at a time
+-- on the live server, never inside a transaction block.
+
+-- PROBLEM 1: /api/health/device-status (7-day aggregation) was scanning ~753K
+-- rows via idx_syslog_source_ip when the real filter is received_at. Covering
+-- index with received_at DESC as the leading column lets the aggregation seek
+-- the 7-day window and read source_ip / source_host / vendor index-only.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_syslog_received_source
+  ON syslog_entries (received_at DESC, source_ip, source_host, vendor);
+
+-- PROBLEM 2: message ILIKE '%configured from%' (and other leading-wildcard
+-- ILIKE/LIKE on message) cannot use a btree index. A GIN trigram index makes
+-- substring ILIKE/LIKE on message fast.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_syslog_message_trgm
+  ON syslog_entries USING GIN (message gin_trgm_ops);
+
+-- PROBLEM 3: structured_data->>'subcategory' (MAC flap, config-change, STP, etc.)
+-- had no index. Partial expression index over the non-null subcategory values.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_syslog_subcategory
+  ON syslog_entries ((structured_data->>'subcategory'))
+  WHERE structured_data->>'subcategory' IS NOT NULL;
+
 
 
 
