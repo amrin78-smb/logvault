@@ -671,114 +671,133 @@ app.post('/api/hosts/sync-netvault', requireSuperAdmin, asyncHandler(async (req,
 
 app.get('/api/health/interfaces', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const { rows } = await pool.query(`
-    SELECT received_at, source_host, source_ip::TEXT, message,
-      structured_data->>'interface'   AS interface,
-      structured_data->>'link_state'  AS link_state,
-      structured_data->>'subcategory' AS subcategory
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
-      AND vendor = 'cisco'
-      AND structured_data->>'category' = 'interface'
-    ORDER BY received_at DESC LIMIT 200
-  `, [hours]);
-  res.json({ data: rows });
+  const data = await getCached(`health-interfaces:${hours}:${rbacCacheKey(req.rbac)}`, 30000, async () => {
+    const { rows } = await pool.query(`
+      SELECT received_at, source_host, source_ip::TEXT, message,
+        structured_data->>'interface'   AS interface,
+        structured_data->>'link_state'  AS link_state,
+        structured_data->>'subcategory' AS subcategory
+      FROM syslog_entries
+      WHERE received_at > NOW() - make_interval(hours => $1)
+        AND vendor = 'cisco'
+        AND structured_data->>'category' = 'interface'
+      ORDER BY received_at DESC LIMIT 200
+    `, [hours]);
+    return { data: rows };
+  });
+  res.json(data);
 }));
 
 app.get('/api/health/flaps', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const { rows } = await pool.query(`
-    SELECT
-      COALESCE(source_host, source_ip::TEXT) AS host,
-      structured_data->>'interface' AS interface,
-      COUNT(*) AS event_count,
-      COUNT(*) FILTER (WHERE structured_data->>'link_state' = 'down') AS down_count,
-      COUNT(*) FILTER (WHERE structured_data->>'link_state' = 'up')   AS up_count,
-      MIN(received_at) AS first_seen, MAX(received_at) AS last_seen
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
-      AND vendor = 'cisco'
-      AND structured_data->>'category' = 'interface'
-      AND structured_data->>'interface' IS NOT NULL
-    GROUP BY source_host, source_ip, structured_data->>'interface'
-    HAVING COUNT(*) >= 2
-    ORDER BY event_count DESC LIMIT 50
-  `, [hours]);
-  res.json({ data: rows });
+  const data = await getCached(`health-flaps:${hours}:${rbacCacheKey(req.rbac)}`, 30000, async () => {
+    const { rows } = await pool.query(`
+      SELECT
+        COALESCE(source_host, source_ip::TEXT) AS host,
+        structured_data->>'interface' AS interface,
+        COUNT(*) AS event_count,
+        COUNT(*) FILTER (WHERE structured_data->>'link_state' = 'down') AS down_count,
+        COUNT(*) FILTER (WHERE structured_data->>'link_state' = 'up')   AS up_count,
+        MIN(received_at) AS first_seen, MAX(received_at) AS last_seen
+      FROM syslog_entries
+      WHERE received_at > NOW() - make_interval(hours => $1)
+        AND vendor = 'cisco'
+        AND structured_data->>'category' = 'interface'
+        AND structured_data->>'interface' IS NOT NULL
+      GROUP BY source_host, source_ip, structured_data->>'interface'
+      HAVING COUNT(*) >= 2
+      ORDER BY event_count DESC LIMIT 50
+    `, [hours]);
+    return { data: rows };
+  });
+  res.json(data);
 }));
 
 app.get('/api/health/stp', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const { rows } = await pool.query(`
-    SELECT received_at, source_host, source_ip::TEXT, severity_label, message,
-      structured_data->>'subcategory' AS subcategory,
-      structured_data->>'interface'   AS interface,
-      structured_data->>'mac_address' AS mac_address
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
-      AND vendor = 'cisco'
-      AND structured_data->>'category' IN ('stp','loop')
-    ORDER BY received_at DESC LIMIT 200
-  `, [hours]);
-  res.json({ data: rows });
+  const data = await getCached(`health-stp:${hours}:${rbacCacheKey(req.rbac)}`, 30000, async () => {
+    const { rows } = await pool.query(`
+      SELECT received_at, source_host, source_ip::TEXT, severity_label, message,
+        structured_data->>'subcategory' AS subcategory,
+        structured_data->>'interface'   AS interface,
+        structured_data->>'mac_address' AS mac_address
+      FROM syslog_entries
+      WHERE received_at > NOW() - make_interval(hours => $1)
+        AND vendor = 'cisco'
+        AND structured_data->>'category' IN ('stp','loop')
+      ORDER BY received_at DESC LIMIT 200
+    `, [hours]);
+    return { data: rows };
+  });
+  res.json(data);
 }));
 
 app.get('/api/health/macflaps', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const { rows } = await pool.query(`
-    SELECT
-      COALESCE(source_host, source_ip::TEXT) AS host,
-      structured_data->>'mac_address' AS mac_address,
-      COUNT(*) AS flap_count,
-      MIN(received_at) AS first_seen, MAX(received_at) AS last_seen,
-      STRING_AGG(DISTINCT structured_data->>'interface', ', ') AS interfaces
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
-      AND structured_data->>'subcategory' = 'mac_flap'
-    GROUP BY source_host, source_ip, structured_data->>'mac_address'
-    ORDER BY flap_count DESC LIMIT 50
-  `, [hours]);
-  res.json({ data: rows });
+  const data = await getCached(`health-macflaps:${hours}:${rbacCacheKey(req.rbac)}`, 30000, async () => {
+    const { rows } = await pool.query(`
+      SELECT
+        COALESCE(source_host, source_ip::TEXT) AS host,
+        structured_data->>'mac_address' AS mac_address,
+        COUNT(*) AS flap_count,
+        MIN(received_at) AS first_seen, MAX(received_at) AS last_seen,
+        STRING_AGG(DISTINCT structured_data->>'interface', ', ') AS interfaces
+      FROM syslog_entries
+      WHERE received_at > NOW() - make_interval(hours => $1)
+        AND structured_data->>'subcategory' = 'mac_flap'
+      GROUP BY source_host, source_ip, structured_data->>'mac_address'
+      ORDER BY flap_count DESC LIMIT 50
+    `, [hours]);
+    return { data: rows };
+  });
+  res.json(data);
 }));
 
 app.get('/api/health/config-changes', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const { rows } = await pool.query(`
-    SELECT received_at, source_host, source_ip::TEXT, message, vendor
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
-      AND (
-        (vendor = 'cisco' AND structured_data->>'subcategory' = 'config_change')
-        OR message ILIKE '%configured from%'
-        OR message ILIKE '%configuration changed%'
-        OR message ILIKE '%config edit%'
-      )
-    ORDER BY received_at DESC LIMIT 100
-  `, [hours]);
-  res.json({ data: rows });
+  const data = await getCached(`health-config-changes:${hours}:${rbacCacheKey(req.rbac)}`, 30000, async () => {
+    const { rows } = await pool.query(`
+      SELECT received_at, source_host, source_ip::TEXT, message, vendor
+      FROM syslog_entries
+      WHERE received_at > NOW() - make_interval(hours => $1)
+        AND (
+          (vendor = 'cisco' AND structured_data->>'subcategory' = 'config_change')
+          OR message ILIKE '%configured from%'
+          OR message ILIKE '%configuration changed%'
+          OR message ILIKE '%config edit%'
+        )
+      ORDER BY received_at DESC LIMIT 100
+    `, [hours]);
+    return { data: rows };
+  });
+  res.json(data);
 }));
 
 app.get('/api/health/routing', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const { rows } = await pool.query(`
-    SELECT received_at, source_host, source_ip::TEXT, severity_label, message,
-      structured_data->>'subcategory' AS protocol
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
-      AND vendor = 'cisco'
-      AND structured_data->>'category' = 'routing'
-    ORDER BY received_at DESC LIMIT 100
-  `, [hours]);
-  res.json({ data: rows });
+  const data = await getCached(`health-routing:${hours}:${rbacCacheKey(req.rbac)}`, 30000, async () => {
+    const { rows } = await pool.query(`
+      SELECT received_at, source_host, source_ip::TEXT, severity_label, message,
+        structured_data->>'subcategory' AS protocol
+      FROM syslog_entries
+      WHERE received_at > NOW() - make_interval(hours => $1)
+        AND vendor = 'cisco'
+        AND structured_data->>'category' = 'routing'
+      ORDER BY received_at DESC LIMIT 100
+    `, [hours]);
+    return { data: rows };
+  });
+  res.json(data);
 }));
 
 app.get('/api/health/device-status', asyncHandler(async (req, res) => {
-  // Heavy 7-day aggregation over the full syslog table — cache for 30s so
-  // dashboard refreshes don't re-run it on every load. Fixed 7-day window,
-  // so the only cache-key variation is the RBAC scope.
-  const hours = 168; // 7 days — fixed window for this endpoint
-  const cacheKey = `device-health:${hours}:${rbacCacheKey(req.rbac)}`;
-  const data = await getCached(cacheKey, 30000, async () => {
+  // Heavy aggregation over the syslog table — cache for 60s (device status
+  // changes slowly) so dashboard refreshes don't re-run it on every load.
+  // 24h window (was 7 days): scans ~100K rows instead of ~750K. The only
+  // cache-key variation is the RBAC scope.
+  const hours = 24; // fixed 24h window for this endpoint
+  const cacheKey = `device-status:${hours}:${rbacCacheKey(req.rbac)}`;
+  const data = await getCached(cacheKey, 60000, async () => {
     const { rows } = await pool.query(`
       SELECT
         COALESCE(kh.hostname, se.source_host, se.source_ip::TEXT) AS host,
@@ -792,7 +811,7 @@ app.get('/api/health/device-status', asyncHandler(async (req, res) => {
         EXTRACT(EPOCH FROM (NOW() - MAX(se.received_at)))/60 AS minutes_since_last_log
       FROM syslog_entries se
       LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
-      WHERE se.received_at > NOW() - make_interval(days => 7)
+      WHERE se.received_at > NOW() - make_interval(hours => 24)
       GROUP BY se.source_host, se.source_ip, kh.hostname, kh.vendor, kh.description, se.vendor
       ORDER BY last_seen DESC
     `);
@@ -803,14 +822,17 @@ app.get('/api/health/device-status', asyncHandler(async (req, res) => {
 
 app.get('/api/health/summary', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const [iface, stp, mac, cfg, rt] = await Promise.all([
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='cisco' AND structured_data->>'category'='interface'`, [hours]),
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='cisco' AND structured_data->>'category' IN ('stp','loop')`, [hours]),
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND structured_data->>'subcategory'='mac_flap'`, [hours]),
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND (structured_data->>'subcategory'='config_change' OR message ILIKE '%configured from%')`, [hours]),
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='cisco' AND structured_data->>'category'='routing'`, [hours]),
-  ]);
-  res.json({ hours, interface_events: parseInt(iface.rows[0].count), stp_loop_events: parseInt(stp.rows[0].count), mac_flap_events: parseInt(mac.rows[0].count), config_changes: parseInt(cfg.rows[0].count), routing_events: parseInt(rt.rows[0].count) });
+  const data = await getCached(`health-summary:${hours}:${rbacCacheKey(req.rbac)}`, 30000, async () => {
+    const [iface, stp, mac, cfg, rt] = await Promise.all([
+      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='cisco' AND structured_data->>'category'='interface'`, [hours]),
+      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='cisco' AND structured_data->>'category' IN ('stp','loop')`, [hours]),
+      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND structured_data->>'subcategory'='mac_flap'`, [hours]),
+      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND (structured_data->>'subcategory'='config_change' OR message ILIKE '%configured from%')`, [hours]),
+      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='cisco' AND structured_data->>'category'='routing'`, [hours]),
+    ]);
+    return { hours, interface_events: parseInt(iface.rows[0].count), stp_loop_events: parseInt(stp.rows[0].count), mac_flap_events: parseInt(mac.rows[0].count), config_changes: parseInt(cfg.rows[0].count), routing_events: parseInt(rt.rows[0].count) };
+  });
+  res.json(data);
 }));
 
 // ── SECURITY ─────────────────────────────────────────────────

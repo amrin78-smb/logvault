@@ -226,7 +226,7 @@ export default function NetworkHealth({ hours }: { hours: number }) {
               {/* Quick device status */}
               <div style={CARD}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: '#1a202c', marginBottom: 2 }}>Device Status at a Glance</div>
-                <div style={{ fontSize: 11, color: '#718096', marginBottom: 16 }}>Devices that have sent logs in the last 7 days</div>
+                <div style={{ fontSize: 11, color: '#718096', marginBottom: 16 }}>Devices that have sent logs in the last 24 hours</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
                   {deviceStatus.slice(0, 12).map((d, i) => {
                     const mins    = parseFloat(d.minutes_since_last_log);
