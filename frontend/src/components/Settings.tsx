@@ -113,27 +113,26 @@ function UpdateOverlay() {
   else if (phase === 'timeout')  statusLine = 'Update is taking longer than expected. Try reloading manually.';
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#1a2744',
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.5)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <style>{'@keyframes lv-spin { to { transform: rotate(360deg); } }'}</style>
-      <div style={{ textAlign: 'center', color: '#fff', maxWidth: 460 }}>
+      <div style={{ background: 'var(--bg-card)', borderRadius: 12, boxShadow: 'var(--shadow-md)',
+        padding: 40, maxWidth: 480, width: '100%', textAlign: 'center' }}>
         {phase !== 'back_up' && phase !== 'timeout' && (
-          <div style={{ fontSize: 48, lineHeight: 1, display: 'inline-block',
-            animation: 'lv-spin 1s linear infinite' }}>⟳</div>
+          <div style={{ fontSize: 44, lineHeight: 1, display: 'inline-block',
+            color: 'var(--primary)', animation: 'lv-spin 1s linear infinite' }}>⟳</div>
         )}
-        {phase === 'back_up' && <div style={{ fontSize: 48, lineHeight: 1 }}>✓</div>}
-        {phase === 'timeout' && <div style={{ fontSize: 48, lineHeight: 1 }}>⚠</div>}
-        <div style={{ fontSize: 22, fontWeight: 700, marginTop: 18 }}>Updating LogVault...</div>
-        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginTop: 10 }}>
-          Pulling latest code and restarting services.
-        </div>
-        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
-          Do not close this window.
-        </div>
-        <div style={{ fontSize: 14, fontWeight: 600, margin: '18px 0' }}>{statusLine}</div>
+        {phase === 'back_up' && <div style={{ fontSize: 44, lineHeight: 1 }}>✓</div>}
+        {phase === 'timeout' && <div style={{ fontSize: 44, lineHeight: 1 }}>⚠</div>}
+        <div style={{ fontSize: 18, fontWeight: 700, marginTop: 14, color: 'var(--text-primary)' }}>Updating LogVault...</div>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 6 }}>
+          Pulling latest code and restarting services. Do not close this window.
+        </p>
+        <p style={{ fontWeight: 600, margin: '14px 0', color: 'var(--text-primary)' }}>{statusLine}</p>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>(This usually takes 30-60 seconds)</p>
         <button onClick={() => window.location.reload()}
-          style={{ padding: '9px 22px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.3)',
-            background: 'transparent', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          style={{ marginTop: 10, padding: '9px 22px', borderRadius: 8, border: 'none',
+            background: 'var(--primary)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
           Reload Now
         </button>
       </div>
