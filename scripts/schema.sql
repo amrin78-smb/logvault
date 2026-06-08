@@ -104,6 +104,19 @@ CREATE TABLE IF NOT EXISTS alert_events (
     acknowledged_by TEXT
 );
 
+-- Indexes for alert_events (Tier 1 perf migration).
+-- The collector runs a dedup SELECT on every alert match; the dashboard runs
+-- COUNT / recent-unacked / RBAC queries constantly. This table only grows.
+-- Plain (non-CONCURRENT) here so a fresh install builds them in one pass;
+-- on a live install with data, use scripts/migration-tier1-alert-events-indexes.sql
+-- (CONCURRENTLY) instead to avoid locking.
+CREATE INDEX IF NOT EXISTS idx_alert_events_open_dedup
+  ON alert_events (rule_id, source_ip, fired_at DESC) WHERE acknowledged = FALSE;
+CREATE INDEX IF NOT EXISTS idx_alert_events_ack_fired
+  ON alert_events (acknowledged, fired_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alert_events_source_ip
+  ON alert_events (source_ip);
+
 -- ============================================================
 -- KNOWN HOSTS TABLE (for hostname resolution cache)
 -- ============================================================
