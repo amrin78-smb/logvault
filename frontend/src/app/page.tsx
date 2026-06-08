@@ -230,7 +230,7 @@ export default function Home() {
 
           <div style={{ flex: 1 }} />
           <div style={{ padding: '14px 24px', fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.5px', fontWeight: 500 }}>
-            LogVault v{APP_VERSION}
+            LogVault v{health?.version || APP_VERSION}
           </div>
         </div>
 

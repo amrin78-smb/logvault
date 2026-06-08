@@ -16,6 +16,11 @@ const { rbacMiddleware, requireSuperAdmin, getSiteFilter } = require('./rbac');
 const { getLicense, getLicenseState } = require('./licenseCheck');
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env.local') });
 
+// App version — single source of truth is the root package.json.
+const { version } = require('../package.json');
+// Raw GitHub base for remote version/changelog checks (no auth, public repo).
+const GH_RAW = 'https://raw.githubusercontent.com/amrin78-smb/logvault/main';
+
 // ── Crash resilience ──────────────────────────────────────────
 process.on('uncaughtException', (err) => {
   console.error('[FATAL] Uncaught exception:', err.message, err.stack);
@@ -115,7 +120,7 @@ async function enforceLicense(req, res, next) {
     }
   }
 
-  const exemptPaths = ['/api/health', '/api/license-status'];
+  const exemptPaths = ['/api/health', '/api/license-status', '/api/system/update-available'];
   if (state.disabled && !exemptPaths.some(p => req.path.startsWith(p))) {
     return res.status(402).json({
       error: 'License has expired. Please renew your NocVault license.',
@@ -1016,7 +1021,98 @@ app.get('/api/stats/disk', asyncHandler(async (req, res) => {
 // Super-admin only. No RBAC site filtering applies to these endpoints.
 const appRoot = path.join(__dirname, '..');
 
+// ── Semver-based update check (package.json version + CHANGELOG.md) ──────────
+// Mirrors the NocVault suite convention: the running version is compared to the
+// version published on the GitHub main branch. Never blocks on network failure.
+
+// Compare two "MAJOR.MINOR.PATCH" strings — true when remote is newer than local.
+function isNewer(remote, local) {
+  const [rM, rm, rp] = String(remote).split('.').map(Number);
+  const [lM, lm, lp] = String(local).split('.').map(Number);
+  if (rM !== lM) return rM > lM;
+  if (rm !== lm) return rm > lm;
+  return rp > lp;
+}
+
+// Pull the latest version's section out of CHANGELOG.md — everything from the
+// first "## " header up to the next one. HTML comments (the release-process
+// block, which itself contains indented "## v..." example lines) are stripped
+// first so they cannot be mistaken for the first real section header.
+function extractLatestChangelog(md) {
+  const clean = String(md).replace(/<!--[\s\S]*?-->/g, '');
+  const header = clean.match(/^##\s+.*$/m);
+  if (!header) return { changelog: '', release_date: null };
+  const start = header.index;
+  const afterHeader = start + header[0].length;
+  const nextRel = clean.slice(afterHeader).search(/^##\s+/m);
+  const end = nextRel === -1 ? clean.length : afterHeader + nextRel;
+  const section = clean.slice(start, end).trim();
+  const date = header[0].match(/(\d{4}-\d{2}-\d{2})/);
+  return { changelog: section, release_date: date ? date[1] : null };
+}
+
+// Cached result for the slim update-notifier banner. { current, latest } when an
+// update exists, else null. Refreshed on startup + every 24h.
+let updateAvailable = null;
+
+async function checkForUpdates() {
+  try {
+    const res = await fetch(`${GH_RAW}/package.json`, { cache: 'no-store' });
+    const remote = await res.json();
+    updateAvailable = isNewer(remote.version, version)
+      ? { current: version, latest: remote.version }
+      : null;
+  } catch {
+    // never block on network failure — keep the last known state
+  }
+}
+
+// Lightweight, unauthenticated endpoint feeding the update-notifier banner.
+app.get('/api/system/update-available', (_req, res) => {
+  if (updateAvailable) {
+    res.json({ available: true, current: updateAvailable.current, latest: updateAvailable.latest });
+  } else {
+    res.json({ available: false });
+  }
+});
+
 app.get('/api/system/update-status', requireSuperAdmin, asyncHandler(async (req, res) => {
+  // Semver check (package.json + CHANGELOG.md off GitHub) — best-effort, never
+  // throws. This drives the version display and changelog in the Settings UI.
+  let semver = { current_version: version };
+  try {
+    const [pkgRes, clRes] = await Promise.all([
+      fetch(`${GH_RAW}/package.json`, { cache: 'no-store' }),
+      fetch(`${GH_RAW}/CHANGELOG.md`, { cache: 'no-store' }),
+    ]);
+    const remotePkg = await pkgRes.json();
+    const remote    = remotePkg.version;
+    const available = isNewer(remote, version);
+
+    let changelog = '';
+    let release_date = null;
+    try {
+      const parsed = extractLatestChangelog(await clRes.text());
+      changelog    = parsed.changelog;
+      release_date = parsed.release_date;
+    } catch { /* changelog is best-effort */ }
+
+    semver = {
+      current_version:  version,
+      latest_version:   remote,
+      up_to_date:       !available,
+      update_available: available,
+      changelog,
+      release_date,
+    };
+    // Keep the cached banner state in sync with this on-demand check.
+    updateAvailable = available ? { current: version, latest: remote } : null;
+  } catch (err) {
+    console.error('[update-status] version check failed:', err.message);
+  }
+
+  // Git commit-based check (kept alongside the semver check). Reports how many
+  // commits the local checkout is behind origin/main + the commit subjects.
   const git = (cmd) => execSync(cmd, { cwd: appRoot, encoding: 'utf8', timeout: 30000 }).trim();
   try {
     // Self-heal: git refuses to operate when the repo owner differs from the
@@ -1025,21 +1121,23 @@ app.get('/api/system/update-status', requireSuperAdmin, asyncHandler(async (req,
       execSync('git config --global --add safe.directory C:/Apps/logvault', { cwd: appRoot, stdio: 'ignore' });
     } catch {}
     git('git fetch origin main');
-    const current = git('git rev-parse --short HEAD');
-    const latest  = git('git rev-parse --short origin/main');
     const behind  = parseInt(git('git rev-list HEAD..origin/main --count'), 10) || 0;
     const log     = git('git log HEAD..origin/main --oneline');
     const changes = log ? log.split('\n').map(l => l.trim()).filter(Boolean) : [];
     res.json({
-      current_version: current,
-      latest_version:  latest,
-      commits_behind:  behind,
-      up_to_date:      behind === 0,
+      ...semver,
+      // up_to_date reflects the semver check when available; otherwise fall back
+      // to the git commit count so the UI still works before a version bump.
+      up_to_date:     semver.up_to_date != null ? semver.up_to_date : behind === 0,
+      git_current:    git('git rev-parse --short HEAD'),
+      git_latest:     git('git rev-parse --short origin/main'),
+      commits_behind: behind,
       changes,
     });
   } catch (err) {
     console.error('[update-status] git check failed:', err.message);
-    res.json({ error: 'Could not check for updates', up_to_date: true });
+    // Git failed, but the semver check may have succeeded — return what we have.
+    res.json({ ...semver, up_to_date: semver.up_to_date != null ? semver.up_to_date : true });
   }
 }));
 
@@ -1139,7 +1237,7 @@ app.post('/api/settings/test-email', requireSuperAdmin, asyncHandler(async (req,
 
 app.get('/api/health', asyncHandler(async (req, res) => {
   const { rows } = await pool.query(`SELECT COUNT(*) AS total FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => 1)`);
-  res.json({ status: 'ok', logs_last_hour: parseInt(rows[0].total) });
+  res.json({ status: 'ok', version, logs_last_hour: parseInt(rows[0].total) });
 }));
 
 // ── ERROR HANDLER ─────────────────────────────────────────────
@@ -1187,6 +1285,10 @@ async function broadcastNewLogs() {
 
 initLastId().then(() => { setInterval(broadcastNewLogs, 2000); });
 
+// Update check: on startup + every 24h (cached for the notifier banner).
+checkForUpdates();
+setInterval(checkForUpdates, 24 * 60 * 60 * 1000);
+
 server.listen(port, () => {
-  console.log(`LogVault API + WebSocket running on port ${port}`);
+  console.log(`LogVault API + WebSocket running on port ${port} (v${version})`);
 });

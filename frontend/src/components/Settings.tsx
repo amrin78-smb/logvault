@@ -26,12 +26,15 @@ const INPUT = { width: '100%', padding: '9px 12px', borderRadius: 7, border: '1p
   boxSizing: 'border-box' as const };
 
 interface UpdateStatus {
-  current_version?: string;
-  latest_version?:  string;
-  commits_behind?:  number;
-  up_to_date?:      boolean;
-  changes?:         string[];
-  error?:           string;
+  current_version?:  string;
+  latest_version?:   string;
+  commits_behind?:   number;
+  up_to_date?:       boolean;
+  update_available?: boolean;
+  changelog?:        string;
+  release_date?:     string;
+  changes?:          string[];
+  error?:            string;
 }
 
 const UPDATE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
@@ -40,6 +43,22 @@ const UPDATE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
 function changeSubject(line: string): string {
   const m = line.match(/^([0-9a-f]{7,40})\s+(.*)$/i);
   return m ? m[2] : line;
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+// Format an ISO date "2026-06-08" → "June 8, 2026" (no timezone shifting).
+function fmtReleaseDate(d?: string): string {
+  if (!d) return '';
+  const [y, m, day] = d.split('-').map(Number);
+  if (!y || !m || !day) return d;
+  return `${MONTHS[m - 1]} ${day}, ${y}`;
+}
+// Drop the leading "## vX.Y.Z — date" header from a changelog section so the box
+// shows just the body (version + date are rendered separately above it).
+function changelogBody(md?: string): string {
+  if (!md) return '';
+  return md.replace(/^##\s+.*$/m, '').trim();
 }
 
 // Full-screen overlay shown during an update; polls /api/health for recovery.
@@ -163,6 +182,26 @@ export default function Settings() {
   const [showUpdateOverlay, setShowUpdateOverlay] = useState(false);
   const [showConfirmModal,  setShowConfirmModal]  = useState(false);
   const [updateBlocked,    setUpdateBlocked]    = useState<string | null>(null);
+  const [appVersion,       setAppVersion]       = useState<string>('');
+  const [updateAvail,      setUpdateAvail]      = useState(false);
+
+  // Current running version (from /api/health) + a lightweight update-available
+  // check that drives the red dot on the Updates tab label.
+  useEffect(() => {
+    fetch('/api/health').then(r => r.json()).then(d => { if (d?.version) setAppVersion(d.version); }).catch(() => {});
+    fetch('/api/system/update-available').then(r => r.json()).then(d => setUpdateAvail(!!d?.available)).catch(() => {});
+  }, []);
+
+  // Deep-link from the update-notifier banner: open the Updates sub-tab.
+  useEffect(() => {
+    try {
+      const t = sessionStorage.getItem('logvault-settings-tab');
+      if (t === 'updates' || t === 'branding' || t === 'email' || t === 'about') {
+        setActiveTab(t);
+        sessionStorage.removeItem('logvault-settings-tab');
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   const checkUpdate = async () => {
     setCheckingUpdate(true);
@@ -280,7 +319,8 @@ export default function Settings() {
   const commitsBehind = updateStatus?.commits_behind ?? 0;
   const hasUpdateError = !!updateStatus?.error;
   const upToDate       = !hasUpdateError && !!updateStatus?.up_to_date;
-  const updatesAvailable = !hasUpdateError && !upToDate && commitsBehind > 0;
+  const updatesAvailable = !hasUpdateError && !upToDate &&
+    (!!updateStatus?.update_available || commitsBehind > 0);
 
   return (
     <div style={{ maxWidth: 800 }}>
@@ -296,6 +336,11 @@ export default function Settings() {
               background: activeTab === t.id ? '#1a202c' : 'transparent',
               color: activeTab === t.id ? '#fff' : 'var(--text-muted)' }}>
             {t.label}
+            {t.id === 'updates' && updateAvail && (
+              <span title="Update available"
+                style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
+                  background: '#dc2626', marginLeft: 6, verticalAlign: 'middle' }} />
+            )}
           </button>
         ))}
       </div>
@@ -571,7 +616,7 @@ export default function Settings() {
               </div>
               {updateStatus?.current_version && (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
-                  Current version: <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>{updateStatus.current_version}</code>
+                  Current version: <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>v{updateStatus.current_version}</code>
                 </div>
               )}
               <button onClick={checkUpdate}
@@ -584,17 +629,40 @@ export default function Settings() {
           ) : updatesAvailable ? (
             <div>
               <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
-                🔄 {commitsBehind} update{commitsBehind === 1 ? '' : 's'} available
+                🔄 Update available
+                {updateStatus?.latest_version && (
+                  <>: <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>v{updateStatus?.current_version}</code>
+                  {' → '}
+                  <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>v{updateStatus?.latest_version}</code></>
+                )}
               </div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
-                Current: <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>{updateStatus?.current_version}</code>
-                {'  →  '}
-                Latest: <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>{updateStatus?.latest_version}</code>
-              </div>
+              {commitsBehind > 0 && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
+                  {commitsBehind} commit{commitsBehind === 1 ? '' : 's'} behind origin/main
+                </div>
+              )}
+
+              {changelogBody(updateStatus?.changelog) && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                    What&apos;s new{updateStatus?.latest_version ? ` in v${updateStatus.latest_version}` : ''}
+                  </div>
+                  <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--border)',
+                    borderRadius: 8, padding: '10px 14px', background: 'var(--bg-primary)', fontSize: 12.5,
+                    lineHeight: 1.5, whiteSpace: 'pre-wrap', color: 'var(--text-primary)' }}>
+                    {changelogBody(updateStatus?.changelog)}
+                  </div>
+                  {updateStatus?.release_date && (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                      Released: {fmtReleaseDate(updateStatus.release_date)}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {updateStatus?.changes && updateStatus.changes.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Changes</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Recent commits</div>
                   <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12.5, color: 'var(--text-primary)' }}>
                     {updateStatus.changes.map((c, i) => (
                       <li key={i} style={{ marginBottom: 3 }}>{changeSubject(c)}</li>
@@ -688,7 +756,7 @@ export default function Settings() {
           {[
             { label: 'Product',    value: 'LogVault — Syslog & Log Analyzer' },
             { label: 'Family',     value: 'NocVault Network Intelligence Suite' },
-            { label: 'Version',    value: '1.0.0' },
+            { label: 'Version',    value: `v${appVersion || '1.0.0'}` },
             { label: 'API Port',   value: '3005 (internal)' },
             { label: 'App Port',   value: '3004' },
             { label: 'Collector',  value: 'UDP/TCP 514 · 1514' },
@@ -701,6 +769,11 @@ export default function Settings() {
               <span style={{ fontSize: 12, color: 'var(--text-primary)', fontFamily: label.includes('Port') || label === 'Collector' || label === 'Database' || label === 'Runtime' ? 'JetBrains Mono, monospace' : 'inherit' }}>{value}</span>
             </div>
           ))}
+          <div style={{ marginTop: 18, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.7 }}>
+            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>LogVault v{appVersion || '1.0.0'}</div>
+            <div>Part of the NocVault Intelligence Suite</div>
+            <div>© 2026 NocVault</div>
+          </div>
         </div>
       )}
     </div>
