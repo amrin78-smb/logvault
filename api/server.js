@@ -1014,6 +1014,25 @@ app.get('/api/system/update-status', requireSuperAdmin, asyncHandler(async (req,
 }));
 
 app.post('/api/system/update', requireSuperAdmin, asyncHandler(async (req, res) => {
+  // Block updates when the license is expired/disabled or in the grace period.
+  const license = await getLicense();
+  const state   = getLicenseState(license);
+
+  if (state.disabled) {
+    return res.status(402).json({
+      error: 'License expired — updates disabled. Please renew your NocVault license.',
+      license_status: license?.status,
+    });
+  }
+
+  if (state.mode === 'grace') {
+    return res.status(402).json({
+      error: 'License is in grace period — updates disabled. Please renew your NocVault license.',
+      license_status: license?.status,
+      days_remaining: license?.daysRemaining,
+    });
+  }
+
   const serverIp = process.env.SERVER_IP || '';
   if (!serverIp) {
     return res.status(400).json({ error: 'SERVER_IP not configured in .env.local' });

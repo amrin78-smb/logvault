@@ -162,6 +162,7 @@ export default function Settings() {
   const [updating,         setUpdating]         = useState(false);
   const [showUpdateOverlay, setShowUpdateOverlay] = useState(false);
   const [showConfirmModal,  setShowConfirmModal]  = useState(false);
+  const [updateBlocked,    setUpdateBlocked]    = useState<string | null>(null);
 
   const checkUpdate = async () => {
     setCheckingUpdate(true);
@@ -183,10 +184,20 @@ export default function Settings() {
 
   const startUpdate = async () => {
     setShowConfirmModal(false);
+    setUpdateBlocked(null);
     setUpdating(true);
     setShowUpdateOverlay(true);
     try {
-      await fetch('/api/system/update', { method: 'POST' });
+      const r = await fetch('/api/system/update', { method: 'POST' });
+      // License gate: a 402 means the update was refused — don't show the overlay.
+      if (r.status === 402) {
+        let msg = 'License validation failed.';
+        try { const d = await r.json(); if (d?.error) msg = d.error; } catch { /* keep default */ }
+        setShowUpdateOverlay(false);
+        setUpdating(false);
+        setUpdateBlocked(msg);
+        return;
+      }
     } catch {
       // The response may be cut off by a fast restart — the overlay's health
       // polling detects recovery regardless, so we still show it.
@@ -611,6 +622,18 @@ export default function Settings() {
                   Re-check
                 </button>
               </div>
+
+              {updateBlocked && (
+                <div style={{ marginTop: 12, fontSize: 13, color: 'var(--primary)' }}>
+                  Updates disabled: {updateBlocked}{' '}
+                  <a
+                    href={(process.env.NEXT_PUBLIC_NOCVAULT_HUB_URL || '') + '/settings/license'}
+                    style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'underline' }}
+                  >
+                    Renew License
+                  </a>
+                </div>
+              )}
             </div>
           ) : (
             <button onClick={checkUpdate}
