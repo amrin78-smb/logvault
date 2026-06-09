@@ -4,11 +4,6 @@ import { useToast } from '@/components/Toast';
 import { PageHeader } from './ui';
 
 interface Settings {
-  app_name:           string;
-  app_subtitle:       string;
-  primary_color:      string;
-  sidebar_color:      string;
-  logo_url:           string;
   dns_server:         string;
   dns_lookup_enabled: string;
   smtp_host:          string;
@@ -155,17 +150,13 @@ function UpdateOverlay() {
 
 export default function Settings() {
   const { toast } = useToast();
-  const fileRef   = useRef<HTMLInputElement>(null);
   const [settings, setSettings]   = useState<Settings>({
-    app_name: 'LogVault', app_subtitle: 'Syslog & Log Analysis',
-    primary_color: '#2563eb', sidebar_color: '#0f1b2d', logo_url: '',
     dns_server: '', dns_lookup_enabled: 'true',
     smtp_host: '', smtp_port: '587', smtp_user: '', smtp_pass: '',
     smtp_from: '', smtp_enabled: 'false',
   });
-  const [preview,  setPreview]    = useState<string>('');
   const [saving,   setSaving]     = useState(false);
-  const [activeTab, setActiveTab] = useState<'branding' | 'email' | 'updates' | 'about'>('branding');
+  const [activeTab, setActiveTab] = useState<'email' | 'system' | 'updates' | 'about'>('email');
   const [testTo,   setTestTo]     = useState('');
   const [testing,  setTesting]    = useState(false);
 
@@ -190,7 +181,7 @@ export default function Settings() {
   useEffect(() => {
     try {
       const t = sessionStorage.getItem('logvault-settings-tab');
-      if (t === 'updates' || t === 'branding' || t === 'email' || t === 'about') {
+      if (t === 'updates' || t === 'system' || t === 'email' || t === 'about') {
         setActiveTab(t);
         sessionStorage.removeItem('logvault-settings-tab');
       }
@@ -243,23 +234,9 @@ export default function Settings() {
       .then(d => {
         if (d.data) {
           setSettings(s => ({ ...s, ...d.data }));
-          setPreview(d.data.logo_url || '');
         }
       }).catch(() => {});
   }, []);
-
-  const handleLogoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 512000) { toast('Logo must be under 500KB', 'error'); return; }
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const data = ev.target?.result as string;
-      setPreview(data);
-      setSettings(s => ({ ...s, logo_url: data }));
-    };
-    reader.readAsDataURL(file);
-  };
 
   const save = async () => {
     setSaving(true);
@@ -308,7 +285,7 @@ export default function Settings() {
     setTesting(false);
   };
 
-  const TABS = [{ id: 'branding', label: 'Branding' }, { id: 'email', label: 'Email Alerts' }, { id: 'updates', label: 'Updates' }, { id: 'about', label: 'About' }];
+  const TABS = [{ id: 'email', label: 'Email Alerts' }, { id: 'system', label: 'System' }, { id: 'updates', label: 'Updates' }, { id: 'about', label: 'About' }];
 
   const hasUpdateError = !!updateStatus?.error;
   const upToDate       = !hasUpdateError && !!updateStatus?.up_to_date;
@@ -316,7 +293,7 @@ export default function Settings() {
 
   return (
     <div style={{ maxWidth: 800 }}>
-      <PageHeader title="Settings" subtitle="Branding, DNS lookup and SMTP email configuration" />
+      <PageHeader title="Settings" subtitle="System configuration and email alerts" />
 
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--bg-card)',
@@ -337,109 +314,8 @@ export default function Settings() {
         ))}
       </div>
 
-      {activeTab === 'branding' && (
+      {activeTab === 'system' && (
         <>
-          {/* Preview */}
-          <div style={CARD}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '0.5px' }}>PREVIEW</div>
-            <div style={{ background: settings.sidebar_color, borderRadius: 8, padding: '12px 16px',
-              display: 'inline-flex', alignItems: 'center', gap: 10, minWidth: 260 }}>
-              {preview ? (
-                <img src={preview} alt="Logo" style={{ height: 36, width: 'auto', objectFit: 'contain' }} />
-              ) : (
-                <>
-                  <div style={{ width: 32, height: 32, background: settings.primary_color,
-                    borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-                      <path d="M8 1L14 4.5V11.5L8 15L2 11.5V4.5L8 1Z" stroke="white" strokeWidth="1.3" fill="none"/>
-                      <circle cx="8" cy="8" r="2" fill="white"/>
-                    </svg>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>{settings.app_name || 'LogVault'}</div>
-                    <div style={{ fontSize: 9, color: '#64748b' }}>{settings.app_subtitle || 'Syslog & Log Analysis'}</div>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* App Identity */}
-          <div style={CARD}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 }}>App Identity</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-              <div>
-                <label style={LABEL}>App Name</label>
-                <input style={INPUT} value={settings.app_name}
-                  onChange={e => setSettings(s => ({ ...s, app_name: e.target.value }))}
-                  placeholder="e.g. LogVault" />
-              </div>
-              <div>
-                <label style={LABEL}>Subtitle</label>
-                <input style={INPUT} value={settings.app_subtitle}
-                  onChange={e => setSettings(s => ({ ...s, app_subtitle: e.target.value }))}
-                  placeholder="e.g. Syslog & Log Analysis" />
-              </div>
-            </div>
-
-            {/* Logo upload */}
-            <label style={LABEL}>Logo</label>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-              {preview && (
-                <div style={{ position: 'relative' }}>
-                  <img src={preview} alt="Logo preview"
-                    style={{ height: 48, width: 'auto', objectFit: 'contain',
-                      background: settings.sidebar_color, padding: 8, borderRadius: 8 }} />
-                  <button onClick={() => { setPreview(''); setSettings(s => ({ ...s, logo_url: '' })); }}
-                    style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18,
-                      borderRadius: '50%', border: 'none', background: '#ef4444', color: '#fff',
-                      fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    ×
-                  </button>
-                </div>
-              )}
-              <div>
-                <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp"
-                  onChange={handleLogoFile} style={{ display: 'none' }} />
-                <button onClick={() => fileRef.current?.click()}
-                  style={{ padding: '8px 16px', borderRadius: 7, border: '1px solid var(--border)',
-                    background: 'var(--input-bg)', color: 'var(--text-secondary)', fontSize: 12,
-                    cursor: 'pointer', marginBottom: 6 }}>
-                  Upload image
-                </button>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>PNG, JPG, SVG or WebP — max 500KB</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Or paste a URL:</div>
-                <input style={{ ...INPUT, width: 400 }} value={settings.logo_url.startsWith('data:') ? '' : settings.logo_url}
-                  onChange={e => { setSettings(s => ({ ...s, logo_url: e.target.value })); setPreview(e.target.value); }}
-                  placeholder="https://..." />
-              </div>
-            </div>
-          </div>
-
-          {/* Colors */}
-          <div style={CARD}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 }}>Colors</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              {[
-                { key: 'primary_color', label: 'Primary Color', hint: 'buttons, accents' },
-                { key: 'sidebar_color', label: 'Sidebar Color', hint: 'navigation background' },
-              ].map(({ key, label, hint }) => (
-                <div key={key}>
-                  <label style={LABEL}>{label} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({hint})</span></label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <input type="color" value={(settings as any)[key]}
-                      onChange={e => setSettings(s => ({ ...s, [key]: e.target.value }))}
-                      style={{ width: 40, height: 36, borderRadius: 6, border: '1px solid var(--border)',
-                        cursor: 'pointer', padding: 2, background: 'var(--input-bg)' }} />
-                    <input style={{ ...INPUT, width: 140 }} value={(settings as any)[key]}
-                      onChange={e => setSettings(s => ({ ...s, [key]: e.target.value }))}
-                      placeholder="#000000" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
           {/* DNS Settings */}
           <div style={CARD}>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 }}>DNS Lookup</div>
