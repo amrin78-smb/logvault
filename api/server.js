@@ -503,6 +503,30 @@ app.get('/api/alerts/rules', asyncHandler(async (req, res) => {
   res.json({ data: rows });
 }));
 
+// Lightweight alert-rule list for per-rule email configuration in Settings.
+app.get('/api/alert-rules', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    'SELECT id, name, description, notify_email, is_enabled FROM alert_rules ORDER BY id'
+  );
+  res.json({ data: rows });
+}));
+
+// Update the per-rule notification recipient(s) for one alert rule.
+app.put('/api/alert-rules/:id/notify', asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id) || id < 1) return res.status(400).json({ error: 'Invalid rule id' });
+  let { notify_email } = req.body;
+  if (notify_email == null) notify_email = '';
+  if (typeof notify_email !== 'string' || notify_email.length > 500)
+    return res.status(400).json({ error: 'Invalid notify_email' });
+  const { rows } = await pool.query(
+    'UPDATE alert_rules SET notify_email = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name, description, notify_email, is_enabled',
+    [notify_email.trim(), id]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Rule not found' });
+  res.json({ data: rows[0] });
+}));
+
 app.post('/api/alerts/rules', asyncHandler(async (req, res) => {
   const { name, description, match_severity, match_vendor, match_host,
           match_pattern, threshold_count, threshold_window, notify_email } = req.body;
@@ -1209,7 +1233,10 @@ app.get('/api/settings', asyncHandler(async (req, res) => {
 app.post('/api/settings', requireSuperAdmin, asyncHandler(async (req, res) => {
   const allowed = ['app_name', 'app_subtitle', 'primary_color', 'sidebar_color', 'logo_url',
     'dns_server', 'dns_lookup_enabled',
-    'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'smtp_enabled'];
+    'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'smtp_enabled',
+    'email_notify_enabled', 'email_notify_severities', 'email_notify_categories',
+    'email_notify_vendors', 'email_notify_min_risk', 'email_notify_digest_mode',
+    'email_notify_digest_hour', 'email_notify_recipients', 'email_notify_cooldown_mins'];
   for (const key of allowed) {
     if (req.body[key] !== undefined) {
       await pool.query(

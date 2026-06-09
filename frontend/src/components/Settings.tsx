@@ -12,6 +12,15 @@ interface Settings {
   smtp_pass:          string;
   smtp_from:          string;
   smtp_enabled:       string;
+  email_notify_enabled:      string;
+  email_notify_severities:   string;
+  email_notify_categories:   string;
+  email_notify_vendors:      string;
+  email_notify_min_risk:     string;
+  email_notify_digest_mode:  string;
+  email_notify_digest_hour:  string;
+  email_notify_recipients:   string;
+  email_notify_cooldown_mins: string;
 }
 
 const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: 24, marginBottom: 16 };
@@ -19,6 +28,82 @@ const LABEL = { fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', m
 const INPUT = { width: '100%', padding: '9px 12px', borderRadius: 7, border: '1px solid var(--border)',
   background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 13, outline: 'none',
   boxSizing: 'border-box' as const };
+const SECTION_HEADER = { fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 };
+
+// Parse a JSON-array string (stored in app_settings) into a string[]. Tolerant
+// of malformed/empty values — always returns an array.
+function parseArr(json: string): string[] {
+  try { const v = JSON.parse(json || '[]'); return Array.isArray(v) ? v.map(String) : []; }
+  catch { return []; }
+}
+
+// Parse a comma-separated recipients string into trimmed, non-empty entries.
+function parseEmails(csv: string): string[] {
+  return (csv || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
+const SEVERITY_OPTS: { value: string; label: string; color: string }[] = [
+  { value: '0', label: 'Emergency (0)', color: '#dc2626' },
+  { value: '1', label: 'Alert (1)',     color: '#dc2626' },
+  { value: '2', label: 'Critical (2)',  color: '#dc2626' },
+  { value: '3', label: 'Error (3)',     color: '#ea580c' },
+  { value: '4', label: 'Warning (4)',   color: '#d97706' },
+  { value: '5', label: 'Notice (5)',    color: '#2563eb' },
+  { value: '6', label: 'Info (6)',      color: '#16a34a' },
+  { value: '7', label: 'Debug (7)',     color: '#6b7280' },
+];
+
+const CATEGORY_OPTS: { value: string; label: string }[] = [
+  { value: 'authentication', label: 'Authentication' },
+  { value: 'vpn',           label: 'VPN' },
+  { value: 'security',      label: 'Security' },
+  { value: 'firewall',      label: 'Firewall' },
+  { value: 'interface',     label: 'Interface' },
+  { value: 'routing',       label: 'Routing' },
+  { value: 'configuration', label: 'Configuration' },
+  { value: 'wireless',      label: 'Wireless' },
+  { value: 'system',        label: 'System' },
+  { value: 'dns',           label: 'DNS' },
+  { value: 'web',           label: 'Web' },
+  { value: 'dlp',           label: 'DLP' },
+  { value: 'email',         label: 'Email' },
+  { value: 'network',       label: 'Network' },
+];
+
+const VENDOR_OPTS: { value: string; label: string }[] = [
+  { value: 'fortinet',   label: 'Fortinet' },
+  { value: 'cisco',      label: 'Cisco' },
+  { value: 'paloalto',   label: 'Palo Alto' },
+  { value: 'aruba',      label: 'Aruba' },
+  { value: 'sangfor',    label: 'Sangfor' },
+  { value: 'forcepoint', label: 'Forcepoint' },
+  { value: 'checkpoint', label: 'Check Point' },
+  { value: 'juniper',    label: 'Juniper' },
+  { value: 'windows',    label: 'Windows' },
+  { value: 'sonicwall',  label: 'SonicWall' },
+  { value: 'generic',    label: 'Generic' },
+];
+
+const COOLDOWN_OPTS: { value: string; label: string }[] = [
+  { value: '5',    label: '5 minutes' },
+  { value: '15',   label: '15 minutes' },
+  { value: '30',   label: '30 minutes' },
+  { value: '60',   label: '1 hour' },
+  { value: '120',  label: '2 hours' },
+  { value: '240',  label: '4 hours' },
+  { value: '480',  label: '8 hours' },
+  { value: '1440', label: '24 hours' },
+];
+
+// Color + label for the minimum-risk-score badge based on the threshold.
+function riskBadge(n: number): { color: string; label: string } {
+  if (n <= 30)  return { color: '#16a34a', label: 'Low+' };
+  if (n <= 60)  return { color: '#d97706', label: 'Medium+' };
+  if (n <= 80)  return { color: '#ea580c', label: 'High+' };
+  return { color: '#dc2626', label: 'Critical only' };
+}
+
+interface AlertRule { id: number; name: string; description: string; notify_email: string; is_enabled: boolean; }
 
 interface UpdateStatus {
   current_version?:  string;
@@ -154,11 +239,59 @@ export default function Settings() {
     dns_server: '', dns_lookup_enabled: 'true',
     smtp_host: '', smtp_port: '587', smtp_user: '', smtp_pass: '',
     smtp_from: '', smtp_enabled: 'false',
+    email_notify_enabled: 'true',
+    email_notify_severities: '["0","1","2","3"]',
+    email_notify_categories: '[]',
+    email_notify_vendors: '[]',
+    email_notify_min_risk: '40',
+    email_notify_digest_mode: 'instant',
+    email_notify_digest_hour: '8',
+    email_notify_recipients: '',
+    email_notify_cooldown_mins: '30',
   });
   const [saving,   setSaving]     = useState(false);
   const [activeTab, setActiveTab] = useState<'email' | 'system' | 'updates' | 'about'>('email');
   const [testTo,   setTestTo]     = useState('');
   const [testing,  setTesting]    = useState(false);
+
+  // ── Per-rule alert recipients ──────────────────────────────
+  const [rules, setRules] = useState<AlertRule[]>([]);
+  const [ruleEmails, setRuleEmails] = useState<Record<number, string>>({});
+  const [savingRule, setSavingRule] = useState<number | null>(null);
+  const rulesLoaded = useRef(false);
+
+  // Toggle a value in one of the JSON-array string fields (severities/categories/vendors).
+  const toggleInArr = (field: keyof Settings, value: string) => {
+    setSettings(s => {
+      const arr = parseArr(s[field] as string);
+      const next = arr.includes(value) ? arr.filter(x => x !== value) : [...arr, value];
+      return { ...s, [field]: JSON.stringify(next) };
+    });
+  };
+
+  // Remove an email from the comma-separated global recipients string.
+  const removeRecipient = (email: string) => {
+    setSettings(s => ({
+      ...s,
+      email_notify_recipients: parseEmails(s.email_notify_recipients).filter(e => e !== email).join(', '),
+    }));
+  };
+
+  const saveRuleEmail = async (id: number) => {
+    setSavingRule(id);
+    try {
+      const r = await fetch(`/api/alert-rules/${id}/notify`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notify_email: ruleEmails[id] || '' }),
+      });
+      if (r.ok) {
+        toast('Rule recipient saved', 'success');
+        setRules(rs => rs.map(x => x.id === id ? { ...x, notify_email: ruleEmails[id] || '' } : x));
+      } else { toast('Failed to save rule recipient', 'error'); }
+    } catch { toast('Failed to save rule recipient', 'error'); }
+    setSavingRule(null);
+  };
 
   // ── Updates tab state ──────────────────────────────────────
   const [updateStatus,     setUpdateStatus]     = useState<UpdateStatus | null>(null);
@@ -237,6 +370,21 @@ export default function Settings() {
         }
       }).catch(() => {});
   }, []);
+
+  // Load alert rules once when the Email tab is first opened.
+  useEffect(() => {
+    if (activeTab !== 'email' || rulesLoaded.current) return;
+    rulesLoaded.current = true;
+    fetch('/api/alert-rules')
+      .then(r => r.json())
+      .then(d => {
+        if (d.data) {
+          setRules(d.data);
+          setRuleEmails(Object.fromEntries((d.data as AlertRule[]).map(r => [r.id, r.notify_email || ''])));
+        }
+      })
+      .catch(() => {});
+  }, [activeTab]);
 
   const save = async () => {
     setSaving(true);
@@ -427,7 +575,238 @@ export default function Settings() {
             </div>
           </div>
 
-          {/* Test Email */}
+          {/* SECTION 2 — Global Recipients */}
+          <div style={CARD}>
+            <div style={SECTION_HEADER}>Global Alert Recipients</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 14 }}>
+              These addresses receive all alerts that match the filters below. Individual alert rules can also have their own recipients.
+            </div>
+            <input style={INPUT}
+              value={settings.email_notify_recipients}
+              onChange={e => setSettings(s => ({ ...s, email_notify_recipients: e.target.value }))}
+              placeholder="security@company.com, admin@company.com" />
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+              {parseEmails(settings.email_notify_recipients).map(email => (
+                <span key={email}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--bg-hover)',
+                    border: '1px solid var(--border)', borderRadius: 14, padding: '4px 10px',
+                    fontSize: 12, color: 'var(--text-primary)' }}>
+                  {email}
+                  <button onClick={() => removeRecipient(email)}
+                    style={{ border: 'none', background: 'transparent', cursor: 'pointer',
+                      color: 'var(--text-muted)', fontSize: 14, lineHeight: 1, padding: 0 }}>
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* SECTION 3 — Notification Filters */}
+          <div style={CARD}>
+            <div style={SECTION_HEADER}>When to Send Alerts</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>
+              Only send emails when ALL selected conditions match
+            </div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginBottom: 20 }}>
+              <input type="checkbox"
+                checked={settings.email_notify_enabled === 'true'}
+                onChange={e => setSettings(s => ({ ...s, email_notify_enabled: e.target.checked ? 'true' : 'false' }))}
+                style={{ cursor: 'pointer', width: 16, height: 16 }} />
+              <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>
+                Email notifications enabled
+              </span>
+            </label>
+
+            {/* 3a Severity */}
+            <div style={{ marginBottom: 22 }}>
+              <label style={LABEL}>Severity levels</label>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                Send email for these severity levels
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                {SEVERITY_OPTS.map(o => (
+                  <label key={o.value} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                    <input type="checkbox"
+                      checked={parseArr(settings.email_notify_severities).includes(o.value)}
+                      onChange={() => toggleInArr('email_notify_severities', o.value)}
+                      style={{ cursor: 'pointer', width: 15, height: 15 }} />
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: o.color, display: 'inline-block' }} />
+                    <span style={{ fontSize: 12.5, color: 'var(--text-primary)' }}>{o.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* 3b Categories */}
+            <div style={{ marginBottom: 22 }}>
+              <label style={LABEL}>Event categories</label>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                Only send for these categories (leave all unchecked to receive all categories)
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                {CATEGORY_OPTS.map(o => (
+                  <label key={o.value} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                    <input type="checkbox"
+                      checked={parseArr(settings.email_notify_categories).includes(o.value)}
+                      onChange={() => toggleInArr('email_notify_categories', o.value)}
+                      style={{ cursor: 'pointer', width: 15, height: 15 }} />
+                    <span style={{ fontSize: 12.5, color: 'var(--text-primary)' }}>{o.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* 3c Vendors */}
+            <div style={{ marginBottom: 22 }}>
+              <label style={LABEL}>Vendors</label>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                Only send for logs from these vendors (leave all unchecked to receive from all vendors)
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                {VENDOR_OPTS.map(o => (
+                  <label key={o.value} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                    <input type="checkbox"
+                      checked={parseArr(settings.email_notify_vendors).includes(o.value)}
+                      onChange={() => toggleInArr('email_notify_vendors', o.value)}
+                      style={{ cursor: 'pointer', width: 15, height: 15 }} />
+                    <span style={{ fontSize: 12.5, color: 'var(--text-primary)' }}>{o.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* 3d Minimum risk score */}
+            <div style={{ marginBottom: 22 }}>
+              <label style={LABEL}>Minimum risk score</label>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                Only send emails for logs with risk score at or above this value (0 = send all)
+              </div>
+              {(() => {
+                const v = parseInt(settings.email_notify_min_risk || '0') || 0;
+                const b = riskBadge(v);
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <input type="range" min={0} max={100} step={5}
+                      value={v}
+                      onChange={e => setSettings(s => ({ ...s, email_notify_min_risk: String(e.target.value) }))}
+                      style={{ flex: 1, maxWidth: 320, cursor: 'pointer' }} />
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px',
+                      borderRadius: 14, background: b.color, color: '#fff', fontSize: 12, fontWeight: 600 }}>
+                      {v} · {b.label}
+                    </span>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* 3e Cooldown */}
+            <div>
+              <label style={LABEL}>Cooldown between alerts</label>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                Minimum time between emails for the same alert rule (prevents email flooding)
+              </div>
+              <select
+                value={settings.email_notify_cooldown_mins}
+                onChange={e => setSettings(s => ({ ...s, email_notify_cooldown_mins: e.target.value }))}
+                style={{ ...INPUT, maxWidth: 260, cursor: 'pointer' }}>
+                {COOLDOWN_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* SECTION 4 — Delivery Mode */}
+          <div style={CARD}>
+            <div style={SECTION_HEADER}>Delivery mode</div>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', marginBottom: 14 }}>
+              <input type="radio" name="delivery" value="instant"
+                checked={settings.email_notify_digest_mode === 'instant'}
+                onChange={() => setSettings(s => ({ ...s, email_notify_digest_mode: 'instant' }))}
+                style={{ cursor: 'pointer', marginTop: 2, width: 15, height: 15 }} />
+              <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>
+                <span style={{ fontWeight: 600 }}>Instant</span> — Send email immediately when alert fires
+              </span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', marginBottom: 14 }}>
+              <input type="radio" name="delivery" value="digest"
+                checked={settings.email_notify_digest_mode === 'digest'}
+                onChange={() => setSettings(s => ({ ...s, email_notify_digest_mode: 'digest' }))}
+                style={{ cursor: 'pointer', marginTop: 2, width: 15, height: 15 }} />
+              <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>
+                <span style={{ fontWeight: 600 }}>Daily Digest</span> — Collect alerts and send one summary email
+              </span>
+            </label>
+
+            {settings.email_notify_digest_mode === 'digest' && (
+              <div style={{ marginLeft: 25 }}>
+                <label style={LABEL}>Send digest at</label>
+                <select
+                  value={settings.email_notify_digest_hour}
+                  onChange={e => setSettings(s => ({ ...s, email_notify_digest_hour: e.target.value }))}
+                  style={{ ...INPUT, maxWidth: 160, cursor: 'pointer' }}>
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={String(h)}>{String(h).padStart(2, '0')}:00</option>
+                  ))}
+                </select>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+                  Sends a summary of all alerts from the past 24 hours at the selected time
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Shared Save (SMTP + recipients + filters + delivery) */}
+          <button onClick={save} disabled={saving}
+            style={{ padding: '10px 28px', borderRadius: 8, border: 'none', cursor: 'pointer',
+              fontSize: 13, fontWeight: 600, background: '#2563eb', color: '#fff',
+              opacity: saving ? 0.7 : 1, transition: 'all 0.15s', marginBottom: 16 }}>
+            {saving ? 'Saving...' : 'Save Settings'}
+          </button>
+
+          {/* SECTION 5 — Per-Rule Recipients */}
+          <div style={CARD}>
+            <div style={SECTION_HEADER}>Per-Rule Recipients</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>
+              Override recipients for specific alert rules. These are in addition to global recipients.
+            </div>
+            {rules.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>No alert rules configured.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {rules.map(rule => {
+                  const val = ruleEmails[rule.id] || '';
+                  const showHint = !rule.notify_email && !val;
+                  return (
+                    <div key={rule.id} style={{ display: 'flex', alignItems: 'flex-end', gap: 12,
+                      paddingBottom: 14, borderBottom: '1px solid var(--border-light)' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{rule.name}</div>
+                        {rule.description && (
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{rule.description}</div>
+                        )}
+                        <input style={{ ...INPUT, marginTop: 8 }}
+                          value={val}
+                          onChange={e => setRuleEmails(m => ({ ...m, [rule.id]: e.target.value }))}
+                          placeholder="optional override" />
+                        {showHint && (
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>No custom recipient</div>
+                        )}
+                      </div>
+                      <button onClick={() => saveRuleEmail(rule.id)} disabled={savingRule === rule.id}
+                        style={{ padding: '9px 18px', borderRadius: 7, border: '1px solid var(--border)', cursor: 'pointer',
+                          fontSize: 12, fontWeight: 600, background: 'var(--input-bg)', color: 'var(--text-primary)',
+                          opacity: savingRule === rule.id ? 0.7 : 1, whiteSpace: 'nowrap' }}>
+                        {savingRule === rule.id ? 'Saving...' : 'Save'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* SECTION 6 — Test & Preview */}
           <div style={CARD}>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Send Test Email</div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 14 }}>
@@ -447,15 +826,17 @@ export default function Settings() {
                 {testing ? 'Sending...' : 'Send Test'}
               </button>
             </div>
+            {parseEmails(settings.email_notify_recipients).length > 0 ? (
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 12 }}>
+                Test email will be sent to: {parseEmails(settings.email_notify_recipients).join(', ')}
+              </div>
+            ) : (
+              <div style={{ background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.3)',
+                borderRadius: 8, padding: '10px 14px', marginTop: 12, fontSize: 12.5, color: '#b45309' }}>
+                No global recipients configured — alerts will only go to per-rule recipients.
+              </div>
+            )}
           </div>
-
-          {/* Save */}
-          <button onClick={save} disabled={saving}
-            style={{ padding: '10px 28px', borderRadius: 8, border: 'none', cursor: 'pointer',
-              fontSize: 13, fontWeight: 600, background: '#2563eb', color: '#fff',
-              opacity: saving ? 0.7 : 1, transition: 'all 0.15s' }}>
-            {saving ? 'Saving...' : 'Save Settings'}
-          </button>
         </>
       )}
 

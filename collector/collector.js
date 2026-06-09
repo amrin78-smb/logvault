@@ -417,12 +417,12 @@ async function fireAlert(rule, entry, matchCount) {
       console.log(`[Alert] Rule "${rule.name}" fired — ${entry.source_host || entry.source_ip}`);
     }
 
-    // Send email notification if the rule has a recipient configured.
-    // Best-effort — never blocks or breaks alert firing.
-    if (rule.notify_email) {
-      sendAlertEmail(rule, entry, matchCount, pool).catch(err =>
-        console.error('[Alert] Email notify error:', err.message));
-    }
+    // Send email notification (best-effort — never blocks alert firing).
+    // The emailer applies the global notification filters and resolves
+    // recipients (per-rule notify_email + global recipients), so we always
+    // call it and let it decide whether an email actually goes out.
+    sendAlertEmail(rule, entry, matchCount, pool).catch(err =>
+      console.error('[Alert] Email notify error:', err.message));
   } catch (err) { console.error('[Alert] Failed to insert/update alert event:', err.message); }
 }
 

@@ -249,6 +249,17 @@ INSERT INTO app_settings (key, value) VALUES ('smtp_pass', '') ON CONFLICT (key)
 INSERT INTO app_settings (key, value) VALUES ('smtp_from', '') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value) VALUES ('smtp_enabled', 'false') ON CONFLICT (key) DO NOTHING;
 
+-- Email notification preferences (granular alert email controls)
+INSERT INTO app_settings (key, value) VALUES ('email_notify_enabled', 'true') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('email_notify_severities', '["0","1","2","3"]') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('email_notify_categories', '[]') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('email_notify_vendors', '[]') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('email_notify_min_risk', '40') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('email_notify_digest_mode', 'instant') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('email_notify_digest_hour', '8') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('email_notify_recipients', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('email_notify_cooldown_mins', '30') ON CONFLICT (key) DO NOTHING;
+
 -- Grant permissions to logvault_user
 GRANT ALL ON ALL TABLES IN SCHEMA public TO logvault_user;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO logvault_user;
