@@ -118,6 +118,10 @@ interface UpdateStatus {
 }
 
 const UPDATE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
+// After the API is confirmed stably back up, wait this long before reloading so
+// the Next.js frontend (which starts AFTER the API) has time to finish booting —
+// otherwise the reload lands on "page cannot be reached" for 20-30 seconds.
+const RELOAD_COUNTDOWN_SECONDS = 15;
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
@@ -141,13 +145,14 @@ function changelogBody(md?: string): string {
 // Defined at module level (never inside another component).
 function UpdateOverlay() {
   const [phase, setPhase] = useState<'starting' | 'down' | 'back_up' | 'timeout'>('starting');
+  const [countdown, setCountdown] = useState(RELOAD_COUNTDOWN_SECONDS);
   const wentDown = useRef(false);
+  const consecutiveUp = useRef(0);
 
   useEffect(() => {
     let active   = true;
     const startedAt = Date.now();
     let pollId:   ReturnType<typeof setInterval> | null = null;
-    let reloadId: ReturnType<typeof setTimeout> | null = null;
 
     const stopPolling = () => { if (pollId !== null) { clearInterval(pollId); pollId = null; } };
 
@@ -175,7 +180,10 @@ function UpdateOverlay() {
       if (!active) return;
 
       if (!ok) {
-        // Fetch failed or non-200 → API is down (restarting).
+        // Fetch failed or non-200 → API is down (restarting). Reset the
+        // consecutive-success counter: during startup the API can answer one
+        // probe then drop again, so any failure restarts the stability window.
+        consecutiveUp.current = 0;
         wentDown.current = true;
         setPhase('down');
         return;
@@ -183,9 +191,17 @@ function UpdateOverlay() {
 
       // Healthy response. Only a recovery if we previously saw it go down.
       if (wentDown.current) {
-        setPhase('back_up');
-        stopPolling();
-        reloadId = setTimeout(() => { window.location.href = '/?updated=true'; }, 2000);
+        // Require 3 consecutive healthy probes (≈6s at the 2s cadence) before
+        // declaring the API stably back up. A single success after going down
+        // isn't enough — services may respond once then briefly drop again
+        // mid-startup, which would trigger a premature reload.
+        consecutiveUp.current += 1;
+        if (consecutiveUp.current >= 3) {
+          setPhase('back_up');
+          stopPolling();
+          // The reload itself is driven by the countdown effect below — the API
+          // is up, but Next.js needs a little longer before it can serve pages.
+        }
       }
       // else: still the pre-restart API — keep waiting for it to go down.
     };
@@ -196,13 +212,21 @@ function UpdateOverlay() {
     return () => {
       active = false;
       stopPolling();
-      if (reloadId !== null) clearTimeout(reloadId);
     };
   }, []);
 
+  // Once the API is confirmed stably back up, count down (15…14…13…) before
+  // reloading so the Next.js frontend has time to finish starting after the API.
+  useEffect(() => {
+    if (phase !== 'back_up') return;
+    if (countdown <= 0) { window.location.href = '/?updated=true'; return; }
+    const id = setTimeout(() => setCountdown(c => c - 1), 1000);
+    return () => clearTimeout(id);
+  }, [phase, countdown]);
+
   let statusLine = 'Starting update...';
   if (phase === 'down')          statusLine = 'Services restarting...';
-  else if (phase === 'back_up')  statusLine = '✓ Update complete! Redirecting...';
+  else if (phase === 'back_up')  statusLine = `✓ Services are back online. Reloading in ${countdown} second${countdown === 1 ? '' : 's'}...`;
   else if (phase === 'timeout')  statusLine = 'Update is taking longer than expected. Try reloading manually.';
 
   return (
@@ -222,8 +246,15 @@ function UpdateOverlay() {
           Pulling latest code and restarting services. Do not close this window.
         </p>
         <p style={{ fontWeight: 600, margin: '14px 0', color: 'var(--text-primary)' }}>{statusLine}</p>
-        <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>(This usually takes 30-60 seconds)</p>
-        <button onClick={() => window.location.reload()}
+        {phase === 'back_up' && (
+          <div style={{ fontSize: 40, fontWeight: 800, lineHeight: 1, margin: '4px 0 10px', color: 'var(--primary)' }}>
+            {countdown}
+          </div>
+        )}
+        {phase !== 'back_up' && (
+          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>(This usually takes 30-60 seconds)</p>
+        )}
+        <button onClick={phase === 'back_up' ? () => { window.location.href = '/?updated=true'; } : () => window.location.reload()}
           style={{ marginTop: 10, padding: '9px 22px', borderRadius: 8, border: 'none',
             background: 'var(--primary)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
           Reload Now
