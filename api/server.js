@@ -120,7 +120,7 @@ async function enforceLicense(req, res, next) {
     }
   }
 
-  const exemptPaths = ['/api/health', '/api/license-status', '/api/system/update-available'];
+  const exemptPaths = ['/api/health', '/api/stats', '/api/license-status', '/api/system/update-available'];
   if (state.disabled && !exemptPaths.some(p => req.path.startsWith(p))) {
     return res.status(402).json({
       error: 'License has expired. Please renew your NocVault license.',
@@ -1272,6 +1272,30 @@ app.get('/api/health', asyncHandler(async (req, res) => {
   const { rows } = await pool.query(`SELECT COUNT(*) AS total FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => 1)`);
   res.json({ status: 'ok', version, logs_last_hour: parseInt(rows[0].total) });
 }));
+
+// ── PUBLIC STATS ──────────────────────────────────────────────
+// No-auth, read-only summary counters for external/cross-origin dashboards.
+// Same access level as /api/health (license-exempt). Permissive CORS since the
+// global cors() middleware restricts to the frontend origin only. Never 500s:
+// on any DB error, returns zeros with HTTP 200.
+app.get('/api/stats', async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  try {
+    const [logsToday, sources, alerts] = await Promise.all([
+      pool.query(`SELECT COUNT(*) AS c FROM syslog_entries WHERE received_at > NOW() - INTERVAL '24 hours'`),
+      pool.query(`SELECT COUNT(DISTINCT source_ip) AS c FROM syslog_entries WHERE received_at > NOW() - INTERVAL '24 hours'`),
+      pool.query(`SELECT COUNT(*) AS c FROM alert_events WHERE acknowledged = FALSE`),
+    ]);
+    res.json({
+      logs_today:    parseInt(logsToday.rows[0].c, 10),
+      log_sources:   parseInt(sources.rows[0].c, 10),
+      active_alerts: parseInt(alerts.rows[0].c, 10),
+    });
+  } catch (err) {
+    console.error('[API /api/stats]', err.message);
+    res.json({ logs_today: 0, log_sources: 0, active_alerts: 0 });
+  }
+});
 
 // ── ERROR HANDLER ─────────────────────────────────────────────
 app.use((err, req, res, _next) => {
