@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { getServerSession } from 'next-auth/next';
+import { authOptions }      from '@/auth';
 import './globals.css';
 import { ThemeProvider }   from '@/components/ThemeContext';
 import { ToastProvider }   from '@/components/Toast';
@@ -12,11 +14,14 @@ export const metadata: Metadata = {
   description: 'NocVault Network Syslog Analyzer',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Fetch the session server-side so AuthProvider can hydrate SessionProvider —
+  // removes the client /api/auth/session round-trip on every page load.
+  const session = await getServerSession(authOptions);
   return (
     <html lang="en">
       <body>
-        <AuthProvider>
+        <AuthProvider session={session}>
           <LicenseProvider>
             <ThemeProvider>
               <ToastProvider>

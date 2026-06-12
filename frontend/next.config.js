@@ -8,11 +8,11 @@ const nextConfig = {
       process.env.NEXT_PUBLIC_NOCVAULT_HUB_URL || process.env.NEXT_PUBLIC_NETVAULT_HUB_URL,
   },
 
-  // NOTE: /api/* is no longer rewritten directly to the Express API. The
-  // authenticated proxy route at src/app/api/[...path]/route.ts forwards each
-  // request to http://localhost:3005 after attaching the user's RBAC headers
-  // (X-User-Id / X-User-Role). /api/auth/* is handled by the next-auth route.
-  // A rewrite cannot attach per-request session headers, so it was removed.
+  // NOTE: /api/* is proxied to the Express API by the edge middleware in
+  // src/proxy.ts (NextResponse.rewrite), which stamps verified X-User-Id /
+  // X-User-Role headers from the session token. No next.config rewrite is used
+  // for /api/* — a static rewrite cannot strip client-supplied headers or
+  // attach per-request session identity. /api/auth/* is handled by next-auth.
 };
 
 module.exports = nextConfig;
