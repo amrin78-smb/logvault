@@ -117,7 +117,7 @@ interface UpdateStatus {
   error?:            string;
 }
 
-const UPDATE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
+const UPDATE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes — covers slow npm install + Next.js build before services are back
 // After the API is confirmed stably back up, wait this long before reloading so
 // the Next.js frontend (which starts AFTER the API) has time to finish booting —
 // otherwise the reload lands on "page cannot be reached" for 20-30 seconds.
@@ -252,7 +252,7 @@ function UpdateOverlay() {
           </div>
         )}
         {phase !== 'back_up' && (
-          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>(This usually takes 30-60 seconds)</p>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>(This usually takes 1-3 minutes)</p>
         )}
         <button onClick={phase === 'back_up' ? () => { window.location.href = '/?updated=true'; } : () => window.location.reload()}
           style={{ marginTop: 10, padding: '9px 22px', borderRadius: 8, border: 'none',
