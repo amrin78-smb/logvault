@@ -1095,11 +1095,11 @@ app.get('/api/stats/disk', asyncHandler(async (req, res) => {
 // Super-admin only. No RBAC site filtering applies to these endpoints.
 const appRoot = path.join(__dirname, '..');
 
-// ── Git-commit-based update check (commit hash + package.json + CHANGELOG.md) ─
+// ── Git-commit-based update check (commit hash + package.json) ───────────────
 // Update detection compares the local git commit hash against the latest commit
 // on GitHub's main branch — ANY new commit counts as an update, even when the
 // package.json version is unchanged (fixes updates being missed when code is
-// pushed without bumping the version). The version + changelog are display-only.
+// pushed without bumping the version). The version + release notes are display-only.
 // Never blocks on network failure.
 
 // Local short git commit hash for the deployed checkout, or null if git is
@@ -1113,22 +1113,20 @@ function localCommitHash() {
   }
 }
 
-// Pull the latest version's section out of CHANGELOG.md — everything from the
-// first "## " header up to the next one. HTML comments (the release-process
-// block, which itself contains indented "## v..." example lines) are stripped
-// first so they cannot be mistaken for the first real section header.
-function extractLatestChangelog(md) {
-  const clean = String(md).replace(/<!--[\s\S]*?-->/g, '');
-  const header = clean.match(/^##\s+.*$/m);
-  if (!header) return { changelog: '', release_date: null };
-  const start = header.index;
-  const afterHeader = start + header[0].length;
-  const nextRel = clean.slice(afterHeader).search(/^##\s+/m);
-  const end = nextRel === -1 ? clean.length : afterHeader + nextRel;
-  const section = clean.slice(start, end).trim();
-  const date = header[0].match(/(\d{4}-\d{2}-\d{2})/);
-  return { changelog: section, release_date: date ? date[1] : null };
-}
+// Structured release notes keyed by version. The update-status endpoint surfaces
+// these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
+// bumping the version, add a matching entry here with 3-5 bullets.
+const releaseNotes = {
+  '1.2.0': [
+    'Enterprise dashboard with health score and charts',
+    'Animated login page redesign',
+    'Server status monitoring',
+    'Automatic versioning across suite',
+  ],
+  'default': [
+    'Bug fixes and performance improvements',
+  ],
+};
 
 // Cached result for the slim update-notifier banner. { current, latest } when an
 // update exists, else null. Refreshed on startup + every 24h.
@@ -1178,42 +1176,38 @@ app.get('/api/system/update-status', requireSuperAdmin, asyncHandler(async (req,
     // Cache-bust so GitHub's raw CDN can't return a stale copy — the Settings
     // "Re-check" button must reflect a freshly pushed commit immediately.
     const bust = Date.now();
-    const [commitRes, pkgRes, clRes] = await Promise.all([
+    const [commitRes, pkgRes] = await Promise.all([
       fetch('https://api.github.com/repos/amrin78-smb/logvault/commits/main', {
         headers: { 'Accept': 'application/vnd.github.v3+json' },
         cache: 'no-store',
       }),
       fetch(`${GH_RAW}/package.json?cb=${bust}`, { cache: 'no-store' }),
-      fetch(`${GH_RAW}/CHANGELOG.md?cb=${bust}`, { cache: 'no-store' }),
     ]);
     const commit = await commitRes.json();
     const remoteHash = commit && commit.sha ? String(commit.sha).slice(0, 7) : null;
     const remotePkg = await pkgRes.json();
     const remoteVersion = remotePkg.version;
 
-    let changelog = '';
-    let release_date = null;
-    try {
-      const parsed = extractLatestChangelog(await clRes.text());
-      changelog    = parsed.changelog;
-      release_date = parsed.release_date;
-    } catch { /* changelog is best-effort */ }
+    // Release notes keyed by the latest version, with a generic fallback.
+    const release_notes = releaseNotes[remoteVersion] || releaseNotes['default'];
 
     // Any differing commit = update available. If either hash is missing
     // (e.g. git unavailable or API error), treat as up to date to avoid
     // false alarms.
-    const available = !!remoteHash && !!localHash && remoteHash !== localHash;
+    const updateAvail = !!remoteHash && !!localHash && remoteHash !== localHash;
     // Keep the cached banner state in sync with this on-demand check.
-    updateAvailable = available ? { current: localVersion, latest: remoteVersion } : null;
+    updateAvailable = updateAvail ? { current: localVersion, latest: remoteVersion } : null;
     res.json({
       current_version:  localVersion,
       latest_version:   remoteVersion,
       current_commit:   localHash,
       latest_commit:    remoteHash,
-      up_to_date:       !available,
-      update_available: available,
-      changelog,
-      release_date,
+      current_hash:     localHash,
+      latest_hash:      remoteHash,
+      up_to_date:       !updateAvail,
+      update_available: updateAvail,
+      release_notes,
+      release_date:     new Date().toISOString().slice(0, 10),
     });
   } catch (err) {
     console.error('[update-status] version check failed:', err.message);

@@ -112,7 +112,7 @@ interface UpdateStatus {
   latest_commit?:    string;
   up_to_date?:       boolean;
   update_available?: boolean;
-  changelog?:        string;
+  release_notes?:    string[];
   release_date?:     string;
   error?:            string;
 }
@@ -132,13 +132,6 @@ function fmtReleaseDate(d?: string): string {
   if (!y || !m || !day) return d;
   return `${MONTHS[m - 1]} ${day}, ${y}`;
 }
-// Drop the leading "## vX.Y.Z — date" header from a changelog section so the box
-// shows just the body (version + date are rendered separately above it).
-function changelogBody(md?: string): string {
-  if (!md) return '';
-  return md.replace(/^##\s+.*$/m, '').trim();
-}
-
 // Full-screen overlay shown during an update; polls /api/health for recovery.
 // The API must be seen DOWN before an UP response counts as recovery, so we
 // never declare "complete" against the still-running pre-restart service.
@@ -925,18 +918,19 @@ export default function Settings() {
                 </div>
               )}
 
-              {changelogBody(updateStatus?.changelog) && (
+              {updateStatus?.release_notes && updateStatus.release_notes.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
                     What&apos;s new{updateStatus?.latest_version ? ` in v${updateStatus.latest_version}` : ''}
                   </div>
-                  <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--border)',
-                    borderRadius: 8, padding: '10px 14px', background: 'var(--bg-primary)', fontSize: 12.5,
-                    lineHeight: 1.5, whiteSpace: 'pre-wrap', color: 'var(--text-primary)' }}>
-                    {changelogBody(updateStatus?.changelog)}
-                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12.5, lineHeight: 1.6,
+                    color: 'var(--text-primary)' }}>
+                    {updateStatus.release_notes.map((note, i) => (
+                      <li key={i}>{note}</li>
+                    ))}
+                  </ul>
                   {updateStatus?.release_date && (
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
                       Released: {fmtReleaseDate(updateStatus.release_date)}
                     </div>
                   )}
