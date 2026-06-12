@@ -7,7 +7,7 @@ import { useSession } from 'next-auth/react';
 const HUB_URL = process.env.NEXT_PUBLIC_NOCVAULT_HUB_URL || 'http://localhost:3000';
 
 // Manual CSRF sign-out — clears the NextAuth session then returns to the hub
-// launcher. Do NOT use the next-auth signOut helper (breaks the SSO cookie flow).
+// login. Do NOT use the next-auth signOut helper (breaks the SSO cookie flow).
 async function handleSignOut() {
   try {
     const csrfRes = await fetch('/api/auth/csrf');
@@ -18,7 +18,7 @@ async function handleSignOut() {
       body: `csrfToken=${csrfToken}&callbackUrl=/`,
     });
   } catch {}
-  window.location.replace(HUB_URL + '/launcher');
+  window.location.replace(HUB_URL + '/login');
 }
 
 function SunIcon() {
