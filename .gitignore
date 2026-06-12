@@ -6,3 +6,6 @@ logs/
 .env
 temp/
 frontend/tsconfig.tsbuildinfo
+
+# packaging archives (build/distribution output, never source)
+*.zip
