@@ -8,11 +8,12 @@
 
 const express  = require('express');
 const cors     = require('cors');
+const crypto   = require('crypto');
 const { Pool } = require('pg');
 const http     = require('http');
 const { WebSocketServer } = require('ws');
 const { testEmail } = require('../collector/emailer');
-const { rbacMiddleware, requireSuperAdmin, getSiteFilter } = require('./rbac');
+const { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter } = require('./rbac');
 const { getLicense, getLicenseState } = require('./licenseCheck');
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env.local') });
 
@@ -485,14 +486,16 @@ app.get('/api/logs', asyncHandler(async (req, res) => {
 
 app.get('/api/logs/recent-critical', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'se');
   const { rows } = await pool.query(`
     SELECT se.received_at, COALESCE(kh.hostname, se.source_host) AS source_host,
       se.source_ip::TEXT, se.severity_label, se.vendor, se.message
     FROM syslog_entries se
     LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
     WHERE se.severity <= 3 AND se.received_at > NOW() - make_interval(hours => $1)
+    ${sf.clause}
     ORDER BY se.received_at DESC LIMIT 50
-  `, [hours]);
+  `, [hours, ...sf.params]);
   res.json({ data: rows });
 }));
 
@@ -512,7 +515,7 @@ app.get('/api/alert-rules', asyncHandler(async (req, res) => {
 }));
 
 // Update the per-rule notification recipient(s) for one alert rule.
-app.put('/api/alert-rules/:id/notify', asyncHandler(async (req, res) => {
+app.put('/api/alert-rules/:id/notify', requireAdmin, asyncHandler(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id) || id < 1) return res.status(400).json({ error: 'Invalid rule id' });
   let { notify_email } = req.body;
@@ -527,7 +530,7 @@ app.put('/api/alert-rules/:id/notify', asyncHandler(async (req, res) => {
   res.json({ data: rows[0] });
 }));
 
-app.post('/api/alerts/rules', asyncHandler(async (req, res) => {
+app.post('/api/alerts/rules', requireAdmin, asyncHandler(async (req, res) => {
   const { name, description, match_severity, match_vendor, match_host,
           match_pattern, threshold_count, threshold_window, notify_email } = req.body;
 
@@ -551,7 +554,7 @@ app.post('/api/alerts/rules', asyncHandler(async (req, res) => {
   res.status(201).json({ data: rows[0] });
 }));
 
-app.patch('/api/alerts/rules/:id', asyncHandler(async (req, res) => {
+app.patch('/api/alerts/rules/:id', requireAdmin, asyncHandler(async (req, res) => {
   const { is_enabled } = req.body;
   const { rows } = await pool.query(
     'UPDATE alert_rules SET is_enabled=$1, updated_at=NOW() WHERE id=$2 RETURNING *',
@@ -591,15 +594,17 @@ app.patch('/api/alerts/events/acknowledge-all', asyncHandler(async (req, res) =>
 
 // Alert banner — most recent unacknowledged alerts
 app.get('/api/alerts/events/recent-unacked', asyncHandler(async (req, res) => {
+  const sf = getSiteFilter(req.rbac, 1, 'ae');
   const { rows } = await pool.query(`
     SELECT ae.id, ae.fired_at, ae.source_host, ae.source_ip, ae.sample_message AS message,
       ar.name AS rule_name
     FROM alert_events ae
     LEFT JOIN alert_rules ar ON ar.id = ae.rule_id
     WHERE ae.acknowledged = FALSE
+    ${sf.clause}
     ORDER BY ae.fired_at DESC
     LIMIT 5
-  `);
+  `, sf.params);
   res.json({ data: rows });
 }));
 
@@ -660,17 +665,32 @@ app.get('/api/logs/export', asyncHandler(async (req, res) => {
 // ── KNOWN HOSTS ──────────────────────────────────────────────
 
 app.get('/api/hosts', asyncHandler(async (req, res) => {
+  // known_hosts carries site_id directly, so filter on it rather than via the
+  // source_ip subquery getSiteFilter builds. Admins (null) see all; a user with
+  // no sites ([]) sees none; otherwise restrict to the user's assigned sites.
+  const rbac = req.rbac;
+  let where = '';
+  let params = [];
+  if (rbac && rbac.allowedSiteIds !== null && rbac.allowedSiteIds !== undefined) {
+    if (rbac.allowedSiteIds.length === 0) {
+      where = 'WHERE 1=0';
+    } else {
+      where = 'WHERE site_id = ANY($1::int[])';
+      params = [rbac.allowedSiteIds];
+    }
+  }
   const { rows } = await pool.query(`
     SELECT ip_address::TEXT, hostname, vendor, description,
       site_name, brand, model, device_status, lifecycle_status,
       synced_from_nv, last_synced, last_seen
     FROM known_hosts
+    ${where}
     ORDER BY synced_from_nv DESC, last_seen DESC
-  `);
+  `, params);
   res.json({ data: rows });
 }));
 
-app.put('/api/hosts', asyncHandler(async (req, res) => {
+app.put('/api/hosts', requireAdmin, asyncHandler(async (req, res) => {
   const { ip_address, hostname, vendor, description } = req.body;
   if (!ip_address) return res.status(400).json({ error: 'ip_address required' });
   const { rows } = await pool.query(`
@@ -700,6 +720,7 @@ app.post('/api/hosts/sync-netvault', requireSuperAdmin, asyncHandler(async (req,
 
 app.get('/api/health/interfaces', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
   const data = await getCached(`health-interfaces:${hours}:${rbacCacheKey(req.rbac)}`, 30000, async () => {
     const { rows } = await pool.query(`
       SELECT received_at, source_host, source_ip::TEXT, message,
@@ -710,8 +731,9 @@ app.get('/api/health/interfaces', asyncHandler(async (req, res) => {
       WHERE received_at > NOW() - make_interval(hours => $1)
         AND vendor = 'cisco'
         AND structured_data->>'category' = 'interface'
+      ${sf.clause}
       ORDER BY received_at DESC LIMIT 200
-    `, [hours]);
+    `, [hours, ...sf.params]);
     return { data: rows };
   });
   res.json(data);
@@ -719,6 +741,7 @@ app.get('/api/health/interfaces', asyncHandler(async (req, res) => {
 
 app.get('/api/health/flaps', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
   const data = await getCached(`health-flaps:${hours}:${rbacCacheKey(req.rbac)}`, 30000, async () => {
     const { rows } = await pool.query(`
       SELECT
@@ -733,10 +756,11 @@ app.get('/api/health/flaps', asyncHandler(async (req, res) => {
         AND vendor = 'cisco'
         AND structured_data->>'category' = 'interface'
         AND structured_data->>'interface' IS NOT NULL
+      ${sf.clause}
       GROUP BY source_host, source_ip, structured_data->>'interface'
       HAVING COUNT(*) >= 2
       ORDER BY event_count DESC LIMIT 50
-    `, [hours]);
+    `, [hours, ...sf.params]);
     return { data: rows };
   });
   res.json(data);
@@ -744,6 +768,7 @@ app.get('/api/health/flaps', asyncHandler(async (req, res) => {
 
 app.get('/api/health/stp', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
   const data = await getCached(`health-stp:${hours}:${rbacCacheKey(req.rbac)}`, 30000, async () => {
     const { rows } = await pool.query(`
       SELECT received_at, source_host, source_ip::TEXT, severity_label, message,
@@ -754,8 +779,9 @@ app.get('/api/health/stp', asyncHandler(async (req, res) => {
       WHERE received_at > NOW() - make_interval(hours => $1)
         AND vendor = 'cisco'
         AND structured_data->>'category' IN ('stp','loop')
+      ${sf.clause}
       ORDER BY received_at DESC LIMIT 200
-    `, [hours]);
+    `, [hours, ...sf.params]);
     return { data: rows };
   });
   res.json(data);
@@ -763,6 +789,7 @@ app.get('/api/health/stp', asyncHandler(async (req, res) => {
 
 app.get('/api/health/macflaps', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
   const data = await getCached(`health-macflaps:${hours}:${rbacCacheKey(req.rbac)}`, 30000, async () => {
     const { rows } = await pool.query(`
       SELECT
@@ -774,9 +801,10 @@ app.get('/api/health/macflaps', asyncHandler(async (req, res) => {
       FROM syslog_entries
       WHERE received_at > NOW() - make_interval(hours => $1)
         AND structured_data->>'subcategory' = 'mac_flap'
+      ${sf.clause}
       GROUP BY source_host, source_ip, structured_data->>'mac_address'
       ORDER BY flap_count DESC LIMIT 50
-    `, [hours]);
+    `, [hours, ...sf.params]);
     return { data: rows };
   });
   res.json(data);
@@ -784,6 +812,7 @@ app.get('/api/health/macflaps', asyncHandler(async (req, res) => {
 
 app.get('/api/health/config-changes', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
   const data = await getCached(`health-config-changes:${hours}:${rbacCacheKey(req.rbac)}`, 30000, async () => {
     const { rows } = await pool.query(`
       SELECT received_at, source_host, source_ip::TEXT, message, vendor
@@ -795,8 +824,9 @@ app.get('/api/health/config-changes', asyncHandler(async (req, res) => {
           OR message ILIKE '%configuration changed%'
           OR message ILIKE '%config edit%'
         )
+      ${sf.clause}
       ORDER BY received_at DESC LIMIT 100
-    `, [hours]);
+    `, [hours, ...sf.params]);
     return { data: rows };
   });
   res.json(data);
@@ -804,6 +834,7 @@ app.get('/api/health/config-changes', asyncHandler(async (req, res) => {
 
 app.get('/api/health/routing', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
   const data = await getCached(`health-routing:${hours}:${rbacCacheKey(req.rbac)}`, 30000, async () => {
     const { rows } = await pool.query(`
       SELECT received_at, source_host, source_ip::TEXT, severity_label, message,
@@ -812,8 +843,9 @@ app.get('/api/health/routing', asyncHandler(async (req, res) => {
       WHERE received_at > NOW() - make_interval(hours => $1)
         AND vendor = 'cisco'
         AND structured_data->>'category' = 'routing'
+      ${sf.clause}
       ORDER BY received_at DESC LIMIT 100
-    `, [hours]);
+    `, [hours, ...sf.params]);
     return { data: rows };
   });
   res.json(data);
@@ -825,6 +857,7 @@ app.get('/api/health/device-status', asyncHandler(async (req, res) => {
   // 24h window (was 7 days): scans ~100K rows instead of ~750K. The only
   // cache-key variation is the RBAC scope.
   const hours = 24; // fixed 24h window for this endpoint
+  const sf = getSiteFilter(req.rbac, 1, 'se');
   const cacheKey = `device-status:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 60000, async () => {
     const { rows } = await pool.query(`
@@ -841,9 +874,10 @@ app.get('/api/health/device-status', asyncHandler(async (req, res) => {
       FROM syslog_entries se
       LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
       WHERE se.received_at > NOW() - make_interval(hours => 24)
+      ${sf.clause}
       GROUP BY se.source_host, se.source_ip, kh.hostname, kh.vendor, kh.description, se.vendor
       ORDER BY last_seen DESC
-    `);
+    `, sf.params);
     return { data: rows };
   });
   res.json(data);
@@ -851,13 +885,14 @@ app.get('/api/health/device-status', asyncHandler(async (req, res) => {
 
 app.get('/api/health/summary', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
   const data = await getCached(`health-summary:${hours}:${rbacCacheKey(req.rbac)}`, 30000, async () => {
     const [iface, stp, mac, cfg, rt] = await Promise.all([
-      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='cisco' AND structured_data->>'category'='interface'`, [hours]),
-      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='cisco' AND structured_data->>'category' IN ('stp','loop')`, [hours]),
-      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND structured_data->>'subcategory'='mac_flap'`, [hours]),
-      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND (structured_data->>'subcategory'='config_change' OR message ILIKE '%configured from%')`, [hours]),
-      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='cisco' AND structured_data->>'category'='routing'`, [hours]),
+      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='cisco' AND structured_data->>'category'='interface' ${sf.clause}`, [hours, ...sf.params]),
+      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='cisco' AND structured_data->>'category' IN ('stp','loop') ${sf.clause}`, [hours, ...sf.params]),
+      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND structured_data->>'subcategory'='mac_flap' ${sf.clause}`, [hours, ...sf.params]),
+      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND (structured_data->>'subcategory'='config_change' OR message ILIKE '%configured from%') ${sf.clause}`, [hours, ...sf.params]),
+      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='cisco' AND structured_data->>'category'='routing' ${sf.clause}`, [hours, ...sf.params]),
     ]);
     return { hours, interface_events: parseInt(iface.rows[0].count), stp_loop_events: parseInt(stp.rows[0].count), mac_flap_events: parseInt(mac.rows[0].count), config_changes: parseInt(cfg.rows[0].count), routing_events: parseInt(rt.rows[0].count) };
   });
@@ -868,12 +903,14 @@ app.get('/api/health/summary', asyncHandler(async (req, res) => {
 
 app.get('/api/security/summary', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf  = getSiteFilter(req.rbac, 2, 'syslog_entries'); // bare-table subqueries
+  const sfA = getSiteFilter(req.rbac, 2, 'a');               // alias 'a' subquery
   const [authFail, denies, vpn, ips, afterHours, bruteSuccess] = await Promise.all([
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND ((vendor='cisco' AND structured_data->>'subcategory' IN ('login_failed','auth_failed','brute_force')) OR (vendor='fortinet' AND message ILIKE '%failed%' AND message ILIKE '%login%') OR (vendor='aruba' AND message ILIKE '%authentication failed%') OR message ILIKE '%authentication failure%')`, [hours]),
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'action' = 'deny'`, [hours]),
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND (structured_data->>'subtype' = 'vpn' OR message ILIKE '%vpn%')`, [hours]),
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'type' = 'utm'`, [hours]),
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND (structured_data->>'subcategory' IN ('login_failed','config_change','auth_failed') OR message ILIKE '%login failed%' OR message ILIKE '%configured from%') AND EXTRACT(HOUR FROM received_at) NOT BETWEEN 7 AND 19`, [hours]),
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND ((vendor='cisco' AND structured_data->>'subcategory' IN ('login_failed','auth_failed','brute_force')) OR (vendor='fortinet' AND message ILIKE '%failed%' AND message ILIKE '%login%') OR (vendor='aruba' AND message ILIKE '%authentication failed%') OR message ILIKE '%authentication failure%') ${sf.clause}`, [hours, ...sf.params]),
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'action' = 'deny' ${sf.clause}`, [hours, ...sf.params]),
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND (structured_data->>'subtype' = 'vpn' OR message ILIKE '%vpn%') ${sf.clause}`, [hours, ...sf.params]),
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'type' = 'utm' ${sf.clause}`, [hours, ...sf.params]),
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND (structured_data->>'subcategory' IN ('login_failed','config_change','auth_failed') OR message ILIKE '%login failed%' OR message ILIKE '%configured from%') AND EXTRACT(HOUR FROM received_at) NOT BETWEEN 7 AND 19 ${sf.clause}`, [hours, ...sf.params]),
     pool.query(`SELECT COUNT(DISTINCT a.source_ip) AS count
       FROM syslog_entries a
       INNER JOIN syslog_entries b ON b.source_ip = a.source_ip
@@ -882,7 +919,8 @@ app.get('/api/security/summary', asyncHandler(async (req, res) => {
         AND b.received_at > NOW() - make_interval(hours => $1)
       WHERE a.received_at > NOW() - make_interval(hours => $1)
         AND a.vendor = 'cisco'
-        AND a.structured_data->>'subcategory' = 'login_success'`, [hours]),
+        AND a.structured_data->>'subcategory' = 'login_success'
+      ${sfA.clause}`, [hours, ...sfA.params]),
   ]);
   res.json({
     hours,
@@ -897,6 +935,7 @@ app.get('/api/security/summary', asyncHandler(async (req, res) => {
 
 app.get('/api/security/auth-failures', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'se');
   const { rows } = await pool.query(`
     SELECT se.source_ip::TEXT, COALESCE(kh.hostname, se.source_host) AS source_host,
       COUNT(*) AS failure_count, MIN(se.received_at) AS first_attempt, MAX(se.received_at) AS last_attempt, se.vendor,
@@ -907,27 +946,31 @@ app.get('/api/security/auth-failures', asyncHandler(async (req, res) => {
         OR (se.vendor='fortinet' AND se.message ILIKE '%failed%' AND se.message ILIKE '%login%')
         OR (se.vendor='aruba' AND se.message ILIKE '%authentication failed%')
         OR se.message ILIKE '%authentication failure%' OR se.message ILIKE '%login failed%')
+    ${sf.clause}
     GROUP BY se.source_ip, se.source_host, kh.hostname, se.vendor
     ORDER BY failure_count DESC LIMIT 50
-  `, [hours]);
+  `, [hours, ...sf.params]);
   res.json({ data: rows });
 }));
 
 app.get('/api/security/brute-force', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 3, 'syslog_entries');
   const { rows } = await pool.query(`
     WITH failures AS (
       SELECT source_ip, MIN(received_at) AS first_fail, MAX(received_at) AS last_fail, COUNT(*) AS fail_count
       FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1)
         AND ((vendor='cisco' AND structured_data->>'subcategory' IN ('login_failed','auth_failed'))
           OR message ILIKE '%login failed%' OR message ILIKE '%authentication fail%')
+      ${sf.clause}
       GROUP BY source_ip
     ),
     successes AS (
       SELECT source_ip, MIN(received_at) AS success_time, message AS success_msg
-      FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1)
+      FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $2)
         AND ((vendor='cisco' AND structured_data->>'subcategory' = 'login_success')
           OR message ILIKE '%login success%' OR message ILIKE '%authenticated%')
+      ${sf.clause}
       GROUP BY source_ip, message
     )
     SELECT f.source_ip::TEXT, COALESCE(kh.hostname, f.source_ip::TEXT) AS host,
@@ -938,22 +981,24 @@ app.get('/api/security/brute-force', asyncHandler(async (req, res) => {
     LEFT JOIN known_hosts kh ON kh.ip_address = f.source_ip
     WHERE f.fail_count >= 3
     ORDER BY success_after_failure DESC, f.fail_count DESC LIMIT 50
-  `, [hours, hours]);
+  `, [hours, hours, ...sf.params]);
   res.json({ data: rows });
 }));
 
 app.get('/api/security/firewall-denies', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
   const [bySrc, byDst, bySvc] = await Promise.all([
-    pool.query(`SELECT structured_data->>'srcip' AS src_ip, COUNT(*) AS deny_count, ARRAY_AGG(DISTINCT structured_data->>'dstip') FILTER (WHERE structured_data->>'dstip' IS NOT NULL) AS destinations FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'action'='deny' AND structured_data->>'srcip' IS NOT NULL GROUP BY structured_data->>'srcip' ORDER BY deny_count DESC LIMIT 15`, [hours]),
-    pool.query(`SELECT structured_data->>'dstip' AS dst_ip, COUNT(*) AS deny_count, ARRAY_AGG(DISTINCT structured_data->>'srcip') FILTER (WHERE structured_data->>'srcip' IS NOT NULL) AS sources FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'action'='deny' AND structured_data->>'dstip' IS NOT NULL GROUP BY structured_data->>'dstip' ORDER BY deny_count DESC LIMIT 15`, [hours]),
-    pool.query(`SELECT COALESCE(structured_data->>'service','unknown') AS service, COUNT(*) AS deny_count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'action'='deny' GROUP BY structured_data->>'service' ORDER BY deny_count DESC LIMIT 10`, [hours]),
+    pool.query(`SELECT structured_data->>'srcip' AS src_ip, COUNT(*) AS deny_count, ARRAY_AGG(DISTINCT structured_data->>'dstip') FILTER (WHERE structured_data->>'dstip' IS NOT NULL) AS destinations FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'action'='deny' AND structured_data->>'srcip' IS NOT NULL ${sf.clause} GROUP BY structured_data->>'srcip' ORDER BY deny_count DESC LIMIT 15`, [hours, ...sf.params]),
+    pool.query(`SELECT structured_data->>'dstip' AS dst_ip, COUNT(*) AS deny_count, ARRAY_AGG(DISTINCT structured_data->>'srcip') FILTER (WHERE structured_data->>'srcip' IS NOT NULL) AS sources FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'action'='deny' AND structured_data->>'dstip' IS NOT NULL ${sf.clause} GROUP BY structured_data->>'dstip' ORDER BY deny_count DESC LIMIT 15`, [hours, ...sf.params]),
+    pool.query(`SELECT COALESCE(structured_data->>'service','unknown') AS service, COUNT(*) AS deny_count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'action'='deny' ${sf.clause} GROUP BY structured_data->>'service' ORDER BY deny_count DESC LIMIT 10`, [hours, ...sf.params]),
   ]);
   res.json({ by_source: bySrc.rows, by_destination: byDst.rows, by_service: bySvc.rows });
 }));
 
 app.get('/api/security/vpn-events', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
   const { rows } = await pool.query(`
     SELECT received_at, source_host, source_ip::TEXT, severity_label, message,
       structured_data->>'srcip' AS vpn_src_ip, structured_data->>'msg' AS detail,
@@ -963,22 +1008,25 @@ app.get('/api/security/vpn-events', asyncHandler(async (req, res) => {
     FROM syslog_entries
     WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet'
       AND (structured_data->>'subtype'='vpn' OR message ILIKE '%ssl vpn%' OR message ILIKE '%ipsec%' OR message ILIKE '%vpn%')
+    ${sf.clause}
     ORDER BY received_at DESC LIMIT 100
-  `, [hours]);
+  `, [hours, ...sf.params]);
   res.json({ data: rows });
 }));
 
 app.get('/api/security/ips-events', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
   const [events, byThreat] = await Promise.all([
-    pool.query(`SELECT received_at, source_host, source_ip::TEXT, severity_label, message, structured_data->>'srcip' AS src_ip, structured_data->>'dstip' AS dst_ip, structured_data->>'msg' AS threat_name, structured_data->>'action' AS action, structured_data->>'subtype' AS subtype FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'type'='utm' ORDER BY received_at DESC LIMIT 100`, [hours]),
-    pool.query(`SELECT COALESCE(structured_data->>'msg','Unknown') AS threat, structured_data->>'subtype' AS subtype, COUNT(*) AS hit_count, COUNT(DISTINCT structured_data->>'srcip') AS unique_sources FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'type'='utm' GROUP BY structured_data->>'msg', structured_data->>'subtype' ORDER BY hit_count DESC LIMIT 20`, [hours]),
+    pool.query(`SELECT received_at, source_host, source_ip::TEXT, severity_label, message, structured_data->>'srcip' AS src_ip, structured_data->>'dstip' AS dst_ip, structured_data->>'msg' AS threat_name, structured_data->>'action' AS action, structured_data->>'subtype' AS subtype FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'type'='utm' ${sf.clause} ORDER BY received_at DESC LIMIT 100`, [hours, ...sf.params]),
+    pool.query(`SELECT COALESCE(structured_data->>'msg','Unknown') AS threat, structured_data->>'subtype' AS subtype, COUNT(*) AS hit_count, COUNT(DISTINCT structured_data->>'srcip') AS unique_sources FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'type'='utm' ${sf.clause} GROUP BY structured_data->>'msg', structured_data->>'subtype' ORDER BY hit_count DESC LIMIT 20`, [hours, ...sf.params]),
   ]);
   res.json({ events: events.rows, by_threat: byThreat.rows });
 }));
 
 app.get('/api/security/after-hours', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours, 720);
+  const sf = getSiteFilter(req.rbac, 2, 'se');
   const { rows } = await pool.query(`
     SELECT se.received_at, COALESCE(kh.hostname, se.source_host) AS source_host, se.source_ip::TEXT,
       se.vendor, se.severity_label, se.message, EXTRACT(HOUR FROM se.received_at) AS hour_of_day,
@@ -991,16 +1039,18 @@ app.get('/api/security/after-hours', asyncHandler(async (req, res) => {
       AND (se.structured_data->>'subcategory' IN ('login_failed','config_change','auth_failed','login_success')
         OR se.message ILIKE '%login%' OR se.message ILIKE '%configured from%' OR se.message ILIKE '%vpn%')
       AND EXTRACT(HOUR FROM se.received_at) NOT BETWEEN 7 AND 19
+    ${sf.clause}
     ORDER BY se.received_at DESC LIMIT 100
-  `, [hours]);
+  `, [hours, ...sf.params]);
   res.json({ data: rows });
 }));
 
 app.get('/api/security/wireless-auth', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
   const [failures, summary] = await Promise.all([
-    pool.query(`SELECT received_at, source_host, source_ip::TEXT, message, severity_label FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='aruba' AND message ILIKE '%authentication failed%' ORDER BY received_at DESC LIMIT 50`, [hours]),
-    pool.query(`SELECT COUNT(*) FILTER (WHERE message ILIKE '%failed%') AS failures, COUNT(*) FILTER (WHERE message ILIKE '%success%' OR message ILIKE '%authenticated%') AS successes, COUNT(DISTINCT source_ip) AS devices FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='aruba' AND (message ILIKE '%authentication%' OR message ILIKE '%802.1x%')`, [hours]),
+    pool.query(`SELECT received_at, source_host, source_ip::TEXT, message, severity_label FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='aruba' AND message ILIKE '%authentication failed%' ${sf.clause} ORDER BY received_at DESC LIMIT 50`, [hours, ...sf.params]),
+    pool.query(`SELECT COUNT(*) FILTER (WHERE message ILIKE '%failed%') AS failures, COUNT(*) FILTER (WHERE message ILIKE '%success%' OR message ILIKE '%authenticated%') AS successes, COUNT(DISTINCT source_ip) AS devices FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='aruba' AND (message ILIKE '%authentication%' OR message ILIKE '%802.1x%') ${sf.clause}`, [hours, ...sf.params]),
   ]);
   res.json({ failures: failures.rows, summary: summary.rows[0] });
 }));
@@ -1227,6 +1277,11 @@ app.post('/api/system/update', requireSuperAdmin, asyncHandler(async (req, res) 
 app.get('/api/settings', asyncHandler(async (req, res) => {
   const { rows } = await pool.query('SELECT key, value FROM app_settings');
   const data = Object.fromEntries(rows.map(r => [r.key, r.value]));
+  // Never expose the SMTP password to anyone but a super_admin (only role that
+  // can edit it). Settings writes are already super_admin-gated.
+  if (!req.rbac || !req.rbac.isSuperAdmin) {
+    delete data.smtp_pass;
+  }
   res.json({ data });
 }));
 
@@ -1297,6 +1352,52 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
+// ── WEBSOCKET AUTH TICKET ─────────────────────────────────────
+// The Live Tail WebSocket connects directly to this API (port 3005), bypassing
+// the Next proxy, so it never receives the verified X-User-* headers — and we
+// deliberately cannot decode the next-auth JWE cookie here. Instead the client
+// first calls GET /api/ws-ticket THROUGH the authenticated proxy (which stamps
+// the verified role), and we issue a short-lived HMAC-signed ticket carrying the
+// user's role + allowed site IDs. The WS upgrade then presents that ticket. The
+// signing key is random per-process (issue + verify happen in this same
+// process), so a client can neither forge a ticket nor tamper with its role.
+const WS_TICKET_KEY = crypto.randomBytes(32);
+const WS_TICKET_TTL_MS = 30 * 1000; // ticket must be used within 30s of issue
+
+function issueWsTicket(rbac) {
+  const payload = {
+    role:  rbac ? rbac.role : 'user',
+    // null = admin (all sites); [] = no sites; [..] = specific sites
+    sites: rbac ? (rbac.allowedSiteIds ?? null) : [],
+    exp:   Date.now() + WS_TICKET_TTL_MS,
+  };
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const sig  = crypto.createHmac('sha256', WS_TICKET_KEY).update(body).digest('base64url');
+  return `${body}.${sig}`;
+}
+
+function verifyWsTicket(ticket) {
+  if (!ticket || typeof ticket !== 'string') return null;
+  const dot = ticket.indexOf('.');
+  if (dot < 1) return null;
+  const body = ticket.slice(0, dot);
+  const sig  = ticket.slice(dot + 1);
+  const expected = crypto.createHmac('sha256', WS_TICKET_KEY).update(body).digest('base64url');
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  let payload;
+  try { payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); } catch { return null; }
+  if (!payload || typeof payload.exp !== 'number' || Date.now() > payload.exp) return null;
+  return payload;
+}
+
+// Issues a Live Tail ticket scoped to the caller's RBAC. req.rbac is set from
+// the proxy-verified headers, so role/sites here cannot be spoofed by the client.
+app.get('/api/ws-ticket', asyncHandler(async (req, res) => {
+  res.json({ ticket: issueWsTicket(req.rbac) });
+}));
+
 // ── ERROR HANDLER ─────────────────────────────────────────────
 app.use((err, req, res, _next) => {
   console.error('[API Error]', err.message, err.stack);
@@ -1307,6 +1408,36 @@ app.use((err, req, res, _next) => {
 // ── WebSocket: Live Tail ──────────────────────────────────────
 const server = http.createServer(app);
 const wss    = new WebSocketServer({ server, path: '/ws/live' });
+
+// Authenticate + scope every Live Tail client via its signed ticket. Fail
+// CLOSED: a missing/invalid/expired ticket, or any error resolving the client's
+// site scope, disconnects the socket rather than streaming logs.
+wss.on('connection', async (ws, req) => {
+  ws.ready = false;
+  let ticket = null;
+  try { ticket = new URL(req.url, 'http://localhost').searchParams.get('ticket'); } catch { /* no url */ }
+
+  const auth = verifyWsTicket(ticket);
+  if (!auth) { try { ws.close(1008, 'Unauthorized'); } catch { /* already closed */ } return; }
+
+  try {
+    if (auth.sites == null) {
+      ws.allowedIps = null;        // admin / super_admin → all logs
+    } else if (!Array.isArray(auth.sites) || auth.sites.length === 0) {
+      ws.allowedIps = new Set();   // user with no sites → nothing
+    } else {
+      const { rows } = await pool.query(
+        `SELECT ip_address::TEXT AS ip FROM known_hosts WHERE site_id = ANY($1::int[])`,
+        [auth.sites]
+      );
+      ws.allowedIps = new Set(rows.map(r => r.ip));
+    }
+    ws.ready = true;
+  } catch (err) {
+    console.error('[WS] Failed to resolve site scope:', err.message);
+    try { ws.close(1011, 'Server error'); } catch { /* already closed */ }
+  }
+});
 
 let lastId    = BigInt(0);
 let lastIdSet = false;
@@ -1334,8 +1465,15 @@ async function broadcastNewLogs() {
     `, [lastId.toString()]);
     if (rows.length > 0) {
       lastId = BigInt(rows[rows.length - 1].id);
-      const payload = JSON.stringify({ type: 'logs', data: rows });
-      wss.clients.forEach(client => { if (client.readyState === 1) client.send(payload); });
+      wss.clients.forEach(client => {
+        if (client.readyState !== 1 || !client.ready) return;
+        // allowedIps null = admin (all); otherwise only logs from the client's
+        // assigned sites. An empty set sends nothing (fail-closed).
+        const out = client.allowedIps === null
+          ? rows
+          : rows.filter(r => client.allowedIps.has(r.source_ip));
+        if (out.length > 0) client.send(JSON.stringify({ type: 'logs', data: out }));
+      });
     }
   } catch (err) { console.error('[WS] Broadcast error:', err.message); }
 }

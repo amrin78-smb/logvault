@@ -75,11 +75,32 @@ async function rbacMiddleware(req, res, next) {
     req.rbac.allowedSiteIds = userId ? await getUserSites(userId) : [];
     next();
   } catch (err) {
-    // Fail open on lookup errors — log but don't block the request.
+    // Fail CLOSED for regular users: a NetVault DB blip must never turn a
+    // site-restricted user into an all-sites viewer. We still trust the role
+    // from the proxy-verified header, so admins keep null (no filter) and stay
+    // unblocked during an outage; a 'user' gets [] (sees nothing) instead of
+    // the old null (saw everything).
     console.error('[RBAC] Middleware error:', err.message);
-    req.rbac = { userId: 0, role: 'user', isSuperAdmin: false, isAdmin: false, allowedSiteIds: null };
+    const role   = req.headers['x-user-role'] || 'user';
+    const userId = parseInt(req.headers['x-user-id'] || '0') || 0;
+    const isAdmin = role === 'admin' || role === 'super_admin';
+    req.rbac = {
+      userId,
+      role,
+      isSuperAdmin: role === 'super_admin',
+      isAdmin,
+      allowedSiteIds: isAdmin ? null : [],
+    };
     next();
   }
+}
+
+// Express middleware — restrict an endpoint to admin or super_admin.
+function requireAdmin(req, res, next) {
+  if (!req.rbac || !req.rbac.isAdmin) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  next();
 }
 
 // Express middleware — restrict an endpoint to super_admin only
@@ -126,4 +147,4 @@ function getSiteFilter(rbac, startParamIndex, tableAlias = 'se') {
   };
 }
 
-module.exports = { rbacMiddleware, requireSuperAdmin, getSiteFilter };
+module.exports = { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter };

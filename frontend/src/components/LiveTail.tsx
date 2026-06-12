@@ -41,24 +41,41 @@ export default function LiveTail() {
     setLogs([]);
     setCount(0);
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.hostname}:3005/ws/live`);
-    ws.onopen  = () => setConn(true);
-    ws.onclose = () => setConn(false);
-    ws.onerror = () => setConn(false);
-    ws.onmessage = (evt) => {
-      if (pausedRef.current) return;
+    let ws: WebSocket | null = null;
+    let cancelled = false;
+
+    // The WS connects directly to the API (port 3005), bypassing the auth
+    // proxy, so we first fetch a short-lived signed ticket via the proxied
+    // /api/ws-ticket (which carries the verified role + sites) and present it on
+    // the WS URL. The server scopes the stream to the user's sites from it.
+    (async () => {
+      let ticket = '';
       try {
-        const msg = JSON.parse(evt.data);
-        if (msg.type === 'logs' && msg.data?.length) {
-          persistedLogs  = [...persistedLogs, ...msg.data].slice(-MAX_LINES);
-          persistedCount += msg.data.length;
-          setLogs([...persistedLogs]);
-          setCount(persistedCount);
-        }
-      } catch {}
-    };
-    return () => ws.close();
+        const res = await fetch('/api/ws-ticket');
+        if (res.ok) ticket = (await res.json()).ticket || '';
+      } catch { /* leave ticket empty → no connection */ }
+      if (cancelled || !ticket) { setConn(false); return; }
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${protocol}//${window.location.hostname}:3005/ws/live?ticket=${encodeURIComponent(ticket)}`);
+      ws.onopen  = () => setConn(true);
+      ws.onclose = () => setConn(false);
+      ws.onerror = () => setConn(false);
+      ws.onmessage = (evt) => {
+        if (pausedRef.current) return;
+        try {
+          const msg = JSON.parse(evt.data);
+          if (msg.type === 'logs' && msg.data?.length) {
+            persistedLogs  = [...persistedLogs, ...msg.data].slice(-MAX_LINES);
+            persistedCount += msg.data.length;
+            setLogs([...persistedLogs]);
+            setCount(persistedCount);
+          }
+        } catch {}
+      };
+    })();
+
+    return () => { cancelled = true; if (ws) ws.close(); };
   }, []);
 
   const clearLogs = () => { persistedLogs = []; persistedCount = 0; setLogs([]); setCount(0); };
