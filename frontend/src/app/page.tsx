@@ -202,20 +202,6 @@ export default function Home() {
           })}
 
           <div style={{ margin: '14px 16px 10px', borderTop: '1px solid rgba(255,255,255,0.08)' }} />
-          <div style={{ padding: '0 14px' }}>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700 }}>Time Range</div>
-            {[{ label: '15 min', value: 0.25 }, { label: '1 hour', value: 1 }, { label: '6 hours', value: 6 },
-              { label: '24 hours', value: 24 }, { label: '48 hours', value: 48 }, { label: '7 days', value: 168 }].map(h => (
-              <button key={h.value} onClick={() => setHours(h.value)}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '6px 10px', marginBottom: 3,
-                  borderRadius: 8, border: '1px solid', fontSize: 11.5, cursor: 'pointer', textAlign: 'left',
-                  background: hours === h.value ? 'rgba(200,16,46,0.2)' : 'transparent',
-                  borderColor: hours === h.value ? '#C8102E' : 'rgba(255,255,255,0.1)',
-                  color: hours === h.value ? '#ffffff' : 'rgba(255,255,255,0.5)' }}>
-                {h.label}
-              </button>
-            ))}
-          </div>
 
           {health && (
             <div style={{ margin: '12px 14px', padding: '8px 12px', background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 10 }}>
