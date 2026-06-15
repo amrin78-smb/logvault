@@ -1135,6 +1135,10 @@ const releaseNotes = {
     'Primary buttons now use the brand crimson instead of off-brand blue',
     'Uniform card, section-header, and input styling across the Settings page',
   ],
+  '1.2.3': [
+    'Standardized Settings menu (renamed System to General, reordered tabs)',
+    'General is now the first tab and the default Settings landing tab',
+  ],
   'default': [
     'Bug fixes and performance improvements',
   ],

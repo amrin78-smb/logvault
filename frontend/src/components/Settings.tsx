@@ -274,7 +274,7 @@ export default function Settings() {
     email_notify_cooldown_mins: '30',
   });
   const [saving,   setSaving]     = useState(false);
-  const [activeTab, setActiveTab] = useState<'email' | 'system' | 'updates' | 'about'>('email');
+  const [activeTab, setActiveTab] = useState<'email' | 'system' | 'updates' | 'about'>('system');
   const [testTo,   setTestTo]     = useState('');
   const [testing,  setTesting]    = useState(false);
 
@@ -457,7 +457,7 @@ export default function Settings() {
     setTesting(false);
   };
 
-  const TABS = [{ id: 'email', label: 'Email Alerts' }, { id: 'system', label: 'System' }, { id: 'updates', label: 'Updates' }, { id: 'about', label: 'About' }];
+  const TABS = [{ id: 'system', label: 'General' }, { id: 'email', label: 'Email Alerts' }, { id: 'updates', label: 'Updates' }, { id: 'about', label: 'About' }];
 
   const hasUpdateError = !!updateStatus?.error;
   const upToDate       = !hasUpdateError && !!updateStatus?.up_to_date;
