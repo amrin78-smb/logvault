@@ -220,7 +220,7 @@ function UpdateOverlay() {
   let statusLine = 'Starting update...';
   if (phase === 'down')          statusLine = 'Services restarting...';
   else if (phase === 'back_up')  statusLine = `✓ Services are back online. Reloading in ${countdown} second${countdown === 1 ? '' : 's'}...`;
-  else if (phase === 'timeout')  statusLine = 'Update is taking longer than expected. Try reloading manually.';
+  else if (phase === 'timeout')  statusLine = 'Update is taking longer than expected. Try refreshing the page manually.';
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.5)',
@@ -939,7 +939,7 @@ export default function Settings() {
 
               <div style={{ background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.3)',
                 borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12.5, color: '#b45309' }}>
-                ⚠ Services will restart during update. You may lose connection briefly (30-60 seconds).
+                ⚠ Services will restart during the update — you may lose connection for 30–60 seconds.
               </div>
 
               <div style={{ display: 'flex', gap: 10 }}>
@@ -959,12 +959,12 @@ export default function Settings() {
 
               {updateBlocked && (
                 <div style={{ marginTop: 12, fontSize: 13, color: 'var(--primary)' }}>
-                  Updates disabled: {updateBlocked}{' '}
+                  ⚠ License expired — updates disabled. Renew your license to receive updates.{' '}
                   <a
                     href={(process.env.NEXT_PUBLIC_NOCVAULT_HUB_URL || '') + '/settings/license'}
                     style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'underline' }}
                   >
-                    Renew License
+                    Manage License →
                   </a>
                 </div>
               )}
@@ -993,7 +993,7 @@ export default function Settings() {
             </div>
             <div style={{ padding: 20 }}>
               <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 20 }}>
-                Start update? Services will restart and you will lose connection for 30-60 seconds.
+                Services will restart and you&apos;ll lose connection for 30–60 seconds. The page reloads automatically when the update completes.
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button onClick={() => setShowConfirmModal(false)}
@@ -1018,13 +1018,13 @@ export default function Settings() {
 
       {activeTab === 'about' && (
         <div style={CARD}>
-          <div style={{ ...SECTION_HEADER, marginBottom: 20 }}>About LogVault</div>
+          <div style={{ ...SECTION_HEADER, marginBottom: 20 }}>About</div>
           {[
             { label: 'Product',    value: 'LogVault — Syslog & Log Analyzer' },
             { label: 'Family',     value: 'NocVault Network Intelligence Suite' },
             { label: 'Version',    value: `v${appVersion || '1.0.0'}` },
-            { label: 'API Port',   value: '3005 (internal)' },
             { label: 'App Port',   value: '3004' },
+            { label: 'API Port',   value: '3005 (internal)' },
             { label: 'Collector',  value: 'UDP/TCP 514 · 1514' },
             { label: 'Database',   value: 'PostgreSQL 16' },
             { label: 'Runtime',    value: 'Node.js 20 · Next.js 16' },
@@ -1037,7 +1037,7 @@ export default function Settings() {
           ))}
           <div style={{ marginTop: 18, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.7 }}>
             <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>LogVault v{appVersion || '1.0.0'}</div>
-            <div>Part of the NocVault Intelligence Suite</div>
+            <div>Part of the NocVault Network Intelligence Suite</div>
             <div>© 2026 NocVault</div>
           </div>
         </div>

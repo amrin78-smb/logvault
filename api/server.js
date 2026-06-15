@@ -1139,6 +1139,12 @@ const releaseNotes = {
     'Standardized Settings menu (renamed System to General, reordered tabs)',
     'General is now the first tab and the default Settings landing tab',
   ],
+  '1.2.5': [
+    'Standardized Updates and About tabs to NocVault suite spec',
+    'Unified update warning, confirm, and overlay wording across the suite',
+    'License-blocked updates now show the standard "Manage License" link',
+    'About tab heading and tech-spec rows aligned to the suite standard',
+  ],
   'default': [
     'Bug fixes and performance improvements',
   ],
