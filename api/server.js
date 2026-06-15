@@ -1129,6 +1129,12 @@ const releaseNotes = {
     'Cleaner update screen with structured release notes',
     'Removed the legacy CHANGELOG file',
   ],
+  '1.2.2': [
+    'Standardized Settings page styling to match NocVault suite',
+    'Underline-style settings tabs replace the filled pill bar',
+    'Primary buttons now use the brand crimson instead of off-brand blue',
+    'Uniform card, section-header, and input styling across the Settings page',
+  ],
   'default': [
     'Bug fixes and performance improvements',
   ],

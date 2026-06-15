@@ -23,12 +23,12 @@ interface Settings {
   email_notify_cooldown_mins: string;
 }
 
-const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: 24, marginBottom: 16 };
-const LABEL = { fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6, display: 'block' as const };
-const INPUT = { width: '100%', padding: '9px 12px', borderRadius: 7, border: '1px solid var(--border)',
-  background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 13, outline: 'none',
+const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, marginBottom: 20, boxShadow: 'var(--shadow-sm)' };
+const LABEL = { fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6, display: 'block' as const };
+const INPUT = { width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)',
+  background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 13.5, outline: 'none',
   boxSizing: 'border-box' as const };
-const SECTION_HEADER = { fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 };
+const SECTION_HEADER = { fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 16 };
 
 // Parse a JSON-array string (stored in app_settings) into a string[]. Tolerant
 // of malformed/empty values — always returns an array.
@@ -464,18 +464,18 @@ export default function Settings() {
   const updatesAvailable = !hasUpdateError && !!updateStatus?.update_available;
 
   return (
-    <div style={{ maxWidth: 800 }}>
+    <div style={{ width: '100%' }}>
       <PageHeader title="Settings" subtitle="System configuration and email alerts" />
 
       {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--bg-card)',
-        border: '1px solid var(--border)', borderRadius: 10, padding: 6, width: 'fit-content' }}>
+      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 20, flexWrap: 'wrap' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id as any)}
-            style={{ padding: '6px 18px', borderRadius: 6, border: 'none', cursor: 'pointer',
-              fontSize: 12, fontWeight: activeTab === t.id ? 600 : 400,
-              background: activeTab === t.id ? '#1a202c' : 'transparent',
-              color: activeTab === t.id ? '#fff' : 'var(--text-muted)' }}>
+            style={{ padding: '10px 18px', fontSize: 14, background: 'none', border: 'none',
+              borderBottom: '2px solid transparent', marginBottom: -1, cursor: 'pointer',
+              color: activeTab === t.id ? 'var(--primary)' : 'var(--text-muted)',
+              fontWeight: activeTab === t.id ? 600 : 500,
+              borderBottomColor: activeTab === t.id ? 'var(--primary)' : 'transparent' }}>
             {t.label}
             {t.id === 'updates' && updateAvail && (
               <span title="Update available"
@@ -490,7 +490,7 @@ export default function Settings() {
         <>
           {/* DNS Settings */}
           <div style={CARD}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 }}>DNS Lookup</div>
+            <div style={SECTION_HEADER}>DNS Lookup</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
               <input type="checkbox"
                 checked={settings.dns_lookup_enabled !== 'false'}
@@ -526,7 +526,7 @@ export default function Settings() {
           {/* Save */}
           <button onClick={save} disabled={saving}
             style={{ padding: '10px 28px', borderRadius: 8, border: 'none', cursor: 'pointer',
-              fontSize: 13, fontWeight: 600, background: '#2563eb', color: '#fff',
+              fontSize: 13, fontWeight: 600, background: 'var(--primary)', color: '#fff',
               opacity: saving ? 0.7 : 1, transition: 'all 0.15s' }}>
             {saving ? 'Saving...' : 'Save Settings'}
           </button>
@@ -538,7 +538,7 @@ export default function Settings() {
           {/* SMTP Settings */}
           <div style={CARD}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>SMTP Server</div>
+              <div style={{ ...SECTION_HEADER, marginBottom: 0 }}>SMTP Server</div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input type="checkbox"
                   checked={settings.smtp_enabled === 'true'}
@@ -783,7 +783,7 @@ export default function Settings() {
           {/* Shared Save (SMTP + recipients + filters + delivery) */}
           <button onClick={save} disabled={saving}
             style={{ padding: '10px 28px', borderRadius: 8, border: 'none', cursor: 'pointer',
-              fontSize: 13, fontWeight: 600, background: '#2563eb', color: '#fff',
+              fontSize: 13, fontWeight: 600, background: 'var(--primary)', color: '#fff',
               opacity: saving ? 0.7 : 1, transition: 'all 0.15s', marginBottom: 16 }}>
             {saving ? 'Saving...' : 'Save Settings'}
           </button>
@@ -832,7 +832,7 @@ export default function Settings() {
 
           {/* SECTION 6 — Test & Preview */}
           <div style={CARD}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Send Test Email</div>
+            <div style={{ ...SECTION_HEADER, marginBottom: 6 }}>Send Test Email</div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 14 }}>
               Sends a test message using the settings above (without saving them first).
             </div>
@@ -866,7 +866,7 @@ export default function Settings() {
 
       {activeTab === 'updates' && (
         <div style={CARD}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 }}>Software Updates</div>
+          <div style={SECTION_HEADER}>Software Updates</div>
 
           {checkingUpdate ? (
             <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Checking for updates...</div>
@@ -1018,7 +1018,7 @@ export default function Settings() {
 
       {activeTab === 'about' && (
         <div style={CARD}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 20 }}>About LogVault</div>
+          <div style={{ ...SECTION_HEADER, marginBottom: 20 }}>About LogVault</div>
           {[
             { label: 'Product',    value: 'LogVault — Syslog & Log Analyzer' },
             { label: 'Family',     value: 'NocVault Network Intelligence Suite' },
