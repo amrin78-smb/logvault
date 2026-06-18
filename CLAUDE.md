@@ -468,11 +468,16 @@ if (sf.clause) { conditions.push(sf.clause.replace(/^AND\s+/i, '')); params.push
 Collapsible 240↔64px (suite-standard): a chevron toggle at the bottom flips the width
 (0.18s ease) and persists to `localStorage['logvault-sidebar-collapsed']`; collapsed hides
 labels/section-label/ingestion-card/version and centers icons (`title` tooltips show
-labels). The sidebar is **pinned to the viewport** (`position: sticky; top: 52px;
-height: calc(100vh - 52px); align-self: flex-start`) so the footer/version stays at the
+labels). The sidebar is **pinned to the viewport** (`position: sticky; top: 72px;
+height: calc(100vh - 72px); align-self: flex-start`) so the footer/version stays at the
 bottom of the screen, not the bottom of the scrolled page. Lives inline in
 `frontend/src/app/page.tsx` (logvault has no separate Sidebar component). Matches
-netvault/ddivault/spanvault — keep the collapse behaviour in sync across the suite.  
+netvault/ddivault/spanvault — keep the collapse behaviour in sync across the suite.
+
+**Header** (`components/Header.tsx`) is **72px** tall and **sticky** (`position: sticky;
+top: 0; zIndex: 200`) so the top bar stays visible while scrolling, like the rest of the
+suite. The `72px` value is the single source for both the sticky-header height and the
+sidebar's `top`/`height` offsets — if the header height changes, update both in lockstep.  
 **Cards:** white, `1px solid var(--border)`, `border-radius: 10px`, `box-shadow: var(--shadow-sm)`  
 **Tables:** `var(--bg-primary)` header, uppercase labels, `var(--text-muted)` color  
 **Buttons:** Red `#C8102E`, hover `#a00d24`  

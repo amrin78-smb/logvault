@@ -1186,6 +1186,10 @@ const releaseNotes = {
     'Added an accent-colored icon to each KPI tile (Total, Critical, Errors, Warnings)',
     'Aligned the KPI number to the shared suite type scale',
   ],
+  '1.3.2': [
+    'Top bar is now sticky — it stays visible while scrolling instead of disappearing, matching the rest of the NocVault suite',
+    'Aligned the pinned sidebar to the 72px header height so the two tuck together cleanly while scrolling',
+  ],
   'default': [
     'Bug fixes and performance improvements',
   ],

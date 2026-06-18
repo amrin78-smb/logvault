@@ -197,13 +197,13 @@ export default function Home() {
         </div>
       )}
 
-      <div style={{ display: 'flex', minHeight: 'calc(100vh - 52px)' }}>
+      <div style={{ display: 'flex', minHeight: 'calc(100vh - 72px)' }}>
         {/* Sidebar — pinned to the viewport (sticky) so the footer/version stays
             visible at the bottom of the screen instead of the bottom of the scrolled
             page. Collapsible 240↔64px, matching the rest of the suite. */}
         <div style={{ width: collapsed ? 64 : 240, background: '#1a2744', flexShrink: 0,
           display: 'flex', flexDirection: 'column', paddingTop: 16,
-          position: 'sticky', top: 52, height: 'calc(100vh - 52px)', alignSelf: 'flex-start',
+          position: 'sticky', top: 72, height: 'calc(100vh - 72px)', alignSelf: 'flex-start',
           overflowX: 'hidden', overflowY: 'auto', transition: 'width 0.18s ease' }}>
           {!collapsed && (
             <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '1.2px', padding: '0 24px', marginBottom: 10 }}>

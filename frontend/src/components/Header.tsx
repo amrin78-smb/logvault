@@ -116,7 +116,8 @@ export default function Header() {
 
   return (
     <div style={{ height: 72, background: '#1a2744', display: 'flex', alignItems: 'center',
-      padding: '0 20px', borderBottom: '1px solid #253352', flexShrink: 0, gap: 18 }}>
+      padding: '0 20px', borderBottom: '1px solid #253352', flexShrink: 0, gap: 18,
+      position: 'sticky', top: 0, zIndex: 200 }}>
 
       {/* Logo + divider + subtitle */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
