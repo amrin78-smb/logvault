@@ -464,6 +464,17 @@ if (sf.clause) { conditions.push(sf.clause.replace(/^AND\s+/i, '')); params.push
 }
 ```
 
+**Sidebar nav icons** use the suite-standard **colored icon chips**: each nav item's icon
+sits in a 28×28 rounded chip (`borderRadius: 8`), tinted per-route via the module-level
+`NAV_COLORS` map. Only the **active** item is colored (chip bg + icon `currentColor`);
+inactive items use the neutral faint-white chip (`rgba(255,255,255,0.07)` bg /
+`rgba(255,255,255,0.45)` icon). Nav icon SVGs are 16×16 and inherit color from the chip
+(no per-icon active coloring). Nav labels are **14px** (`var(--text-md)`), active `#ffffff` /
+inactive `rgba(255,255,255,0.55)`. Shared across the NocVault suite (netvault/ddivault/spanvault).
+
+**Header icon-buttons** (notifications bell + dark-mode toggle) are **38×38 / `borderRadius: 8`**
+with 18×18 icons — suite-standard sizing. The avatar is a 34px circle (`var(--primary)`).
+
 **Sidebar:** Navy `#1a2744`, active item = red left border `#C8102E` + red-tinted bg.
 Collapsible 240↔64px (suite-standard): a chevron toggle at the bottom flips the width
 (0.18s ease) and persists to `localStorage['logvault-sidebar-collapsed']`; collapsed hides

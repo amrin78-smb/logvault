@@ -28,14 +28,27 @@ type Tab = 'dashboard' | 'explorer' | 'livetail' | 'alerts' | 'health' | 'securi
 export interface ExplorerFilter { severity?: string; vendor?: string; host?: string; hours?: string; category?: string; q?: string; }
 
 const Icons: Record<Tab, JSX.Element> = {
-  dashboard: (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1" fill="currentColor"/><rect x="9" y="1" width="6" height="6" rx="1" fill="currentColor"/><rect x="1" y="9" width="6" height="6" rx="1" fill="currentColor"/><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor"/></svg>),
-  explorer:  (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="1.5" rx="0.75" fill="currentColor"/><rect x="1" y="7" width="10" height="1.5" rx="0.75" fill="currentColor"/><rect x="1" y="11" width="12" height="1.5" rx="0.75" fill="currentColor"/></svg>),
-  livetail:  (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3" fill="currentColor"/><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.5"/></svg>),
-  alerts:    (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M8 1L1 13h14L8 1z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none"/><line x1="8" y1="6" x2="8" y2="9.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><circle cx="8" cy="11.5" r="0.8" fill="currentColor"/></svg>),
-  health:    (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><polyline points="1,8 4,4 6,10 9,3 11,8 13,6 15,8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>),
-  security:  (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M8 1L2 4v5c0 3.5 2.5 6.5 6 7.4C11.5 15.5 14 12.5 14 9V4L8 1z" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round"/><polyline points="5,8 7,10 11,6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>),
-  hosts:     (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" fill="none"/><line x1="5" y1="13" x2="11" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><line x1="8" y1="10" x2="8" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
-  settings:  (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.3" fill="none"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
+  dashboard: (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1" fill="currentColor"/><rect x="9" y="1" width="6" height="6" rx="1" fill="currentColor"/><rect x="1" y="9" width="6" height="6" rx="1" fill="currentColor"/><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor"/></svg>),
+  explorer:  (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="1.5" rx="0.75" fill="currentColor"/><rect x="1" y="7" width="10" height="1.5" rx="0.75" fill="currentColor"/><rect x="1" y="11" width="12" height="1.5" rx="0.75" fill="currentColor"/></svg>),
+  livetail:  (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3" fill="currentColor"/><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.5"/></svg>),
+  alerts:    (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1L1 13h14L8 1z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none"/><line x1="8" y1="6" x2="8" y2="9.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><circle cx="8" cy="11.5" r="0.8" fill="currentColor"/></svg>),
+  health:    (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polyline points="1,8 4,4 6,10 9,3 11,8 13,6 15,8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>),
+  security:  (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1L2 4v5c0 3.5 2.5 6.5 6 7.4C11.5 15.5 14 12.5 14 9V4L8 1z" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round"/><polyline points="5,8 7,10 11,6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>),
+  hosts:     (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" fill="none"/><line x1="5" y1="13" x2="11" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><line x1="8" y1="10" x2="8" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
+  settings:  (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.3" fill="none"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
+};
+
+// Suite-standard per-route nav icon chip colors. Only the ACTIVE nav item is
+// colored; inactive items use the neutral faint-white chip.
+const NAV_COLORS: Record<Tab, { color: string; bg: string }> = {
+  dashboard: { color: '#f87171', bg: 'rgba(248,113,113,0.22)' },
+  explorer:  { color: '#60a5fa', bg: 'rgba(96,165,250,0.20)' },
+  livetail:  { color: '#22d3ee', bg: 'rgba(34,211,238,0.20)' },
+  alerts:    { color: '#fbbf24', bg: 'rgba(251,191,36,0.20)' },
+  health:    { color: '#34d399', bg: 'rgba(52,211,153,0.20)' },
+  security:  { color: '#a78bfa', bg: 'rgba(167,139,250,0.20)' },
+  hosts:     { color: '#38bdf8', bg: 'rgba(56,189,248,0.20)' },
+  settings:  { color: '#9ca3af', bg: 'rgba(156,163,175,0.20)' },
 };
 
 // Glyphs for the dashboard KPI tiles — currentColor inherits the tile accent.
@@ -213,19 +226,20 @@ export default function Home() {
           {collapsed && <div style={{ height: 6 }} />}
           {TABS.map(t => {
             const active = tab === t.id;
+            const chip = NAV_COLORS[t.id];
             return (
               <button key={t.id} onClick={() => setTab(t.id)} title={collapsed ? t.label : undefined}
-                style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 11,
+                style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12,
                   padding: collapsed ? '11px 0' : '11px 20px', margin: '1px 10px', borderRadius: 10, border: 'none', cursor: 'pointer',
                   justifyContent: collapsed ? 'center' : 'flex-start',
                   background: active ? 'rgba(200,16,46,0.15)' : 'transparent',
-                  fontSize: 'var(--text-base)', fontWeight: active ? 600 : 500,
-                  color: active ? '#ffffff' : 'rgba(255,255,255,0.5)',
+                  fontSize: 'var(--text-md)', fontWeight: active ? 600 : 500,
+                  color: active ? '#ffffff' : 'rgba(255,255,255,0.55)',
                   textAlign: 'left', transition: 'all 0.15s' }}
                 onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; }}
                 onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
                 {active && <span style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 3, height: 20, borderRadius: '0 2px 2px 0', background: 'var(--primary)' }} />}
-                <span style={{ display: 'flex', flexShrink: 0, color: active ? 'var(--primary)' : 'currentColor' }}>{Icons[t.id]}</span>
+                <span style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s', background: active ? chip.bg : 'rgba(255,255,255,0.07)', color: active ? chip.color : 'rgba(255,255,255,0.45)' }}>{Icons[t.id]}</span>
                 {!collapsed && t.label}
               </button>
             );

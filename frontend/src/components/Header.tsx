@@ -23,7 +23,7 @@ async function handleSignOut() {
 
 function SunIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
       <circle cx="8" cy="8" r="3.2" fill="currentColor" />
       <g stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
         <line x1="8" y1="0.5" x2="8" y2="2.2" /><line x1="8" y1="13.8" x2="8" y2="15.5" />
@@ -36,7 +36,7 @@ function SunIcon() {
 }
 function MoonIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
       <path d="M13.5 8.7A5.8 5.8 0 1 1 7.3 2.5a4.6 4.6 0 0 0 6.2 6.2z" fill="currentColor" />
     </svg>
   );
@@ -175,13 +175,13 @@ export default function Header() {
           aria-label="View alerts"
           onClick={() => window.dispatchEvent(new CustomEvent('nocvault:navigate', { detail: { tab: 'alerts' } }))}
           style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: 34, height: 34, borderRadius: 6, background: 'transparent', border: 'none',
+            width: 38, height: 38, borderRadius: 8, background: 'transparent', border: 'none',
             cursor: 'pointer', transition: 'background 0.15s, transform 0.1s' }}
           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.1)'; }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
           onMouseDown={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.95)'; }}
           onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}>
-          <svg width="19" height="19" viewBox="0 0 20 20" fill="none" style={{ color: '#94a3b8' }}>
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" style={{ color: '#94a3b8' }}>
             <path d="M10 2a5 5 0 0 0-5 5v3l-1.5 2.5h13L15 10V7a5 5 0 0 0-5-5z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none" />
             <path d="M8 15a2 2 0 0 0 4 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
           </svg>
@@ -196,8 +196,8 @@ export default function Header() {
 
         {/* Dark mode toggle */}
         <button onClick={toggle} aria-label="Toggle dark mode"
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34,
-            borderRadius: 6, background: 'rgba(255,255,255,0.04)', border: '1px solid #2d3a52',
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 38, height: 38,
+            borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid #2d3a52',
             cursor: 'pointer', color: '#94a3b8' }}>
           {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
         </button>

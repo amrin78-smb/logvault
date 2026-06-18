@@ -1117,6 +1117,11 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '1.3.3': [
+    'Adopted the suite-standard colored nav icon chips (only the active item is colored)',
+    'Nav labels bumped to 14px for suite parity',
+    'Larger 38px header icon-buttons (notifications bell + dark-mode toggle)',
+  ],
   '1.2.0': [
     'Enterprise dashboard with health score and charts',
     'Animated login page redesign',
