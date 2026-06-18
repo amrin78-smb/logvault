@@ -1198,6 +1198,10 @@ const releaseNotes = {
   '1.3.4': [
     'Alert and update banners now span only the main content area instead of the full screen, so the sidebar stays full-height beside them — matching the rest of the NocVault suite',
   ],
+  '1.3.5': [
+    'Made the dashboard Log Volume / Top Blocked / Top Talkers / Vendor row four equal-width columns',
+    'Fixed the Top Blocked Destinations scrollbar overlapping the count — added clearance so numbers stay readable',
+  ],
   'default': [
     'Bug fixes and performance improvements',
   ],

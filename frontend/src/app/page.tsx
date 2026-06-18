@@ -355,8 +355,8 @@ export default function Home() {
                 </ErrorBoundary>
               </div>
 
-              {/* Row 4: Timeline + Top Blocked + Top Talkers + Vendor — uniform heights */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+              {/* Row 4: Timeline + Top Blocked + Top Talkers + Vendor — 4 equal columns */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
                 {[
                   <ErrorBoundary name="Timeline Chart">
                     <TimelineChart hours={hours} compact />

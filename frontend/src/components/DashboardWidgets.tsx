@@ -84,7 +84,7 @@ export function TopBlockedDestinations({ hours, onNavigate }: { hours: number; o
       {denied.length === 0 ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a', fontSize: 'var(--text-sm)', fontWeight: 500 }}>✓ No blocks</div>
       ) : (
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
           {denied.slice(0, 5).map((row, i) => {
             const pct = Math.round((parseInt(row.deny_count) / max) * 100);
             return (
