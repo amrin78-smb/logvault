@@ -1176,6 +1176,11 @@ const releaseNotes = {
     'Top Blocked Destinations list now scrolls within its card instead of overflowing the bottom border',
     'Top Blocked Destinations panel now matches the padding/height of its sibling dashboard widgets',
   ],
+  '1.3.0': [
+    'Sidebar is now collapsible (240↔64px) with a chevron toggle, matching the rest of the NocVault suite',
+    'Collapse state is remembered across refreshes; collapsed view shows icon-only nav with tooltips',
+    'Pinned the sidebar to the viewport so the version/footer stays at the bottom of the screen instead of the bottom of a long dashboard',
+  ],
   'default': [
     'Bug fixes and performance improvements',
   ],

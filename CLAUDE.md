@@ -464,7 +464,15 @@ if (sf.clause) { conditions.push(sf.clause.replace(/^AND\s+/i, '')); params.push
 }
 ```
 
-**Sidebar:** Navy `#1a2744`, active item = red left border `#C8102E` + red-tinted bg  
+**Sidebar:** Navy `#1a2744`, active item = red left border `#C8102E` + red-tinted bg.
+Collapsible 240↔64px (suite-standard): a chevron toggle at the bottom flips the width
+(0.18s ease) and persists to `localStorage['logvault-sidebar-collapsed']`; collapsed hides
+labels/section-label/ingestion-card/version and centers icons (`title` tooltips show
+labels). The sidebar is **pinned to the viewport** (`position: sticky; top: 52px;
+height: calc(100vh - 52px); align-self: flex-start`) so the footer/version stays at the
+bottom of the screen, not the bottom of the scrolled page. Lives inline in
+`frontend/src/app/page.tsx` (logvault has no separate Sidebar component). Matches
+netvault/ddivault/spanvault — keep the collapse behaviour in sync across the suite.  
 **Cards:** white, `1px solid var(--border)`, `border-radius: 10px`, `box-shadow: var(--shadow-sm)`  
 **Tables:** `var(--bg-primary)` header, uppercase labels, `var(--text-muted)` color  
 **Buttons:** Red `#C8102E`, hover `#a00d24`  

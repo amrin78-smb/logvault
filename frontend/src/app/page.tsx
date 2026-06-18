@@ -81,6 +81,17 @@ export default function Home() {
   const [explorerFilter, setExplorerFilter] = useState<ExplorerFilter>({});
   const [refreshInterval, setRefreshInterval] = useState(30);
   const [kpiFlash, setKpiFlash]             = useState(false);
+  // Sidebar collapse — suite-standard 240↔64px, persisted to localStorage so it
+  // survives refresh (matches netvault/ddivault/spanvault).
+  const [collapsed, setCollapsed]           = useState(false);
+  useEffect(() => {
+    try { setCollapsed(localStorage.getItem('logvault-sidebar-collapsed') === 'true'); } catch {}
+  }, []);
+  const toggleCollapsed = () => setCollapsed(c => {
+    const next = !c;
+    try { localStorage.setItem('logvault-sidebar-collapsed', String(next)); } catch {}
+    return next;
+  });
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -179,17 +190,26 @@ export default function Home() {
       )}
 
       <div style={{ display: 'flex', minHeight: 'calc(100vh - 52px)' }}>
-        {/* Sidebar */}
-        <div style={{ width: 240, background: '#1a2744', flexShrink: 0, display: 'flex', flexDirection: 'column', paddingTop: 16 }}>
-          <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '1.2px', padding: '0 24px', marginBottom: 10 }}>
-            NAVIGATION
-          </div>
+        {/* Sidebar — pinned to the viewport (sticky) so the footer/version stays
+            visible at the bottom of the screen instead of the bottom of the scrolled
+            page. Collapsible 240↔64px, matching the rest of the suite. */}
+        <div style={{ width: collapsed ? 64 : 240, background: '#1a2744', flexShrink: 0,
+          display: 'flex', flexDirection: 'column', paddingTop: 16,
+          position: 'sticky', top: 52, height: 'calc(100vh - 52px)', alignSelf: 'flex-start',
+          overflowX: 'hidden', overflowY: 'auto', transition: 'width 0.18s ease' }}>
+          {!collapsed && (
+            <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '1.2px', padding: '0 24px', marginBottom: 10 }}>
+              NAVIGATION
+            </div>
+          )}
+          {collapsed && <div style={{ height: 6 }} />}
           {TABS.map(t => {
             const active = tab === t.id;
             return (
-              <button key={t.id} onClick={() => setTab(t.id)}
+              <button key={t.id} onClick={() => setTab(t.id)} title={collapsed ? t.label : undefined}
                 style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 11,
-                  padding: '11px 20px', margin: '1px 10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                  padding: collapsed ? '11px 0' : '11px 20px', margin: '1px 10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                  justifyContent: collapsed ? 'center' : 'flex-start',
                   background: active ? 'rgba(200,16,46,0.15)' : 'transparent',
                   fontSize: 'var(--text-base)', fontWeight: active ? 600 : 500,
                   color: active ? '#ffffff' : 'rgba(255,255,255,0.5)',
@@ -198,14 +218,14 @@ export default function Home() {
                 onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
                 {active && <span style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 3, height: 20, borderRadius: '0 2px 2px 0', background: 'var(--primary)' }} />}
                 <span style={{ display: 'flex', flexShrink: 0, color: active ? 'var(--primary)' : 'currentColor' }}>{Icons[t.id]}</span>
-                {t.label}
+                {!collapsed && t.label}
               </button>
             );
           })}
 
-          <div style={{ margin: '14px 16px 10px', borderTop: '1px solid rgba(255,255,255,0.08)' }} />
+          {!collapsed && <div style={{ margin: '14px 16px 10px', borderTop: '1px solid rgba(255,255,255,0.08)' }} />}
 
-          {health && (
+          {health && !collapsed && (
             <div style={{ margin: '12px 14px', padding: '8px 12px', background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 10 }}>
               <div style={{ fontSize: 'var(--text-xs)', color: 'rgba(255,255,255,0.35)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700 }}>Ingestion</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -217,9 +237,28 @@ export default function Home() {
           )}
 
           <div style={{ flex: 1 }} />
-          <div style={{ padding: '14px 24px', fontSize: 'var(--text-xs)', color: 'rgba(255,255,255,0.25)', letterSpacing: '0.5px', fontWeight: 500 }}>
-            LogVault v{health?.version || APP_VERSION}
-          </div>
+
+          {/* Collapse toggle — suite-standard chevron, rotates 180° when collapsed */}
+          <button onClick={toggleCollapsed} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            style={{ display: 'flex', alignItems: 'center', gap: 10,
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              margin: '4px 10px', padding: collapsed ? '10px 0' : '10px 12px',
+              background: 'transparent', border: 'none', borderRadius: 10, cursor: 'pointer',
+              color: 'rgba(255,255,255,0.4)', fontSize: 'var(--text-sm)', transition: 'all 0.15s' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; (e.currentTarget as HTMLElement).style.color = '#ffffff'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)'; }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              style={{ transform: collapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+            {!collapsed && <span style={{ whiteSpace: 'nowrap' }}>Collapse</span>}
+          </button>
+
+          {!collapsed && (
+            <div style={{ padding: '8px 24px 14px', fontSize: 'var(--text-xs)', color: 'rgba(255,255,255,0.25)', letterSpacing: '0.5px', fontWeight: 500 }}>
+              LogVault v{health?.version || APP_VERSION}
+            </div>
+          )}
         </div>
 
         {/* Main content */}
