@@ -332,7 +332,7 @@ export default function AlertEvents() {
           <button key={t.id} onClick={() => setActiveTab(t.id as any)}
             style={{ padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
               fontSize: 'var(--text-sm)', fontWeight: activeTab === t.id ? 600 : 400,
-              background: activeTab === t.id ? 'var(--text-primary)' : 'transparent',
+              background: activeTab === t.id ? '#1a202c' : 'transparent',
               color: activeTab === t.id ? '#fff' : 'var(--text-muted)', transition: 'all 0.15s' }}>
             {t.label}
           </button>

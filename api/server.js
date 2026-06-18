@@ -1166,6 +1166,11 @@ const releaseNotes = {
     'Improved dark-mode consistency by removing off-token surface and text colors',
     'Kept severity, vendor, and chart-series palettes intentionally untouched',
   ],
+  '1.2.9': [
+    'Fixed active tabs/pills and range-preset buttons rendering invisible (white-on-white) in dark mode after the palette alignment',
+    'Restored the intentional dark fill on active section-nav pills so they stay dark in both light and dark themes',
+    'No change to light-mode appearance; only the wrong-direction theme mapping was reverted',
+  ],
   'default': [
     'Bug fixes and performance improvements',
   ],

@@ -141,7 +141,7 @@ export default function NetworkHealth({ hours }: { hours: number }) {
           <button key={s.id} onClick={() => setActiveSection(s.id)}
             style={{ padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
               fontSize: 'var(--text-sm)', fontWeight: activeSection === s.id ? 600 : 400,
-              background: activeSection === s.id ? 'var(--text-primary)' : 'transparent',
+              background: activeSection === s.id ? '#1a202c' : 'transparent',
               color: activeSection === s.id ? '#fff' : 'var(--text-muted)',
               display: 'flex', alignItems: 'center', gap: 5, transition: 'all 0.15s' }}>
             {s.alert && activeSection !== s.id && (
