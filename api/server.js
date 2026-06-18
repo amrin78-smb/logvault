@@ -1171,6 +1171,11 @@ const releaseNotes = {
     'Restored the intentional dark fill on active section-nav pills so they stay dark in both light and dark themes',
     'No change to light-mode appearance; only the wrong-direction theme mapping was reverted',
   ],
+  '1.2.10': [
+    'Fixed the Total Logs KPI value being unreadable (dark-on-dark) in dark mode — it now uses an adapting text color',
+    'Top Blocked Destinations list now scrolls within its card instead of overflowing the bottom border',
+    'Top Blocked Destinations panel now matches the padding/height of its sibling dashboard widgets',
+  ],
   'default': [
     'Bug fixes and performance improvements',
   ],

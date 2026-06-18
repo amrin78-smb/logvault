@@ -78,13 +78,13 @@ export function TopBlockedDestinations({ hours, onNavigate }: { hours: number; o
   }, [hours]);
   const max = denied[0] ? parseInt(denied[0].deny_count) : 1;
   return (
-    <div style={{ ...CARD, height: '100%', boxSizing: 'border-box' }}>
-      <div style={TITLE}>Top Blocked Destinations</div>
-      <div style={SUB}>Policy denies + UTM/SSL blocks — {hours}h{onNavigate ? ' · Click to investigate' : ''}</div>
+    <div style={{ ...CARD, height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ ...TITLE, flexShrink: 0 }}>Top Blocked Destinations</div>
+      <div style={{ ...SUB, flexShrink: 0 }}>Policy denies + UTM/SSL blocks — {hours}h{onNavigate ? ' · Click to investigate' : ''}</div>
       {denied.length === 0 ? (
-        <div style={{ height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a', fontSize: 'var(--text-sm)', fontWeight: 500 }}>✓ No blocks</div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a', fontSize: 'var(--text-sm)', fontWeight: 500 }}>✓ No blocks</div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 4 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {denied.slice(0, 5).map((row, i) => {
             const pct = Math.round((parseInt(row.deny_count) / max) * 100);
             return (

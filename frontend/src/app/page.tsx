@@ -148,10 +148,12 @@ export default function Home() {
   ];
 
   const KPI = [
-    { label: 'Total Logs',       value: totalLogs.toLocaleString(),  accent: 'var(--navy)',                                  filter: {} },
-    { label: 'Critical / Alert', value: critCount.toLocaleString(),  accent: critCount  > 0 ? 'var(--red)'    : 'var(--green)', filter: { severity: '0,1,2' } },
-    { label: 'Errors',           value: errorCount.toLocaleString(), accent: errorCount > 0 ? 'var(--orange)' : 'var(--green)', filter: { severity: '3' } },
-    { label: 'Warnings',         value: warnCount.toLocaleString(),  accent: warnCount  > 0 ? 'var(--yellow)' : 'var(--green)', filter: { severity: '4' } },
+    // Total Logs: navy left-border accent, but value text uses --text-primary so it
+    // stays readable in dark mode (navy #1a2744 is invisible on the dark card bg).
+    { label: 'Total Logs',       value: totalLogs.toLocaleString(),  accent: 'var(--navy)',                                  valueColor: 'var(--text-primary)',                       filter: {} },
+    { label: 'Critical / Alert', value: critCount.toLocaleString(),  accent: critCount  > 0 ? 'var(--red)'    : 'var(--green)', valueColor: critCount  > 0 ? 'var(--red)'    : 'var(--green)', filter: { severity: '0,1,2' } },
+    { label: 'Errors',           value: errorCount.toLocaleString(), accent: errorCount > 0 ? 'var(--orange)' : 'var(--green)', valueColor: errorCount > 0 ? 'var(--orange)' : 'var(--green)', filter: { severity: '3' } },
+    { label: 'Warnings',         value: warnCount.toLocaleString(),  accent: warnCount  > 0 ? 'var(--yellow)' : 'var(--green)', valueColor: warnCount  > 0 ? 'var(--yellow)' : 'var(--green)', filter: { severity: '4' } },
   ];
 
   if (!licenseLoading && licenseState.disabled) {
@@ -243,7 +245,7 @@ export default function Home() {
                   <div key={kpi.label} className="kpi-card" onClick={() => openExplorer(kpi.filter)}
                     style={{ borderLeftColor: kpi.accent, cursor: 'pointer',
                       animation: kpiFlash ? 'kpiFlash 0.6s ease' : 'none' }}>
-                    <div style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-1px', lineHeight: 1, color: kpi.accent }}>{kpi.value}</div>
+                    <div style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-1px', lineHeight: 1, color: kpi.valueColor }}>{kpi.value}</div>
                     <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginTop: 8 }}>{kpi.label}</div>
                     <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', marginTop: 3 }}>last {hours}h → View logs</div>
                   </div>
