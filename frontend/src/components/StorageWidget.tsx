@@ -20,7 +20,7 @@ export default function StorageWidget() {
 
   if (loading) return (
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
-      <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading storage info...</div>
+      <div style={{ color: 'var(--text-muted)', fontSize: 'var(--text-base)' }}>Loading storage info...</div>
     </div>
   );
 
@@ -51,8 +51,8 @@ export default function StorageWidget() {
 
   return (
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Storage & Capacity</div>
-      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>Database size and log volume trends</div>
+      <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Storage & Capacity</div>
+      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>Database size and log volume trends</div>
 
       {/* Stats grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
@@ -63,8 +63,8 @@ export default function StorageWidget() {
           { label: 'Logs Today', value: parseInt(data.rows_24h).toLocaleString(),       color: '#16a34a' },
         ].map(s => (
           <div key={s.label} style={CARD_INNER}>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>{s.label}</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>{s.label}</div>
+            <div style={{ fontSize: 'var(--text-xl)', fontWeight: 700, color: s.color }}>{s.value}</div>
           </div>
         ))}
       </div>
@@ -72,8 +72,8 @@ export default function StorageWidget() {
       {/* Server disk — real data */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>Server Disk (C:)</span>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+          <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>Server Disk (C:)</span>
+          <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>
             {diskError ? (
               <span style={{ color: '#ca8a04' }}>⚠ Unable to read disk info</span>
             ) : diskUsedGB !== null ? (
@@ -99,8 +99,8 @@ export default function StorageWidget() {
       {/* LogVault DB space */}
       <div style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>LogVault Database</span>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+          <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>LogVault Database</span>
+          <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>
             {data.db_size} used — {data.days_stored} days of logs stored
           </span>
         </div>
@@ -114,31 +114,31 @@ export default function StorageWidget() {
       {/* Projection cards */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
         <div style={CARD_INNER}>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Avg Growth / Day</div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{data.avg_size_per_day}</div>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>based on data stored so far</div>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Avg Growth / Day</div>
+          <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--text-primary)' }}>{data.avg_size_per_day}</div>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2 }}>based on data stored so far</div>
         </div>
         <div style={{ background: projected90dGB && parseFloat(projected90dGB) > 10 ? '#fefce8' : '#f0fdf4',
           border: `1px solid ${projected90dGB && parseFloat(projected90dGB) > 10 ? '#fde68a' : '#bbf7d0'}`,
           borderRadius: 8, padding: '12px 14px' }}>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Projected 90-Day Usage</div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: projected90dGB && parseFloat(projected90dGB) > 10 ? '#ca8a04' : '#16a34a' }}>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Projected 90-Day Usage</div>
+          <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: projected90dGB && parseFloat(projected90dGB) > 10 ? '#ca8a04' : '#16a34a' }}>
             {projected90dGB ? `${projected90dGB} GB` : 'Insufficient data'}
           </div>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>at current ingestion rate</div>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2 }}>at current ingestion rate</div>
         </div>
       </div>
 
       {/* Daily chart */}
       {chartData.length > 0 && (
         <>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Daily Log Volume (Last 7 Days)</div>
+          <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Daily Log Volume (Last 7 Days)</div>
           <ResponsiveContainer width="100%" height={120}>
             <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
-              <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }} />
+              <XAxis dataKey="day" tick={{ fontSize: 'var(--text-xs)', fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 'var(--text-xs)', fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 'var(--text-sm)' }} />
               <Bar dataKey="logs" fill="#2563eb" radius={[4, 4, 0, 0]} name="Logs" />
             </BarChart>
           </ResponsiveContainer>
@@ -147,7 +147,7 @@ export default function StorageWidget() {
 
       {/* Retention info */}
       <div style={{ marginTop: 16, padding: '10px 14px', background: '#eff6ff',
-        border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 11, color: '#1e40af' }}>
+        border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 'var(--text-xs)', color: '#1e40af' }}>
         <strong>Retention policy:</strong> Logs older than {process.env.RETENTION_DAYS || 90} days are automatically deleted nightly.
         Adjust <code style={{ background: '#dbeafe', padding: '1px 4px', borderRadius: 3 }}>RETENTION_DAYS</code> in{' '}
         <code style={{ background: '#dbeafe', padding: '1px 4px', borderRadius: 3 }}>.env.local</code> to change.

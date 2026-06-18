@@ -20,8 +20,8 @@ export default function TopTalkers({ hours, onHostClick, compact }: {
   return (
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
       padding: '16px 20px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#1a202c', marginBottom: 1, flexShrink: 0 }}>Top Talkers</div>
-      <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 8, flexShrink: 0 }}>Most active — {hours}h</div>
+      <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: '#1a202c', marginBottom: 1, flexShrink: 0 }}>Top Talkers</div>
+      <div style={{ fontSize: 'var(--text-xs)', color: '#9ca3af', marginBottom: 8, flexShrink: 0 }}>Most active — {hours}h</div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7, justifyContent: 'space-evenly' }}>
         {data.slice(0, 5).map((row, i) => {
           const pct = Math.round((parseInt(row.log_count) / max) * 100);
@@ -32,9 +32,9 @@ export default function TopTalkers({ hours, onHostClick, compact }: {
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                   <div style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
-                  <span style={{ fontSize: 11, color: '#1a202c', fontFamily: 'JetBrains Mono, monospace', fontWeight: 500, maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.host}</span>
+                  <span style={{ fontSize: 'var(--text-xs)', color: '#1a202c', fontFamily: 'var(--font-mono)', fontWeight: 500, maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.host}</span>
                 </div>
-                <span style={{ fontSize: 11, color: '#4a5568', fontWeight: 600 }}>{parseInt(row.log_count).toLocaleString()}</span>
+                <span style={{ fontSize: 'var(--text-xs)', color: '#4a5568', fontWeight: 600 }}>{parseInt(row.log_count).toLocaleString()}</span>
               </div>
               <div style={{ height: 4, background: '#f0f2f5', borderRadius: 2, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2 }} />
@@ -42,7 +42,7 @@ export default function TopTalkers({ hours, onHostClick, compact }: {
             </div>
           );
         })}
-        {data.length === 0 && <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 12 }}>No data</div>}
+        {data.length === 0 && <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 'var(--text-sm)' }}>No data</div>}
       </div>
     </div>
   );

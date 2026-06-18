@@ -24,11 +24,11 @@ interface Settings {
 }
 
 const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 20, boxShadow: 'var(--shadow-sm)' };
-const LABEL = { fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6, display: 'block' as const };
+const LABEL = { fontSize: 'var(--text-base)', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6, display: 'block' as const };
 const INPUT = { width: '100%', padding: '9px 12px', borderRadius: 6, border: '1px solid var(--border)',
-  background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 13.5, outline: 'none',
+  background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 'var(--text-md)', outline: 'none',
   boxSizing: 'border-box' as const };
-const SECTION_HEADER = { fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 16 };
+const SECTION_HEADER = { fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 16 };
 
 // Parse a JSON-array string (stored in app_settings) into a string[]. Tolerant
 // of malformed/empty values — always returns an array.
@@ -234,8 +234,8 @@ function UpdateOverlay() {
         )}
         {phase === 'back_up' && <div style={{ fontSize: 44, lineHeight: 1 }}>✓</div>}
         {phase === 'timeout' && <div style={{ fontSize: 44, lineHeight: 1 }}>⚠</div>}
-        <div style={{ fontSize: 18, fontWeight: 700, marginTop: 14, color: 'var(--text-primary)' }}>Updating LogVault...</div>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 6 }}>
+        <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, marginTop: 14, color: 'var(--text-primary)' }}>Updating LogVault...</div>
+        <p style={{ fontSize: 'var(--text-base)', color: 'var(--text-muted)', marginTop: 6 }}>
           Pulling latest code and restarting services. Do not close this window.
         </p>
         <p style={{ fontWeight: 600, margin: '14px 0', color: 'var(--text-primary)' }}>{statusLine}</p>
@@ -245,11 +245,11 @@ function UpdateOverlay() {
           </div>
         )}
         {phase !== 'back_up' && (
-          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>(This usually takes 1-3 minutes)</p>
+          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>(This usually takes 1-3 minutes)</p>
         )}
         <button onClick={phase === 'back_up' ? () => { window.location.href = '/?updated=true'; } : () => window.location.reload()}
           style={{ marginTop: 10, padding: '9px 22px', borderRadius: 6, border: 'none',
-            background: 'var(--primary)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            background: 'var(--primary)', color: '#fff', fontSize: 'var(--text-base)', fontWeight: 600, cursor: 'pointer' }}>
           Reload Now
         </button>
       </div>
@@ -471,7 +471,7 @@ export default function Settings() {
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 20, flexWrap: 'wrap' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id as any)}
-            style={{ padding: '10px 18px', fontSize: 14, background: 'none', border: 'none',
+            style={{ padding: '10px 18px', fontSize: 'var(--text-md)', background: 'none', border: 'none',
               borderBottom: '2px solid transparent', marginBottom: -1, cursor: 'pointer',
               color: activeTab === t.id ? 'var(--primary)' : 'var(--text-muted)',
               fontWeight: activeTab === t.id ? 600 : 500,
@@ -497,10 +497,10 @@ export default function Settings() {
                 onChange={e => setSettings(s => ({ ...s, dns_lookup_enabled: e.target.checked ? 'true' : 'false' }))}
                 style={{ cursor: 'pointer', width: 16, height: 16 }} />
               <div>
-                <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>
+                <div style={{ fontSize: 'var(--text-base)', color: 'var(--text-primary)', fontWeight: 500 }}>
                   Enable reverse DNS lookup
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2 }}>
                   Automatically resolve IP addresses to hostnames for unknown devices
                 </div>
               </div>
@@ -516,7 +516,7 @@ export default function Settings() {
                 value={settings.dns_server}
                 onChange={e => setSettings(s => ({ ...s, dns_server: e.target.value }))}
                 placeholder="e.g. 192.168.1.1 or 8.8.8.8" />
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 6 }}>
                 Used for reverse lookups of IPs appearing in logs — both internal devices and external IPs.
                 Settings are applied automatically within 5 minutes — no restart needed.
               </div>
@@ -526,7 +526,7 @@ export default function Settings() {
           {/* Save */}
           <button onClick={save} disabled={saving}
             style={{ padding: '10px 28px', borderRadius: 6, border: 'none', cursor: 'pointer',
-              fontSize: 13, fontWeight: 600, background: 'var(--primary)', color: '#fff',
+              fontSize: 'var(--text-base)', fontWeight: 600, background: 'var(--primary)', color: '#fff',
               opacity: saving ? 0.7 : 1, transition: 'all 0.15s' }}>
             {saving ? 'Saving...' : 'Save Settings'}
           </button>
@@ -544,12 +544,12 @@ export default function Settings() {
                   checked={settings.smtp_enabled === 'true'}
                   onChange={e => setSettings(s => ({ ...s, smtp_enabled: e.target.checked ? 'true' : 'false' }))}
                   style={{ cursor: 'pointer', width: 16, height: 16 }} />
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-secondary)' }}>
                   {settings.smtp_enabled === 'true' ? 'Enabled' : 'Disabled'}
                 </span>
               </label>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 18 }}>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 18 }}>
               Configure an SMTP server to send email notifications when alert rules fire.
               Emails are only sent for rules that have a notification address set.
             </div>
@@ -591,10 +591,10 @@ export default function Settings() {
                 placeholder="LogVault Alerts <alerts@example.com>" />
             </div>
 
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 12 }}>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 12 }}>
               Common SMTP servers — Gmail: smtp.gmail.com:587 · Office365: smtp.office365.com:587 · Port 465 uses implicit TLS.
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 6 }}>
               Settings applied automatically within 5 minutes — no restart needed.
             </div>
           </div>
@@ -602,7 +602,7 @@ export default function Settings() {
           {/* SECTION 2 — Global Recipients */}
           <div style={CARD}>
             <div style={SECTION_HEADER}>Global Alert Recipients</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 14 }}>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 14 }}>
               These addresses receive all alerts that match the filters below. Individual alert rules can also have their own recipients.
             </div>
             <input style={INPUT}
@@ -614,11 +614,11 @@ export default function Settings() {
                 <span key={email}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--bg-hover)',
                     border: '1px solid var(--border)', borderRadius: 14, padding: '4px 10px',
-                    fontSize: 12, color: 'var(--text-primary)' }}>
+                    fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
                   {email}
                   <button onClick={() => removeRecipient(email)}
                     style={{ border: 'none', background: 'transparent', cursor: 'pointer',
-                      color: 'var(--text-muted)', fontSize: 14, lineHeight: 1, padding: 0 }}>
+                      color: 'var(--text-muted)', fontSize: 'var(--text-md)', lineHeight: 1, padding: 0 }}>
                     ×
                   </button>
                 </span>
@@ -629,7 +629,7 @@ export default function Settings() {
           {/* SECTION 3 — Notification Filters */}
           <div style={CARD}>
             <div style={SECTION_HEADER}>When to Send Alerts</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
               Only send emails when ALL selected conditions match
             </div>
 
@@ -638,7 +638,7 @@ export default function Settings() {
                 checked={settings.email_notify_enabled === 'true'}
                 onChange={e => setSettings(s => ({ ...s, email_notify_enabled: e.target.checked ? 'true' : 'false' }))}
                 style={{ cursor: 'pointer', width: 16, height: 16 }} />
-              <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>
+              <span style={{ fontSize: 'var(--text-base)', color: 'var(--text-primary)', fontWeight: 500 }}>
                 Email notifications enabled
               </span>
             </label>
@@ -646,7 +646,7 @@ export default function Settings() {
             {/* 3a Severity */}
             <div style={{ marginBottom: 22 }}>
               <label style={LABEL}>Severity levels</label>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 10 }}>
                 Send email for these severity levels
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
@@ -657,7 +657,7 @@ export default function Settings() {
                       onChange={() => toggleInArr('email_notify_severities', o.value)}
                       style={{ cursor: 'pointer', width: 15, height: 15 }} />
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: o.color, display: 'inline-block' }} />
-                    <span style={{ fontSize: 12.5, color: 'var(--text-primary)' }}>{o.label}</span>
+                    <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{o.label}</span>
                   </label>
                 ))}
               </div>
@@ -666,7 +666,7 @@ export default function Settings() {
             {/* 3b Categories */}
             <div style={{ marginBottom: 22 }}>
               <label style={LABEL}>Event categories</label>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 10 }}>
                 Only send for these categories (leave all unchecked to receive all categories)
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
@@ -676,7 +676,7 @@ export default function Settings() {
                       checked={parseArr(settings.email_notify_categories).includes(o.value)}
                       onChange={() => toggleInArr('email_notify_categories', o.value)}
                       style={{ cursor: 'pointer', width: 15, height: 15 }} />
-                    <span style={{ fontSize: 12.5, color: 'var(--text-primary)' }}>{o.label}</span>
+                    <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{o.label}</span>
                   </label>
                 ))}
               </div>
@@ -685,7 +685,7 @@ export default function Settings() {
             {/* 3c Vendors */}
             <div style={{ marginBottom: 22 }}>
               <label style={LABEL}>Vendors</label>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 10 }}>
                 Only send for logs from these vendors (leave all unchecked to receive from all vendors)
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
@@ -695,7 +695,7 @@ export default function Settings() {
                       checked={parseArr(settings.email_notify_vendors).includes(o.value)}
                       onChange={() => toggleInArr('email_notify_vendors', o.value)}
                       style={{ cursor: 'pointer', width: 15, height: 15 }} />
-                    <span style={{ fontSize: 12.5, color: 'var(--text-primary)' }}>{o.label}</span>
+                    <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{o.label}</span>
                   </label>
                 ))}
               </div>
@@ -704,7 +704,7 @@ export default function Settings() {
             {/* 3d Minimum risk score */}
             <div style={{ marginBottom: 22 }}>
               <label style={LABEL}>Minimum risk score</label>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 10 }}>
                 Only send emails for logs with risk score at or above this value (0 = send all)
               </div>
               {(() => {
@@ -717,7 +717,7 @@ export default function Settings() {
                       onChange={e => setSettings(s => ({ ...s, email_notify_min_risk: String(e.target.value) }))}
                       style={{ flex: 1, maxWidth: 320, cursor: 'pointer' }} />
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px',
-                      borderRadius: 14, background: b.color, color: '#fff', fontSize: 12, fontWeight: 600 }}>
+                      borderRadius: 14, background: b.color, color: '#fff', fontSize: 'var(--text-sm)', fontWeight: 600 }}>
                       {v} · {b.label}
                     </span>
                   </div>
@@ -728,7 +728,7 @@ export default function Settings() {
             {/* 3e Cooldown */}
             <div>
               <label style={LABEL}>Cooldown between alerts</label>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 10 }}>
                 Minimum time between emails for the same alert rule (prevents email flooding)
               </div>
               <select
@@ -748,7 +748,7 @@ export default function Settings() {
                 checked={settings.email_notify_digest_mode === 'instant'}
                 onChange={() => setSettings(s => ({ ...s, email_notify_digest_mode: 'instant' }))}
                 style={{ cursor: 'pointer', marginTop: 2, width: 15, height: 15 }} />
-              <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>
+              <span style={{ fontSize: 'var(--text-base)', color: 'var(--text-primary)' }}>
                 <span style={{ fontWeight: 600 }}>Instant</span> — Send email immediately when alert fires
               </span>
             </label>
@@ -757,7 +757,7 @@ export default function Settings() {
                 checked={settings.email_notify_digest_mode === 'digest'}
                 onChange={() => setSettings(s => ({ ...s, email_notify_digest_mode: 'digest' }))}
                 style={{ cursor: 'pointer', marginTop: 2, width: 15, height: 15 }} />
-              <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>
+              <span style={{ fontSize: 'var(--text-base)', color: 'var(--text-primary)' }}>
                 <span style={{ fontWeight: 600 }}>Daily Digest</span> — Collect alerts and send one summary email
               </span>
             </label>
@@ -773,7 +773,7 @@ export default function Settings() {
                     <option key={h} value={String(h)}>{String(h).padStart(2, '0')}:00</option>
                   ))}
                 </select>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 8 }}>
                   Sends a summary of all alerts from the past 24 hours at the selected time
                 </div>
               </div>
@@ -783,7 +783,7 @@ export default function Settings() {
           {/* Shared Save (SMTP + recipients + filters + delivery) */}
           <button onClick={save} disabled={saving}
             style={{ padding: '10px 28px', borderRadius: 6, border: 'none', cursor: 'pointer',
-              fontSize: 13, fontWeight: 600, background: 'var(--primary)', color: '#fff',
+              fontSize: 'var(--text-base)', fontWeight: 600, background: 'var(--primary)', color: '#fff',
               opacity: saving ? 0.7 : 1, transition: 'all 0.15s', marginBottom: 16 }}>
             {saving ? 'Saving...' : 'Save Settings'}
           </button>
@@ -791,11 +791,11 @@ export default function Settings() {
           {/* SECTION 5 — Per-Rule Recipients */}
           <div style={CARD}>
             <div style={SECTION_HEADER}>Per-Rule Recipients</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
               Override recipients for specific alert rules. These are in addition to global recipients.
             </div>
             {rules.length === 0 ? (
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>No alert rules configured.</div>
+              <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>No alert rules configured.</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {rules.map(rule => {
@@ -805,21 +805,21 @@ export default function Settings() {
                     <div key={rule.id} style={{ display: 'flex', alignItems: 'flex-end', gap: 12,
                       paddingBottom: 14, borderBottom: '1px solid var(--border-light)' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{rule.name}</div>
+                        <div style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)' }}>{rule.name}</div>
                         {rule.description && (
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{rule.description}</div>
+                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2 }}>{rule.description}</div>
                         )}
                         <input style={{ ...INPUT, marginTop: 8 }}
                           value={val}
                           onChange={e => setRuleEmails(m => ({ ...m, [rule.id]: e.target.value }))}
                           placeholder="optional override" />
                         {showHint && (
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>No custom recipient</div>
+                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 4 }}>No custom recipient</div>
                         )}
                       </div>
                       <button onClick={() => saveRuleEmail(rule.id)} disabled={savingRule === rule.id}
                         style={{ padding: '9px 18px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer',
-                          fontSize: 12, fontWeight: 600, background: 'var(--input-bg)', color: 'var(--text-primary)',
+                          fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--input-bg)', color: 'var(--text-primary)',
                           opacity: savingRule === rule.id ? 0.7 : 1, whiteSpace: 'nowrap' }}>
                         {savingRule === rule.id ? 'Saving...' : 'Save'}
                       </button>
@@ -833,7 +833,7 @@ export default function Settings() {
           {/* SECTION 6 — Test & Preview */}
           <div style={CARD}>
             <div style={{ ...SECTION_HEADER, marginBottom: 6 }}>Send Test Email</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 14 }}>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 14 }}>
               Sends a test message using the settings above (without saving them first).
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
@@ -845,18 +845,18 @@ export default function Settings() {
               </div>
               <button onClick={sendTest} disabled={testing}
                 style={{ padding: '9px 20px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer',
-                  fontSize: 12, fontWeight: 600, background: 'var(--input-bg)', color: 'var(--text-primary)',
+                  fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--input-bg)', color: 'var(--text-primary)',
                   opacity: testing ? 0.7 : 1, whiteSpace: 'nowrap' }}>
                 {testing ? 'Sending...' : 'Send Test'}
               </button>
             </div>
             {parseEmails(settings.email_notify_recipients).length > 0 ? (
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 12 }}>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 12 }}>
                 Test email will be sent to: {parseEmails(settings.email_notify_recipients).join(', ')}
               </div>
             ) : (
               <div style={{ background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.3)',
-                borderRadius: 8, padding: '10px 14px', marginTop: 12, fontSize: 12.5, color: '#b45309' }}>
+                borderRadius: 8, padding: '10px 14px', marginTop: 12, fontSize: 'var(--text-sm)', color: '#b45309' }}>
                 No global recipients configured — alerts will only go to per-rule recipients.
               </div>
             )}
@@ -869,68 +869,68 @@ export default function Settings() {
           <div style={SECTION_HEADER}>Software Updates</div>
 
           {checkingUpdate ? (
-            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Checking for updates...</div>
+            <div style={{ fontSize: 'var(--text-base)', color: 'var(--text-muted)' }}>Checking for updates...</div>
           ) : hasUpdateError ? (
             <div>
-              <div style={{ fontSize: 13, color: '#d97706', fontWeight: 600, marginBottom: 14 }}>
+              <div style={{ fontSize: 'var(--text-base)', color: '#d97706', fontWeight: 600, marginBottom: 14 }}>
                 {updateStatus?.error}
               </div>
               <button onClick={checkUpdate}
                 style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)',
-                  background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 12,
+                  background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)',
                   fontWeight: 600, cursor: 'pointer' }}>
                 Re-check
               </button>
             </div>
           ) : upToDate ? (
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#16a34a', marginBottom: 8 }}>
+              <div style={{ fontSize: 'var(--text-md)', fontWeight: 700, color: '#16a34a', marginBottom: 8 }}>
                 ✓ LogVault is up to date
               </div>
               {updateStatus?.current_version && (
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
-                  Current version: <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>v{updateStatus.current_version}</code>
+                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', marginBottom: 16 }}>
+                  Current version: <code style={{ fontFamily: 'var(--font-mono)' }}>v{updateStatus.current_version}</code>
                 </div>
               )}
               <button onClick={checkUpdate}
                 style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)',
-                  background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 12,
+                  background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)',
                   fontWeight: 600, cursor: 'pointer' }}>
                 Re-check
               </button>
             </div>
           ) : updatesAvailable ? (
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
+              <div style={{ fontSize: 'var(--text-md)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
                 {updateStatus?.current_version === updateStatus?.latest_version
-                  ? <>🔄 Patches available since <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>v{updateStatus?.current_version}</code></>
-                  : <>🔄 Update available: <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>v{updateStatus?.current_version}</code>
+                  ? <>🔄 Patches available since <code style={{ fontFamily: 'var(--font-mono)' }}>v{updateStatus?.current_version}</code></>
+                  : <>🔄 Update available: <code style={{ fontFamily: 'var(--font-mono)' }}>v{updateStatus?.current_version}</code>
                     {' → '}
-                    <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>v{updateStatus?.latest_version}</code></>}
+                    <code style={{ fontFamily: 'var(--font-mono)' }}>v{updateStatus?.latest_version}</code></>}
               </div>
               {(updateStatus?.current_commit || updateStatus?.latest_commit) && (
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
+                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', marginBottom: 14 }}>
                   Current: v{updateStatus?.current_version}
-                  {updateStatus?.current_commit && <> (<code style={{ fontFamily: 'JetBrains Mono, monospace' }}>{updateStatus.current_commit}</code>)</>}
+                  {updateStatus?.current_commit && <> (<code style={{ fontFamily: 'var(--font-mono)' }}>{updateStatus.current_commit}</code>)</>}
                   {'  →  '}
                   Latest: v{updateStatus?.latest_version}
-                  {updateStatus?.latest_commit && <> (<code style={{ fontFamily: 'JetBrains Mono, monospace' }}>{updateStatus.latest_commit}</code>)</>}
+                  {updateStatus?.latest_commit && <> (<code style={{ fontFamily: 'var(--font-mono)' }}>{updateStatus.latest_commit}</code>)</>}
                 </div>
               )}
 
               {updateStatus?.release_notes && updateStatus.release_notes.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
                     What&apos;s new{updateStatus?.latest_version ? ` in v${updateStatus.latest_version}` : ''}
                   </div>
-                  <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12.5, lineHeight: 1.6,
+                  <ul style={{ margin: 0, paddingLeft: 20, fontSize: 'var(--text-sm)', lineHeight: 1.6,
                     color: 'var(--text-primary)' }}>
                     {updateStatus.release_notes.map((note, i) => (
                       <li key={i}>{note}</li>
                     ))}
                   </ul>
                   {updateStatus?.release_date && (
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 8 }}>
                       Released: {fmtReleaseDate(updateStatus.release_date)}
                     </div>
                   )}
@@ -938,7 +938,7 @@ export default function Settings() {
               )}
 
               <div style={{ background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.3)',
-                borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12.5, color: '#b45309' }}>
+                borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 'var(--text-sm)', color: '#b45309' }}>
                 ⚠ Services will restart during the update — you may lose connection for 30–60 seconds.
               </div>
 
@@ -946,19 +946,19 @@ export default function Settings() {
                 <button onClick={() => setShowConfirmModal(true)} disabled={updating}
                   style={{ padding: '9px 22px', borderRadius: 6, border: 'none',
                     cursor: updating ? 'default' : 'pointer', opacity: updating ? 0.6 : 1,
-                    fontSize: 13, fontWeight: 600, background: '#C8102E', color: '#fff' }}>
+                    fontSize: 'var(--text-base)', fontWeight: 600, background: 'var(--primary)', color: '#fff' }}>
                   Update Now
                 </button>
                 <button onClick={checkUpdate}
                   style={{ padding: '9px 18px', borderRadius: 6, border: '1px solid var(--border)',
-                    background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 13,
+                    background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 'var(--text-base)',
                     fontWeight: 600, cursor: 'pointer' }}>
                   Re-check
                 </button>
               </div>
 
               {updateBlocked && (
-                <div style={{ marginTop: 12, fontSize: 13, color: 'var(--primary)' }}>
+                <div style={{ marginTop: 12, fontSize: 'var(--text-base)', color: 'var(--primary)' }}>
                   ⚠ License expired — updates disabled. Renew your license to receive updates.{' '}
                   <a
                     href={(process.env.NEXT_PUBLIC_NOCVAULT_HUB_URL || '') + '/settings/license'}
@@ -972,7 +972,7 @@ export default function Settings() {
           ) : (
             <button onClick={checkUpdate}
               style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)',
-                background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 12,
+                background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)',
                 fontWeight: 600, cursor: 'pointer' }}>
               Check for Updates
             </button>
@@ -988,23 +988,23 @@ export default function Settings() {
           <div onMouseDown={e => e.stopPropagation()}
             style={{ background: 'var(--bg-card)', borderRadius: 8, width: '100%', maxWidth: 460,
               overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.12)' }}>
-            <div style={{ background: '#1a2744', color: '#fff', padding: '14px 20px', fontSize: 15, fontWeight: 700 }}>
+            <div style={{ background: '#1a2744', color: '#fff', padding: '14px 20px', fontSize: 'var(--text-md)', fontWeight: 700 }}>
               Start Update?
             </div>
             <div style={{ padding: 20 }}>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 20 }}>
+              <div style={{ fontSize: 'var(--text-base)', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 20 }}>
                 Services will restart and you&apos;ll lose connection for 30–60 seconds. The page reloads automatically when the update completes.
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button onClick={() => setShowConfirmModal(false)}
                   style={{ padding: '9px 18px', borderRadius: 6, border: '1px solid var(--border)',
-                    background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 13,
+                    background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 'var(--text-base)',
                     fontWeight: 600, cursor: 'pointer' }}>
                   Cancel
                 </button>
                 <button onClick={startUpdate}
                   style={{ padding: '9px 22px', borderRadius: 6, border: 'none', cursor: 'pointer',
-                    fontSize: 13, fontWeight: 600, background: '#C8102E', color: '#fff' }}>
+                    fontSize: 'var(--text-base)', fontWeight: 600, background: 'var(--primary)', color: '#fff' }}>
                   Start Update
                 </button>
               </div>
@@ -1031,11 +1031,11 @@ export default function Settings() {
           ].map(({ label, value }) => (
             <div key={label} style={{ display: 'flex', padding: '10px 0',
               borderBottom: '1px solid var(--border-light)' }}>
-              <span style={{ width: 140, fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>{label}</span>
-              <span style={{ fontSize: 12, color: 'var(--text-primary)', fontFamily: label.includes('Port') || label === 'Collector' || label === 'Database' || label === 'Runtime' ? 'JetBrains Mono, monospace' : 'inherit' }}>{value}</span>
+              <span style={{ width: 140, fontSize: 'var(--text-sm)', color: 'var(--text-muted)', fontWeight: 500 }}>{label}</span>
+              <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', fontFamily: label.includes('Port') || label === 'Collector' || label === 'Database' || label === 'Runtime' ? 'var(--font-mono)' : 'inherit' }}>{value}</span>
             </div>
           ))}
-          <div style={{ marginTop: 18, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.7 }}>
+          <div style={{ marginTop: 18, fontSize: 'var(--text-sm)', color: 'var(--text-muted)', lineHeight: 1.7 }}>
             <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>LogVault v{appVersion || '1.0.0'}</div>
             <div>Part of the NocVault Network Intelligence Suite</div>
             <div>© 2026 NocVault</div>

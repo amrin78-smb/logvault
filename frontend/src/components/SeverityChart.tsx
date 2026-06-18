@@ -45,10 +45,10 @@ export default function SeverityChart({ summary, onSeverityClick, compact }: {
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
       padding: '16px 20px', height: '100%', boxSizing: 'border-box',
       display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#1a202c', marginBottom: 1, flexShrink: 0 }}>Severity Distribution</div>
-      <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 4, flexShrink: 0 }}>Click a segment to filter</div>
+      <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: '#1a202c', marginBottom: 1, flexShrink: 0 }}>Severity Distribution</div>
+      <div style={{ fontSize: 'var(--text-xs)', color: '#9ca3af', marginBottom: 4, flexShrink: 0 }}>Click a segment to filter</div>
       {data.length === 0 ? (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 12 }}>No data</div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 'var(--text-sm)' }}>No data</div>
       ) : (
         <>
           <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
@@ -86,8 +86,8 @@ export default function SeverityChart({ summary, onSeverityClick, compact }: {
             </svg>
             {tooltip && (
               <div style={{ position: 'absolute', left: tooltip.x + 8, top: tooltip.y - 14,
-                background: '#fff', border: '1px solid #e2e6ea', borderRadius: 6,
-                padding: '4px 8px', fontSize: 11, color: '#1a202c', pointerEvents: 'none',
+                background: 'var(--bg-card)', border: '1px solid #e2e6ea', borderRadius: 6,
+                padding: '4px 8px', fontSize: 'var(--text-xs)', color: '#1a202c', pointerEvents: 'none',
                 boxShadow: '0 2px 8px rgba(0,0,0,0.1)', whiteSpace: 'nowrap', zIndex: 10 }}>
                 <span style={{ textTransform: 'capitalize', fontWeight: 600 }}>{tooltip.label}</span>
                 <span style={{ color: '#718096', marginLeft: 5 }}>{tooltip.value.toLocaleString()}</span>
@@ -103,8 +103,8 @@ export default function SeverityChart({ summary, onSeverityClick, compact }: {
                 onMouseEnter={e => { if (onSeverityClick) (e.currentTarget as HTMLElement).style.background = '#eff6ff'; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#f8f9fb'; }}>
                 <div style={{ width: 5, height: 5, borderRadius: 2, background: d.color }} />
-                <span style={{ fontSize: 9, color: '#4a5568', textTransform: 'capitalize' }}>{d.name}</span>
-                <span style={{ fontSize: 9, color: '#1a202c', fontWeight: 700 }}>{d.value}</span>
+                <span style={{ fontSize: 'var(--text-xs)', color: '#4a5568', textTransform: 'capitalize' }}>{d.name}</span>
+                <span style={{ fontSize: 'var(--text-xs)', color: '#1a202c', fontWeight: 700 }}>{d.value}</span>
               </div>
             ))}
           </div>

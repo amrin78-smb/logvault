@@ -23,16 +23,16 @@ export default class ErrorBoundary extends Component<Props, State> {
       return (
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)',
           borderRadius: 8, padding: '20px 16px', textAlign: 'center' }}>
-          <div style={{ fontSize: 20, marginBottom: 6 }}>⚠️</div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+          <div style={{ fontSize: 'var(--text-xl)', marginBottom: 6 }}>⚠️</div>
+          <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
             {this.props.name || 'Widget'} failed to load
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 10 }}>
             {this.state.error?.message}
           </div>
           <button onClick={() => this.setState({ hasError: false })}
             style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)',
-              cursor: 'pointer', fontSize: 11, background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
+              cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
             Retry
           </button>
         </div>

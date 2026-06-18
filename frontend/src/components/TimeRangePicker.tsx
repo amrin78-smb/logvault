@@ -74,7 +74,7 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
         </svg>
         {[10, 30, 60, 300].map(s => (
           <button key={s} onClick={() => onRefreshChange(s)}
-            style={{ padding: '3px 7px', borderRadius: 4, border: 'none', fontSize: 11, cursor: 'pointer',
+            style={{ padding: '3px 7px', borderRadius: 4, border: 'none', fontSize: 'var(--text-xs)', cursor: 'pointer',
               fontWeight: refreshInterval === s ? 600 : 400,
               background: refreshInterval === s ? '#1a202c' : 'transparent',
               color: refreshInterval === s ? '#fff' : 'var(--text-muted)' }}>
@@ -83,7 +83,7 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
         ))}
         <button onClick={onRefreshNow}
           style={{ padding: '3px 7px', borderRadius: 4, border: '1px solid var(--border)',
-            cursor: 'pointer', fontSize: 11, background: 'var(--input-bg)',
+            cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--input-bg)',
             color: 'var(--text-secondary)', marginLeft: 2 }}>
           Now
         </button>
@@ -92,10 +92,10 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
       {/* Time range presets */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 3, position: 'relative',
         background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 6px' }}>
-        <span style={{ fontSize: 10, color: 'var(--text-muted)', marginRight: 2 }}>Range</span>
+        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginRight: 2 }}>Range</span>
         {PRESETS.map(p => (
           <button key={p.value} onClick={() => { onHoursChange(p.value); setShowCustom(false); }}
-            style={{ padding: '3px 8px', borderRadius: 4, border: 'none', fontSize: 11, cursor: 'pointer',
+            style={{ padding: '3px 8px', borderRadius: 4, border: 'none', fontSize: 'var(--text-xs)', cursor: 'pointer',
               fontWeight: hours === p.value ? 600 : 400,
               background: hours === p.value ? '#1a202c' : 'transparent',
               color: hours === p.value ? '#fff' : 'var(--text-muted)' }}>
@@ -104,7 +104,7 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
         ))}
         <button onClick={() => setShowCustom(s => !s)}
           style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--border)',
-            fontSize: 11, cursor: 'pointer', background: 'var(--input-bg)',
+            fontSize: 'var(--text-xs)', cursor: 'pointer', background: 'var(--input-bg)',
             color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
             <rect x="1" y="1" width="8" height="8" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none"/>
@@ -119,7 +119,7 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
           <div style={{ position: 'absolute', top: 34, right: 0, zIndex: 200,
             background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
             padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', minWidth: 260 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>
+            <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>
               Quick Ranges
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -127,7 +127,7 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
                 <button key={q.label}
                   onClick={() => { onHoursChange(Math.max(q.hours, 0.1)); setShowCustom(false); }}
                   style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)',
-                    fontSize: 11, cursor: 'pointer', background: 'var(--input-bg)',
+                    fontSize: 'var(--text-xs)', cursor: 'pointer', background: 'var(--input-bg)',
                     color: 'var(--text-secondary)', transition: 'all 0.15s' }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'var(--input-bg)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; }}>
@@ -137,7 +137,7 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
             </div>
             <button onClick={() => setShowCustom(false)}
               style={{ width: '100%', marginTop: 12, padding: '6px', borderRadius: 6,
-                border: '1px solid var(--border)', cursor: 'pointer', fontSize: 11,
+                border: '1px solid var(--border)', cursor: 'pointer', fontSize: 'var(--text-xs)',
                 background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
               Close
             </button>

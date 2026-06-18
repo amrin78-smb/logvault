@@ -22,17 +22,17 @@ export default function RecentCritical({ hours, onRowClick }: {
   }, [hours]);
 
   return (
-    <div style={{ background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 8, padding: 16 }}>
-      <div style={{ fontSize: 14, fontWeight: 600, color: '#1a202c', marginBottom: 2 }}>Recent Critical &amp; Error Events</div>
-      <div style={{ fontSize: 11, color: '#718096', marginBottom: 16 }}>
+    <div style={{ background: 'var(--bg-card)', border: '1px solid #e2e6ea', borderRadius: 8, padding: 16 }}>
+      <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: '#1a202c', marginBottom: 2 }}>Recent Critical &amp; Error Events</div>
+      <div style={{ fontSize: 'var(--text-xs)', color: '#718096', marginBottom: 16 }}>
         {onRowClick ? 'Click a row to view similar logs' : 'Latest severity 0–3 events'}
       </div>
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
           <thead>
             <tr style={{ borderBottom: '2px solid #f0f2f5' }}>
               {['Time','Host','Vendor','Severity','Message'].map(h => (
-                <th key={h} style={{ padding: '8px 12px', textAlign: 'left', color: '#718096', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
+                <th key={h} style={{ padding: '8px 12px', textAlign: 'left', color: '#718096', fontWeight: 600, fontSize: 'var(--text-xs)', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -43,22 +43,22 @@ export default function RecentCritical({ hours, onRowClick }: {
                 <tr key={i}
                   onClick={() => onRowClick && onRowClick(SEV_FILTER[row.severity_label] || '3')}
                   style={{ borderBottom: '1px solid #f0f2f5',
-                    background: i % 2 === 0 ? '#fafbfc' : '#ffffff',
+                    background: i % 2 === 0 ? '#fafbfc' : 'var(--bg-card)',
                     cursor: onRowClick ? 'pointer' : 'default',
                     transition: 'background 0.1s' }}
                   onMouseEnter={e => { if (onRowClick) (e.currentTarget as HTMLElement).style.background = '#eff6ff'; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? '#fafbfc' : '#ffffff'; }}>
-                  <td style={{ padding: '8px 12px', color: '#9ca3af', whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? '#fafbfc' : 'var(--bg-card)'; }}>
+                  <td style={{ padding: '8px 12px', color: '#9ca3af', whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}>
                     {new Date(row.received_at).toLocaleTimeString()}
                   </td>
-                  <td style={{ padding: '8px 12px', color: '#1a202c', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, fontWeight: 500 }}>
+                  <td style={{ padding: '8px 12px', color: '#1a202c', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', fontWeight: 500 }}>
                     {row.source_host || row.source_ip}
                   </td>
                   <td style={{ padding: '8px 12px' }}>
-                    <span style={{ fontSize: 11, color: '#4a5568', background: '#f0f2f5', padding: '2px 8px', borderRadius: 10, textTransform: 'capitalize' }}>{row.vendor}</span>
+                    <span style={{ fontSize: 'var(--text-xs)', color: '#4a5568', background: '#f0f2f5', padding: '2px 8px', borderRadius: 10, textTransform: 'capitalize' }}>{row.vendor}</span>
                   </td>
                   <td style={{ padding: '8px 12px' }}>
-                    <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700,
+                    <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 'var(--text-xs)', fontWeight: 700,
                       background: sev.bg, color: sev.color, border: `1px solid ${sev.border}`,
                       textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       {row.severity_label}
@@ -71,7 +71,7 @@ export default function RecentCritical({ hours, onRowClick }: {
               );
             })}
             {data.length === 0 && (
-              <tr><td colSpan={5} style={{ padding: 32, textAlign: 'center', color: '#16a34a', fontSize: 13, fontWeight: 500 }}>
+              <tr><td colSpan={5} style={{ padding: 32, textAlign: 'center', color: '#16a34a', fontSize: 'var(--text-base)', fontWeight: 500 }}>
                 ✓ No critical events in the last {hours}h
               </td></tr>
             )}

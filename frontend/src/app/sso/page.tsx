@@ -34,7 +34,7 @@ function Spinner() {
         <div style={{ width: 40, height: 40, border: '3px solid #334155',
           borderTop: '3px solid #3b82f6', borderRadius: '50%', margin: '0 auto 16px',
           animation: 'spin 1s linear infinite' }} />
-        <div style={{ fontSize: 14, fontWeight: 500 }}>Signing in to LogVault...</div>
+        <div style={{ fontSize: 'var(--text-md)', fontWeight: 500 }}>Signing in to LogVault...</div>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     </div>

@@ -41,13 +41,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10,
               background: c.bg, border: `1px solid ${c.border}`, borderRadius: 8,
               padding: '10px 16px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-              animation: 'fadeIn 0.2s ease', fontSize: 13, color: c.color,
+              animation: 'fadeIn 0.2s ease', fontSize: 'var(--text-base)', color: c.color,
               minWidth: 260, maxWidth: 380 }}>
-              <span style={{ fontWeight: 700, fontSize: 14 }}>{ICONS[t.type]}</span>
+              <span style={{ fontWeight: 700, fontSize: 'var(--text-md)' }}>{ICONS[t.type]}</span>
               <span style={{ color: 'var(--text-primary)', flex: 1 }}>{t.message}</span>
               <button onClick={() => setToasts(prev => prev.filter(x => x.id !== t.id))}
                 style={{ background: 'none', border: 'none', cursor: 'pointer',
-                  color: 'var(--text-muted)', fontSize: 14, padding: 0 }}>
+                  color: 'var(--text-muted)', fontSize: 'var(--text-md)', padding: 0 }}>
                 ×
               </button>
             </div>

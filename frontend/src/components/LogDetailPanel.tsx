@@ -63,13 +63,13 @@ function Field({ label, value, mono = false }: { label: string; value: string; m
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 0',
       borderBottom: '1px solid var(--border-light)' }}>
-      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500,
+      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 500,
         minWidth: 110, flexShrink: 0, paddingTop: 1 }}>{label}</span>
-      <span style={{ fontSize: 12, color: 'var(--text-primary)', flex: 1, wordBreak: 'break-all',
-        fontFamily: mono ? 'JetBrains Mono, monospace' : 'inherit' }}>{value || '—'}</span>
+      <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', flex: 1, wordBreak: 'break-all',
+        fontFamily: mono ? 'var(--font-mono)' : 'inherit' }}>{value || '—'}</span>
       <button onClick={copy} title="Copy"
         style={{ background: 'none', border: 'none', cursor: 'pointer', color: copied ? '#16a34a' : 'var(--text-muted)',
-          fontSize: 10, padding: '2px 4px', flexShrink: 0 }}>
+          fontSize: 'var(--text-xs)', padding: '2px 4px', flexShrink: 0 }}>
         {copied ? '✓' : '⎘'}
       </button>
     </div>
@@ -128,28 +128,28 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)',
           background: '#1a2744', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>
+            <div style={{ fontSize: 'var(--text-md)', fontWeight: 700, color: '#fff' }}>
               {log.source_host || cleanIP}
             </div>
-            <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, fontFamily: 'JetBrains Mono, monospace' }}>
+            <div style={{ fontSize: 'var(--text-xs)', color: '#64748b', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
               {cleanIP} · {new Date(log.received_at).toLocaleString()}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {typeof log.risk_score === 'number' && (
               <span title={`Risk score: ${log.risk_score}/100`}
-                style={{ padding: '3px 10px', borderRadius: 16, fontSize: 11, fontWeight: 700,
+                style={{ padding: '3px 10px', borderRadius: 16, fontSize: 'var(--text-xs)', fontWeight: 700,
                   background: risk.bg, color: risk.color }}>
                 {risk.label} · {log.risk_score}
               </span>
             )}
-            <span style={{ padding: '3px 10px', borderRadius: 16, fontSize: 11, fontWeight: 700,
+            <span style={{ padding: '3px 10px', borderRadius: 16, fontSize: 'var(--text-xs)', fontWeight: 700,
               background: sevStyle.bg, color: sevStyle.color, textTransform: 'uppercase' }}>
               {log.severity_label}
             </span>
             <button onClick={onClose}
               style={{ background: 'rgba(255,255,255,0.1)', border: 'none', cursor: 'pointer',
-                color: '#94a3b8', fontSize: 18, width: 28, height: 28, borderRadius: 6,
+                color: '#94a3b8', fontSize: 'var(--text-lg)', width: 28, height: 28, borderRadius: 6,
                 display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               ×
             </button>
@@ -161,18 +161,18 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
 
           {/* Message */}
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+            <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-muted)',
               textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Message</div>
             <div style={{ padding: 12, background: 'var(--bg-primary)', border: '1px solid var(--border)',
-              borderRadius: 8, fontSize: 12, color: 'var(--text-primary)', lineHeight: 1.6,
-              wordBreak: 'break-all', fontFamily: 'JetBrains Mono, monospace' }}>
+              borderRadius: 8, fontSize: 'var(--text-sm)', color: 'var(--text-primary)', lineHeight: 1.6,
+              wordBreak: 'break-all', fontFamily: 'var(--font-mono)' }}>
               {log.message}
             </div>
           </div>
 
           {/* Core fields */}
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+            <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-muted)',
               textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Details</div>
             <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)',
               borderRadius: 8, padding: '0 12px' }}>
@@ -194,7 +194,7 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
           {/* Parsed fields */}
           {sdEntries.length > 0 && (
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+              <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-muted)',
                 textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
                 Parsed Fields ({sdEntries.length})
               </div>
@@ -209,36 +209,36 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
 
           {/* Quick actions */}
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+            <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-muted)',
               textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Quick Actions</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               <button onClick={() => { onFilterIP(cleanIP); onClose(); }}
                 style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--border)',
-                  cursor: 'pointer', fontSize: 12, background: 'var(--bg-card)', color: 'var(--text-secondary)',
+                  cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   display: 'flex', alignItems: 'center', gap: 5 }}>
                 📍 Filter by IP
               </button>
               <button onClick={() => { onFilterVendor(log.vendor); onClose(); }}
                 style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--border)',
-                  cursor: 'pointer', fontSize: 12, background: 'var(--bg-card)', color: 'var(--text-secondary)',
+                  cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   display: 'flex', alignItems: 'center', gap: 5 }}>
                 🏷️ Filter by Vendor
               </button>
               <button onClick={() => { onFilterSeverity(SEVERITIES[log.severity] || ''); onClose(); }}
                 style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--border)',
-                  cursor: 'pointer', fontSize: 12, background: 'var(--bg-card)', color: 'var(--text-secondary)',
+                  cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   display: 'flex', alignItems: 'center', gap: 5 }}>
                 🔴 Filter by Severity
               </button>
               <button onClick={() => navigator.clipboard.writeText(log.message)}
                 style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--border)',
-                  cursor: 'pointer', fontSize: 12, background: 'var(--bg-card)', color: 'var(--text-secondary)',
+                  cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   display: 'flex', alignItems: 'center', gap: 5 }}>
                 ⎘ Copy Message
               </button>
               <button onClick={() => navigator.clipboard.writeText(JSON.stringify(log, null, 2))}
                 style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--border)',
-                  cursor: 'pointer', fontSize: 12, background: 'var(--bg-card)', color: 'var(--text-secondary)',
+                  cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   display: 'flex', alignItems: 'center', gap: 5 }}>
                 ⎘ Copy Raw JSON
               </button>
@@ -247,14 +247,14 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
 
           {/* Related logs */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+            <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-muted)',
               textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
               Related Logs — Same IP, Last 5 Minutes
             </div>
             {loadingRel ? (
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 12 }}>Loading...</div>
+              <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', padding: 12 }}>Loading...</div>
             ) : related.length === 0 ? (
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 12,
+              <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', padding: 12,
                 background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 8 }}>
                 No other logs from this IP in the last 5 minutes
               </div>
@@ -266,14 +266,14 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
                     <div key={i} style={{ padding: '8px 12px', background: 'var(--bg-primary)',
                       border: '1px solid var(--border)', borderRadius: 8 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                        <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, textTransform: 'uppercase',
                           color: rs.color }}>{r.severity_label}</span>
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)',
-                          fontFamily: 'JetBrains Mono, monospace' }}>
+                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)',
+                          fontFamily: 'var(--font-mono)' }}>
                           {new Date(r.received_at).toLocaleTimeString()}
                         </span>
                       </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-secondary)',
+                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {r.message}
                       </div>

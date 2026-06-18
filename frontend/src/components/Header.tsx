@@ -132,7 +132,7 @@ export default function Header() {
           </text>
         </svg>
         <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.15)' }} />
-        <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, letterSpacing: '1px' }}>
+        <div style={{ fontSize: 'var(--text-xs)', color: '#94a3b8', fontWeight: 600, letterSpacing: '1px' }}>
           SYSLOG ANALYZER
         </div>
       </div>
@@ -152,13 +152,13 @@ export default function Header() {
             placeholder="Search logs, hosts, alerts... (/)"
             style={{ width: '100%', height: 38, padding: '0 34px 0 34px', borderRadius: 6,
               border: '1px solid #2d3a52', background: 'rgba(255,255,255,0.04)', color: '#f1f5f9',
-              fontSize: 13, outline: 'none' }}
+              fontSize: 'var(--text-base)', outline: 'none' }}
           />
           {search && (
             <button onClick={() => { setSearch(''); searchRef.current?.focus(); }}
               aria-label="Clear search"
               style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-                background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: 16,
+                background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: 'var(--text-lg)',
                 lineHeight: 1, padding: 4 }}>
               ×
             </button>
@@ -186,7 +186,7 @@ export default function Header() {
           </svg>
           {unacked > 0 && (
             <span style={{ position: 'absolute', top: 0, right: 0, minWidth: 16, height: 16, padding: '0 4px',
-              borderRadius: 8, background: '#C8102E', color: '#fff', fontSize: 10, fontWeight: 700,
+              borderRadius: 8, background: 'var(--primary)', color: '#fff', fontSize: 'var(--text-xs)', fontWeight: 700,
               display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>
               {unacked > 99 ? '99+' : unacked}
             </span>
@@ -210,7 +210,7 @@ export default function Header() {
             background: collectorOnline ? '#22c55e' : '#94a3b8',
             boxShadow: collectorOnline ? '0 0 6px #22c55e' : 'none',
             animation: collectorOnline ? 'pulse 1.6s ease-in-out infinite' : 'none' }} />
-          <span style={{ fontSize: 11, color: collectorOnline ? '#22c55e' : '#94a3b8', fontWeight: 600, letterSpacing: '0.5px' }}>
+          <span style={{ fontSize: 'var(--text-xs)', color: collectorOnline ? '#22c55e' : '#94a3b8', fontWeight: 600, letterSpacing: '0.5px' }}>
             {collectorOnline ? 'COLLECTOR' : 'OFFLINE'}
           </span>
         </div>
@@ -225,16 +225,16 @@ export default function Header() {
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)'; }}
             onMouseLeave={e => { if (!dropdownOpen) (e.currentTarget as HTMLElement).style.background = 'none'; }}>
 
-            <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#C8102E',
+            <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--primary)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+              fontSize: 'var(--text-sm)', fontWeight: 700, color: '#fff', flexShrink: 0 }}>
               {initials}
             </div>
             <div style={{ textAlign: 'left' }}>
-              <div style={{ fontSize: 12, color: '#f1f5f9', fontWeight: 600, lineHeight: 1.2 }}>
+              <div style={{ fontSize: 'var(--text-sm)', color: '#f1f5f9', fontWeight: 600, lineHeight: 1.2 }}>
                 {user?.name || user?.email?.split('@')[0] || 'User'}
               </div>
-              <span style={{ display: 'inline-block', fontSize: 9.5, fontWeight: 700,
+              <span style={{ display: 'inline-block', fontSize: 'var(--text-xs)', fontWeight: 700,
                 padding: '1px 7px', borderRadius: 6, background: roleBadge.bg, color: roleBadge.fg,
                 textTransform: 'uppercase', letterSpacing: '0.4px', marginTop: 2 }}>
                 {roleBadge.label}
@@ -253,10 +253,10 @@ export default function Header() {
               animation: 'fadeIn 0.15s ease' }}>
 
               <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-light)' }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                <div style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)' }}>
                   {user?.name || 'User'}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2 }}>
                   {user?.email || ''}
                 </div>
               </div>
@@ -265,7 +265,7 @@ export default function Header() {
                 {/* NocVault Hub */}
                 <a href={`${HUB_URL}/launcher`}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px',
-                    textDecoration: 'none', color: 'var(--text-secondary)', fontSize: 13, transition: 'background 0.1s' }}
+                    textDecoration: 'none', color: 'var(--text-secondary)', fontSize: 'var(--text-base)', transition: 'background 0.1s' }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-primary)'; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -280,7 +280,7 @@ export default function Header() {
                   onClick={() => { toggle(); setDropdownOpen(false); }}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px',
                     width: '100%', background: 'none', border: 'none', cursor: 'pointer',
-                    color: 'var(--text-secondary)', fontSize: 13, textAlign: 'left', transition: 'background 0.1s' }}
+                    color: 'var(--text-secondary)', fontSize: 'var(--text-base)', textAlign: 'left', transition: 'background 0.1s' }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-primary)'; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
                   {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
@@ -294,7 +294,7 @@ export default function Header() {
                   onClick={handleSignOut}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px',
                     width: '100%', background: 'none', border: 'none', cursor: 'pointer',
-                    color: '#dc2626', fontSize: 13, textAlign: 'left', transition: 'background 0.1s' }}
+                    color: '#dc2626', fontSize: 'var(--text-base)', textAlign: 'left', transition: 'background 0.1s' }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(220,38,38,0.08)'; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

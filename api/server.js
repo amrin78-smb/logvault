@@ -1152,6 +1152,13 @@ const releaseNotes = {
     'Trimmed overly generous card padding by one step for a denser, enterprise feel',
     'Kept pills, badges, status dots, and avatars rounded — visual-only calibration, no layout changes',
   ],
+  '1.2.7': [
+    'Standardized typography on the NocVault suite-wide 7-step type scale',
+    'Collapsed ~23 ad-hoc font sizes onto 7 shared scale tokens for consistent log density',
+    'Unified all monospace text on a single shared font token across log and detail views',
+    'Replaced hardcoded colors that duplicated theme tokens, fixing dark-mode color bugs',
+    'Preserved intentional severity/vendor palettes and display-size numbers',
+  ],
   'default': [
     'Bug fixes and performance improvements',
   ],

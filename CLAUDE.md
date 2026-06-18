@@ -473,6 +473,37 @@ if (sf.clause) { conditions.push(sf.clause.replace(/^AND\s+/i, '')); params.push
 **Buttons:** Red `#C8102E`, hover `#a00d24`  
 **Font:** `system-ui, -apple-system, sans-serif`
 
+## Typography & design tokens (suite standard)
+
+Body font is **Inter** (loaded via CSS `@import`, no `next/font`); monospace is the
+single shared token **`var(--font-mono)`** (`'JetBrains Mono', 'Fira Code', 'Consolas',
+'Courier New', monospace`) — used for all log lines, IPs, ports, versions, code.
+
+All font sizes use the **7-step type scale** defined in `globals.css` `:root` (sizes do
+not change per theme, so they live in `:root` only):
+
+| Token | px | Use |
+|---|---|---|
+| `--text-xs` | 11px | table headers, badges, micro-labels |
+| `--text-sm` | 12px | secondary labels, captions |
+| `--text-base` | 13px | buttons, inputs, table body |
+| `--text-md` | 14px | body text, card titles (base body size on `html`/`body`) |
+| `--text-lg` | 16px | section / panel headings |
+| `--text-xl` | 20px | page titles |
+| `--text-2xl` | 28px | stat numbers / display |
+
+**Rules:**
+- **NEVER hardcode a font size or a color that duplicates a token.** Use the scale token
+  (`fontSize: 'var(--text-base)'`, not `fontSize: 13`) and the existing color tokens
+  (`var(--text-muted)`, `var(--bg-card)`, `var(--primary)`, etc.) so dark mode works.
+- Display / hero numbers **>= 34px** (e.g. update-overlay spinner, lock-screen glyph) may
+  stay literal — they are intentional one-off display sizes.
+- **Exception:** the severity (`SEV_COLORS`) and vendor (`VENDOR_COLORS`) palettes in
+  `LogExplorer.tsx` / `LogDetailPanel.tsx` (and chart series color arrays / status-badge
+  color pairs) are intentional semantic palettes with no matching token — leave them.
+- This is the **NocVault SUITE-WIDE standard**: the same scale and `--font-mono` token are
+  used in **spanvault, ddivault, and netvault**. Keep them in sync.
+
 ---
 
 ## API Rules — CRITICAL

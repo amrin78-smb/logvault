@@ -21,7 +21,7 @@ interface Host {
 const EMPTY = { ip_address: '', hostname: '', vendor: 'generic', description: '' };
 
 const INPUT = { padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)',
-  background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 13,
+  background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 'var(--text-base)',
   width: '100%', outline: 'none', boxSizing: 'border-box' as const };
 
 const VENDOR_COLORS: Record<string, string> = {
@@ -109,29 +109,29 @@ export default function KnownHosts() {
 
       {/* Add / Edit form */}
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+        <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
           {editIp ? 'Edit Host' : 'Add Known Host'}
         </div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>
+        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
           Register device IPs for friendly name display in logs
         </div>
         {error && (
           <div style={{ padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca',
-            borderRadius: 6, color: '#dc2626', fontSize: 12, marginBottom: 12 }}>{error}</div>
+            borderRadius: 6, color: '#dc2626', fontSize: 'var(--text-sm)', marginBottom: 12 }}>{error}</div>
         )}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>IP Address *</div>
+            <div style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>IP Address *</div>
             <input value={form.ip_address} onChange={e => setForm(f => ({ ...f, ip_address: e.target.value }))}
               placeholder="10.1.1.1" style={INPUT} disabled={!!editIp} />
           </div>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Hostname *</div>
+            <div style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Hostname *</div>
             <input value={form.hostname} onChange={e => setForm(f => ({ ...f, hostname: e.target.value }))}
               placeholder="FG-BKK-01" style={INPUT} />
           </div>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Vendor</div>
+            <div style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Vendor</div>
             <select value={form.vendor} onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))}
               style={{ ...INPUT, cursor: 'pointer' }}>
               {['fortinet','cisco','paloalto','aruba','sangfor','generic'].map(v => (
@@ -140,7 +140,7 @@ export default function KnownHosts() {
             </select>
           </div>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Description</div>
+            <div style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Description</div>
             <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
               placeholder="Bangkok HQ Firewall" style={INPUT} />
           </div>
@@ -148,13 +148,13 @@ export default function KnownHosts() {
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={save} disabled={loading}
             style={{ padding: '8px 20px', borderRadius: 6, border: 'none', cursor: 'pointer',
-              fontSize: 13, fontWeight: 600, background: '#C8102E', color: '#fff', opacity: loading ? 0.7 : 1 }}>
+              fontSize: 'var(--text-base)', fontWeight: 600, background: 'var(--primary)', color: '#fff', opacity: loading ? 0.7 : 1 }}>
             {loading ? 'Saving...' : editIp ? 'Update Host' : 'Add Host'}
           </button>
           {editIp && (
             <button onClick={() => { setForm(EMPTY); setEditIp(null); setError(null); }}
               style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)',
-                cursor: 'pointer', fontSize: 13, background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
+                cursor: 'pointer', fontSize: 'var(--text-base)', background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
               Cancel
             </button>
           )}
@@ -165,14 +165,14 @@ export default function KnownHosts() {
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+            <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)' }}>
               Registered Hosts
-              <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: 'var(--text-muted)' }}>
+              <span style={{ marginLeft: 8, fontSize: 'var(--text-sm)', fontWeight: 400, color: 'var(--text-muted)' }}>
                 {hosts.length} total · {nvSynced} from NetVault · {manualCount} manual
               </span>
             </div>
             {lastSync && (
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2 }}>
                 Last synced from NetVault: {new Date(lastSync).toLocaleString()}
               </div>
             )}
@@ -181,7 +181,7 @@ export default function KnownHosts() {
             {/* Sync from NetVault button */}
             <button onClick={triggerSync} disabled={syncing}
               style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid #bfdbfe',
-                cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600,
                 background: syncing ? '#e0f2fe' : '#eff6ff', color: '#2563eb',
                 display: 'flex', alignItems: 'center', gap: 6 }}>
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -200,11 +200,11 @@ export default function KnownHosts() {
         ) : filtered.length === 0 ? (
           <EmptyState title="No known hosts" message="Hosts will appear here as logs arrive or after NetVault sync." />
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-base)' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border)' }}>
                 {['IP Address','Hostname','Vendor','Brand / Model','Site','Status','Source','Last Seen'].map(h => (
-                  <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11,
+                  <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 'var(--text-xs)',
                     fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase',
                     letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
@@ -219,30 +219,30 @@ export default function KnownHosts() {
                     background: i % 2 === 0 ? 'transparent' : 'var(--bg-primary)' }}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? 'transparent' : 'var(--bg-primary)'; }}>
-                    <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#C8102E', fontWeight: 500 }}>
+                    <td style={{ padding: '10px 12px', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)', color: 'var(--primary)', fontWeight: 500 }}>
                       {h.ip_address}
                     </td>
                     <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text-primary)' }}>
                       {h.hostname || '—'}
                     </td>
                     <td style={{ padding: '10px 12px' }}>
-                      <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+                      <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 'var(--text-xs)', fontWeight: 600,
                         background: `${VENDOR_COLORS[h.vendor] || '#6b7280'}18`,
                         color: VENDOR_COLORS[h.vendor] || '#6b7280', textTransform: 'capitalize' }}>
                         {h.vendor || 'generic'}
                       </span>
                     </td>
-                    <td style={{ padding: '10px 12px', color: 'var(--text-secondary)', fontSize: 12 }}>
+                    <td style={{ padding: '10px 12px', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
                       {h.brand && <span style={{ fontWeight: 500 }}>{h.brand}</span>}
                       {h.model && <span style={{ color: 'var(--text-muted)' }}> · {h.model}</span>}
                       {!h.brand && !h.model && '—'}
                     </td>
-                    <td style={{ padding: '10px 12px', color: 'var(--text-secondary)', fontSize: 12 }}>
+                    <td style={{ padding: '10px 12px', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
                       {h.site_name || h.description || '—'}
                     </td>
                     <td style={{ padding: '10px 12px' }}>
                       {h.device_status ? (
-                        <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 500,
+                        <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)', fontWeight: 500,
                           background: statusStyle.bg, color: statusStyle.color }}>
                           {h.device_status}
                         </span>
@@ -250,18 +250,18 @@ export default function KnownHosts() {
                     </td>
                     <td style={{ padding: '10px 12px' }}>
                       {h.synced_from_nv ? (
-                        <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11,
+                        <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)',
                           background: '#eff6ff', color: '#2563eb', fontWeight: 500 }}>
                           NetVault
                         </span>
                       ) : (
-                        <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11,
+                        <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)',
                           background: '#f3f4f6', color: '#6b7280' }}>
                           Manual
                         </span>
                       )}
                     </td>
-                    <td style={{ padding: '10px 12px', color: 'var(--text-muted)', fontSize: 11 }}>
+                    <td style={{ padding: '10px 12px', color: 'var(--text-muted)', fontSize: 'var(--text-xs)' }}>
                       {h.last_seen ? new Date(h.last_seen).toLocaleDateString() : '—'}
                     </td>
                     <td style={{ padding: '10px 12px' }}>
@@ -272,7 +272,7 @@ export default function KnownHosts() {
                           setEditIp(h.ip_address); setError(null);
                         }}
                           style={{ padding: '4px 10px', borderRadius: 5, border: '1px solid var(--border)',
-                            cursor: 'pointer', fontSize: 11, background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
+                            cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
                           Edit
                         </button>
                       )}
@@ -289,7 +289,7 @@ export default function KnownHosts() {
           <div style={{ textAlign: 'center', marginTop: 12 }}>
             <button onClick={() => setShowAll(s => !s)}
               style={{ padding: '7px 20px', borderRadius: 6, border: '1px solid var(--border)',
-                cursor: 'pointer', fontSize: 12, fontWeight: 500,
+                cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 500,
                 background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
               {showAll
                 ? `▲ Show less`

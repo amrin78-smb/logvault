@@ -89,9 +89,9 @@ export default function LiveTail() {
   return (
     <>
     <PageHeader title="Live Tail" subtitle="Real-time streaming syslog feed" />
-    <div style={{ background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 8, padding: 16 }}>
+    <div style={{ background: 'var(--bg-card)', border: '1px solid #e2e6ea', borderRadius: 8, padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 14, fontWeight: 600, color: '#1a202c' }}>Live Tail</span>
+        <span style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: '#1a202c' }}>Live Tail</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6,
           background: connected ? '#f0fdf4' : '#fef2f2',
           border: `1px solid ${connected ? '#bbf7d0' : '#fecaca'}`,
@@ -99,54 +99,54 @@ export default function LiveTail() {
           <div style={{ width: 7, height: 7, borderRadius: '50%',
             background: connected ? '#22c55e' : '#ef4444',
             boxShadow: connected && !paused ? '0 0 5px #22c55e' : 'none' }} />
-          <span style={{ fontSize: 11, color: connected ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
+          <span style={{ fontSize: 'var(--text-xs)', color: connected ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
             {connected ? (paused ? 'Paused' : 'Live') : 'Disconnected'}
           </span>
         </div>
-        <span style={{ fontSize: 11, color: '#9ca3af' }}>{count.toLocaleString()} total · {filtered.length.toLocaleString()} shown</span>
+        <span style={{ fontSize: 'var(--text-xs)', color: '#9ca3af' }}>{count.toLocaleString()} total · {filtered.length.toLocaleString()} shown</span>
         {!autoScroll && (
           <button onClick={() => { setAutoScroll(true); if (containerRef.current) containerRef.current.scrollTop = containerRef.current.scrollHeight; }}
-            style={{ padding: '3px 10px', borderRadius: 4, border: '1px solid #2563eb', cursor: 'pointer', fontSize: 11, background: '#eff6ff', color: '#2563eb', fontWeight: 600 }}>
+            style={{ padding: '3px 10px', borderRadius: 4, border: '1px solid #2563eb', cursor: 'pointer', fontSize: 'var(--text-xs)', background: '#eff6ff', color: '#2563eb', fontWeight: 600 }}>
             ↓ Jump to latest
           </button>
         )}
         <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Filter by host, vendor, message..."
           style={{ marginLeft: 'auto', background: '#f8f9fb', border: '1px solid #e2e6ea', borderRadius: 6,
-            padding: '6px 12px', color: '#1a202c', fontSize: 12, outline: 'none', width: 240 }} />
+            padding: '6px 12px', color: '#1a202c', fontSize: 'var(--text-sm)', outline: 'none', width: 240 }} />
         <button onClick={() => setPaused(p => !p)}
           style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid',
-            cursor: 'pointer', fontSize: 12, fontWeight: 500,
+            cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 500,
             background: paused ? '#eff6ff' : '#f8f9fb',
             borderColor: paused ? '#2563eb' : '#e2e6ea',
             color: paused ? '#2563eb' : '#4a5568' }}>
           {paused ? '▶ Resume' : '⏸ Pause'}
         </button>
         <button onClick={clearLogs}
-          style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #e2e6ea', cursor: 'pointer', fontSize: 12, background: '#f8f9fb', color: '#9ca3af' }}>
+          style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #e2e6ea', cursor: 'pointer', fontSize: 'var(--text-sm)', background: '#f8f9fb', color: '#9ca3af' }}>
           Clear
         </button>
       </div>
 
       <div ref={containerRef} onScroll={handleScroll}
         style={{ background: '#0d1117', borderRadius: 8, padding: '10px 14px', height: '60vh',
-          overflowY: 'auto', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>
+          overflowY: 'auto', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)' }}>
         {filtered.length === 0 && (
           <EmptyState title="Waiting for logs" message="Live entries will appear here as they arrive." />
         )}
         {filtered.map((log, i) => (
           <div key={`${log.id || i}-${i}`} style={{ display: 'flex', gap: 10, padding: '3px 0',
             borderBottom: '1px solid #161b27', alignItems: 'flex-start' }}>
-            <span style={{ color: '#4b5563', whiteSpace: 'nowrap', minWidth: 78, fontSize: 11 }}>
+            <span style={{ color: '#4b5563', whiteSpace: 'nowrap', minWidth: 78, fontSize: 'var(--text-xs)' }}>
               {new Date(log.received_at).toLocaleTimeString()}
             </span>
             <span style={{ color: '#6b7280', whiteSpace: 'nowrap', minWidth: 115, overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {log.source_host || log.source_ip || '-'}
             </span>
-            <span style={{ minWidth: 60, textTransform: 'uppercase', fontSize: 10, fontWeight: 700,
+            <span style={{ minWidth: 60, textTransform: 'uppercase', fontSize: 'var(--text-xs)', fontWeight: 700,
               color: SEV_COLORS[log.severity_label] || '#9ca3af', paddingTop: 1, whiteSpace: 'nowrap' }}>
               {log.severity_label}
             </span>
-            <span style={{ color: '#4b5563', minWidth: 65, textTransform: 'capitalize', whiteSpace: 'nowrap', fontSize: 11 }}>
+            <span style={{ color: '#4b5563', minWidth: 65, textTransform: 'capitalize', whiteSpace: 'nowrap', fontSize: 'var(--text-xs)' }}>
               {log.vendor}
             </span>
             <span style={{ color: '#d1d5db', wordBreak: 'break-word', flex: 1 }}>{log.message}</span>

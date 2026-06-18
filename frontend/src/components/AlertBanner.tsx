@@ -53,23 +53,23 @@ export default function AlertBanner() {
     <div style={{ background: bg, border: `1px solid ${border}`, borderBottom: `2px solid ${border}`,
       padding: '8px 20px', display: 'flex', alignItems: 'center', gap: 12,
       animation: 'fadeIn 0.3s ease', zIndex: 100 }}>
-      <span style={{ fontSize: 18, flexShrink: 0 }}>{emoji}</span>
+      <span style={{ fontSize: 'var(--text-lg)', flexShrink: 0 }}>{emoji}</span>
       <div style={{ flex: 1 }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color }}>{latest.rule_name}</span>
-        <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginLeft: 10 }}>
+        <span style={{ fontSize: 'var(--text-base)', fontWeight: 700, color }}>{latest.rule_name}</span>
+        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginLeft: 10 }}>
           {latest.message}
         </span>
         {alerts.length > 1 && (
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>
+          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginLeft: 8 }}>
             +{alerts.length - 1} more
           </span>
         )}
       </div>
-      <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
         {new Date(latest.fired_at).toLocaleTimeString()}
       </span>
       <button onClick={() => setVisible(false)}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', color, fontSize: 16, padding: '0 4px', flexShrink: 0 }}>
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color, fontSize: 'var(--text-lg)', padding: '0 4px', flexShrink: 0 }}>
         ×
       </button>
     </div>

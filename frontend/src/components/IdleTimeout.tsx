@@ -135,7 +135,7 @@ export default function IdleTimeout() {
         style={{
           width: '100%',
           maxWidth: 420,
-          background: '#ffffff',
+          background: 'var(--bg-card)',
           borderRadius: 8,
           overflow: 'hidden',
           boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
@@ -147,13 +147,13 @@ export default function IdleTimeout() {
             background: '#1a2744',
             color: '#ffffff',
             padding: '16px 20px',
-            fontSize: 16,
+            fontSize: 'var(--text-lg)',
             fontWeight: 600,
           }}
         >
           Session Timeout
         </div>
-        <div style={{ padding: '20px', color: '#111827', fontSize: 14, lineHeight: 1.5 }}>
+        <div style={{ padding: '20px', color: '#111827', fontSize: 'var(--text-md)', lineHeight: 1.5 }}>
           You will be logged out in 60 seconds due to inactivity
         </div>
         <div
@@ -171,12 +171,12 @@ export default function IdleTimeout() {
               if (resetRef.current) resetRef.current();
             }}
             style={{
-              background: '#C8102E',
+              background: 'var(--primary)',
               color: '#ffffff',
               border: 'none',
               borderRadius: 6,
               padding: '10px 16px',
-              fontSize: 14,
+              fontSize: 'var(--text-md)',
               fontWeight: 600,
               cursor: 'pointer',
             }}
@@ -189,12 +189,12 @@ export default function IdleTimeout() {
               if (signOutRef.current) signOutRef.current();
             }}
             style={{
-              background: '#ffffff',
+              background: 'var(--bg-card)',
               color: '#374151',
               border: '1px solid #e5e7eb',
               borderRadius: 6,
               padding: '10px 16px',
-              fontSize: 14,
+              fontSize: 'var(--text-md)',
               fontWeight: 600,
               cursor: 'pointer',
             }}

@@ -34,22 +34,22 @@ export default function TimelineChart({ hours, compact }: { hours: number; compa
   const hasData = data.some(d => Object.keys(d).some(k => k !== 'time' && k !== '_ts' && (d[k] || 0) > 0));
 
   return (
-    <div style={{ background: '#fff', border: '1px solid #e2e6ea', borderRadius: 8,
+    <div style={{ background: 'var(--bg-card)', border: '1px solid #e2e6ea', borderRadius: 8,
       padding: '12px 14px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#1a202c', marginBottom: 1, flexShrink: 0 }}>Log Volume Over Time</div>
-      <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 6, flexShrink: 0 }}>Ingestion rate — last {hours}h</div>
+      <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: '#1a202c', marginBottom: 1, flexShrink: 0 }}>Log Volume Over Time</div>
+      <div style={{ fontSize: 'var(--text-xs)', color: '#9ca3af', marginBottom: 6, flexShrink: 0 }}>Ingestion rate — last {hours}h</div>
       <div style={{ flex: 1, minHeight: 0 }}>
         {!hasData || loading ? (
-          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 12 }}>
+          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 'var(--text-sm)' }}>
             {loading ? 'Loading...' : 'No data'}
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data} margin={{ top: 2, right: 4, left: -22, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" />
-              <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#9ca3af' }} axisLine={{ stroke: '#e2e6ea' }} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 9, fill: '#9ca3af' }} axisLine={false} tickLine={false} allowDecimals={false} />
-              <Tooltip contentStyle={{ background: '#fff', border: '1px solid #e2e6ea', borderRadius: 6, fontSize: 11 }}
+              <XAxis dataKey="time" tick={{ fontSize: 'var(--text-xs)', fill: '#9ca3af' }} axisLine={{ stroke: '#e2e6ea' }} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 'var(--text-xs)', fill: '#9ca3af' }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid #e2e6ea', borderRadius: 6, fontSize: 'var(--text-xs)' }}
                 formatter={(v: any, n: any) => [v + ' logs', n]} />
               {Object.entries(SEV_COLORS).map(([sev, color]) => (
                 <Area key={sev} type="monotone" dataKey={sev} stackId="1"
@@ -63,7 +63,7 @@ export default function TimelineChart({ hours, compact }: { hours: number; compa
         {Object.entries(SEV_COLORS).map(([sev, color]) => (
           <div key={sev} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
             <div style={{ width: 6, height: 6, borderRadius: 1, background: color }} />
-            <span style={{ fontSize: 9, color: '#9ca3af' }}>{sev}</span>
+            <span style={{ fontSize: 'var(--text-xs)', color: '#9ca3af' }}>{sev}</span>
           </div>
         ))}
       </div>

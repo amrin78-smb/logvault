@@ -56,11 +56,11 @@ function UpdatedNotice() {
   if (!show) return null;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px',
-      background: '#16a34a', color: '#ffffff', fontSize: 13, fontWeight: 600 }}>
+      background: '#16a34a', color: '#ffffff', fontSize: 'var(--text-base)', fontWeight: 600 }}>
       <span aria-hidden>✓</span>
       <span style={{ flex: 1 }}>LogVault updated successfully</span>
       <button onClick={() => setShow(false)} aria-label="Dismiss"
-        style={{ background: 'transparent', border: 'none', color: '#ffffff', fontSize: 16,
+        style={{ background: 'transparent', border: 'none', color: '#ffffff', fontSize: 'var(--text-lg)',
           lineHeight: 1, cursor: 'pointer', padding: 0 }}>
         ×
       </button>
@@ -167,7 +167,7 @@ export default function Home() {
       {/* Site-restriction notice for regular users */}
       {role === 'user' && (
         <div style={{ background: '#1a2744', color: '#ffffff', padding: '8px 20px',
-          fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+          fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path d="M8 1L2 4v5c0 3.5 2.5 6.5 6 7.4C11.5 15.5 14 12.5 14 9V4L8 1z"
               stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round" />
@@ -179,7 +179,7 @@ export default function Home() {
       <div style={{ display: 'flex', minHeight: 'calc(100vh - 52px)' }}>
         {/* Sidebar */}
         <div style={{ width: 240, background: '#1a2744', flexShrink: 0, display: 'flex', flexDirection: 'column', paddingTop: 16 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '1.2px', padding: '0 24px', marginBottom: 10 }}>
+          <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '1.2px', padding: '0 24px', marginBottom: 10 }}>
             NAVIGATION
           </div>
           {TABS.map(t => {
@@ -189,13 +189,13 @@ export default function Home() {
                 style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 11,
                   padding: '11px 20px', margin: '1px 10px', borderRadius: 10, border: 'none', cursor: 'pointer',
                   background: active ? 'rgba(200,16,46,0.15)' : 'transparent',
-                  fontSize: 13, fontWeight: active ? 600 : 500,
+                  fontSize: 'var(--text-base)', fontWeight: active ? 600 : 500,
                   color: active ? '#ffffff' : 'rgba(255,255,255,0.5)',
                   textAlign: 'left', transition: 'all 0.15s' }}
                 onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; }}
                 onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
-                {active && <span style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 3, height: 20, borderRadius: '0 2px 2px 0', background: '#C8102E' }} />}
-                <span style={{ display: 'flex', flexShrink: 0, color: active ? '#C8102E' : 'currentColor' }}>{Icons[t.id]}</span>
+                {active && <span style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 3, height: 20, borderRadius: '0 2px 2px 0', background: 'var(--primary)' }} />}
+                <span style={{ display: 'flex', flexShrink: 0, color: active ? 'var(--primary)' : 'currentColor' }}>{Icons[t.id]}</span>
                 {t.label}
               </button>
             );
@@ -205,17 +205,17 @@ export default function Home() {
 
           {health && (
             <div style={{ margin: '12px 14px', padding: '8px 12px', background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 10 }}>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700 }}>Ingestion</div>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'rgba(255,255,255,0.35)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700 }}>Ingestion</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 5px #22c55e' }} />
-                <span style={{ fontSize: 12, color: '#22c55e', fontWeight: 600 }}>{health.logs_last_hour.toLocaleString()}</span>
-                <span style={{ fontSize: 9, color: '#4ade80' }}>logs/hr</span>
+                <span style={{ fontSize: 'var(--text-sm)', color: '#22c55e', fontWeight: 600 }}>{health.logs_last_hour.toLocaleString()}</span>
+                <span style={{ fontSize: 'var(--text-xs)', color: '#4ade80' }}>logs/hr</span>
               </div>
             </div>
           )}
 
           <div style={{ flex: 1 }} />
-          <div style={{ padding: '14px 24px', fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.5px', fontWeight: 500 }}>
+          <div style={{ padding: '14px 24px', fontSize: 'var(--text-xs)', color: 'rgba(255,255,255,0.25)', letterSpacing: '0.5px', fontWeight: 500 }}>
             LogVault v{health?.version || APP_VERSION}
           </div>
         </div>
@@ -244,8 +244,8 @@ export default function Home() {
                     style={{ borderLeftColor: kpi.accent, cursor: 'pointer',
                       animation: kpiFlash ? 'kpiFlash 0.6s ease' : 'none' }}>
                     <div style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-1px', lineHeight: 1, color: kpi.accent }}>{kpi.value}</div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginTop: 8 }}>{kpi.label}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>last {hours}h → View logs</div>
+                    <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginTop: 8 }}>{kpi.label}</div>
+                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', marginTop: 3 }}>last {hours}h → View logs</div>
                   </div>
                 ))}
               </div>
