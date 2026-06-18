@@ -1181,6 +1181,11 @@ const releaseNotes = {
     'Collapse state is remembered across refreshes; collapsed view shows icon-only nav with tooltips',
     'Pinned the sidebar to the viewport so the version/footer stays at the bottom of the screen instead of the bottom of a long dashboard',
   ],
+  '1.3.1': [
+    'Tightened the dashboard KPI tiles — shorter cards and a smaller stat number for a denser, cleaner header row',
+    'Added an accent-colored icon to each KPI tile (Total, Critical, Errors, Warnings)',
+    'Aligned the KPI number to the shared suite type scale',
+  ],
   'default': [
     'Bug fixes and performance improvements',
   ],

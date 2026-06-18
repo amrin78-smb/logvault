@@ -38,6 +38,14 @@ const Icons: Record<Tab, JSX.Element> = {
   settings:  (<svg width="18" height="18" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.3" fill="none"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
 };
 
+// Glyphs for the dashboard KPI tiles — currentColor inherits the tile accent.
+const KpiIcons = {
+  total:    (<svg width="17" height="17" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="1.6" rx="0.8" fill="currentColor"/><rect x="1" y="7.2" width="10" height="1.6" rx="0.8" fill="currentColor"/><rect x="1" y="11.4" width="12" height="1.6" rx="0.8" fill="currentColor"/></svg>),
+  critical: (<svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M8 1.6a3.4 3.4 0 0 0-3.4 3.4c0 3-1.4 3.9-1.4 3.9h9.6s-1.4-.9-1.4-3.9A3.4 3.4 0 0 0 8 1.6z" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round"/><path d="M6.6 11.7a1.4 1.4 0 0 0 2.8 0" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
+  error:    (<svg width="17" height="17" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.4" stroke="currentColor" strokeWidth="1.3" fill="none"/><line x1="5.8" y1="5.8" x2="10.2" y2="10.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><line x1="10.2" y1="5.8" x2="5.8" y2="10.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
+  warning:  (<svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M8 2L1.6 13.4h12.8L8 2z" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round"/><line x1="8" y1="6.4" x2="8" y2="9.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><circle cx="8" cy="11.4" r="0.75" fill="currentColor"/></svg>),
+};
+
 // Dismissible success banner shown after the in-app updater redirects here with
 // ?updated=true. Reads the query param on mount (no useSearchParams → no Suspense
 // requirement) and strips it so a refresh won't re-show it. Auto-dismisses after
@@ -161,10 +169,10 @@ export default function Home() {
   const KPI = [
     // Total Logs: navy left-border accent, but value text uses --text-primary so it
     // stays readable in dark mode (navy #1a2744 is invisible on the dark card bg).
-    { label: 'Total Logs',       value: totalLogs.toLocaleString(),  accent: 'var(--navy)',                                  valueColor: 'var(--text-primary)',                       filter: {} },
-    { label: 'Critical / Alert', value: critCount.toLocaleString(),  accent: critCount  > 0 ? 'var(--red)'    : 'var(--green)', valueColor: critCount  > 0 ? 'var(--red)'    : 'var(--green)', filter: { severity: '0,1,2' } },
-    { label: 'Errors',           value: errorCount.toLocaleString(), accent: errorCount > 0 ? 'var(--orange)' : 'var(--green)', valueColor: errorCount > 0 ? 'var(--orange)' : 'var(--green)', filter: { severity: '3' } },
-    { label: 'Warnings',         value: warnCount.toLocaleString(),  accent: warnCount  > 0 ? 'var(--yellow)' : 'var(--green)', valueColor: warnCount  > 0 ? 'var(--yellow)' : 'var(--green)', filter: { severity: '4' } },
+    { label: 'Total Logs',       value: totalLogs.toLocaleString(),  accent: 'var(--navy)',                                  valueColor: 'var(--text-primary)',                       filter: {},                  icon: KpiIcons.total },
+    { label: 'Critical / Alert', value: critCount.toLocaleString(),  accent: critCount  > 0 ? 'var(--red)'    : 'var(--green)', valueColor: critCount  > 0 ? 'var(--red)'    : 'var(--green)', filter: { severity: '0,1,2' }, icon: KpiIcons.critical },
+    { label: 'Errors',           value: errorCount.toLocaleString(), accent: errorCount > 0 ? 'var(--orange)' : 'var(--green)', valueColor: errorCount > 0 ? 'var(--orange)' : 'var(--green)', filter: { severity: '3' },     icon: KpiIcons.error },
+    { label: 'Warnings',         value: warnCount.toLocaleString(),  accent: warnCount  > 0 ? 'var(--yellow)' : 'var(--green)', valueColor: warnCount  > 0 ? 'var(--yellow)' : 'var(--green)', filter: { severity: '4' },     icon: KpiIcons.warning },
   ];
 
   if (!licenseLoading && licenseState.disabled) {
@@ -282,11 +290,16 @@ export default function Home() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 12 }}>
                 {KPI.map(kpi => (
                   <div key={kpi.label} className="kpi-card" onClick={() => openExplorer(kpi.filter)}
-                    style={{ borderLeftColor: kpi.accent, cursor: 'pointer',
+                    style={{ borderLeftColor: kpi.accent, cursor: 'pointer', padding: '12px 14px',
                       animation: kpiFlash ? 'kpiFlash 0.6s ease' : 'none' }}>
-                    <div style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-1px', lineHeight: 1, color: kpi.valueColor }}>{kpi.value}</div>
-                    <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginTop: 8 }}>{kpi.label}</div>
-                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', marginTop: 3 }}>last {hours}h → View logs</div>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                      <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 800, letterSpacing: '-0.5px', lineHeight: 1.1, color: kpi.valueColor }}>{kpi.value}</div>
+                      <div style={{ width: 32, height: 32, borderRadius: 9, flexShrink: 0, color: kpi.accent,
+                        background: `color-mix(in srgb, ${kpi.accent} 13%, transparent)`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{kpi.icon}</div>
+                    </div>
+                    <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginTop: 7 }}>{kpi.label}</div>
+                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', marginTop: 2 }}>last {hours}h → View logs</div>
                   </div>
                 ))}
               </div>
