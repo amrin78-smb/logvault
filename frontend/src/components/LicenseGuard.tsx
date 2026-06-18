@@ -116,7 +116,7 @@ export function LicenseDisabledScreen() {
         Please renew your license to restore access.
       </p>
       <a href={`${hubUrl}/settings/license`}
-        style={{ background: '#C8102E', color: '#fff', padding: '12px 28px', borderRadius: 8,
+        style={{ background: '#C8102E', color: '#fff', padding: '12px 28px', borderRadius: 6,
                  textDecoration: 'none', fontWeight: 600, fontSize: 15, marginTop: 8 }}>
         Renew License at NocVault Hub →
       </a>

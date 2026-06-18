@@ -34,7 +34,7 @@ export default function TimelineChart({ hours, compact }: { hours: number; compa
   const hasData = data.some(d => Object.keys(d).some(k => k !== 'time' && k !== '_ts' && (d[k] || 0) > 0));
 
   return (
-    <div style={{ background: '#fff', border: '1px solid #e2e6ea', borderRadius: 10,
+    <div style={{ background: '#fff', border: '1px solid #e2e6ea', borderRadius: 8,
       padding: '12px 14px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: 12, fontWeight: 600, color: '#1a202c', marginBottom: 1, flexShrink: 0 }}>Log Volume Over Time</div>
       <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 6, flexShrink: 0 }}>Ingestion rate — last {hours}h</div>

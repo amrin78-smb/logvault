@@ -150,7 +150,7 @@ export default function Header() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search logs, hosts, alerts... (/)"
-            style={{ width: '100%', height: 38, padding: '0 34px 0 34px', borderRadius: 9,
+            style={{ width: '100%', height: 38, padding: '0 34px 0 34px', borderRadius: 6,
               border: '1px solid #2d3a52', background: 'rgba(255,255,255,0.04)', color: '#f1f5f9',
               fontSize: 13, outline: 'none' }}
           />
@@ -174,7 +174,7 @@ export default function Header() {
           aria-label="View alerts"
           onClick={() => window.dispatchEvent(new CustomEvent('nocvault:navigate', { detail: { tab: 'alerts' } }))}
           style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: 34, height: 34, borderRadius: 8, background: 'transparent', border: 'none',
+            width: 34, height: 34, borderRadius: 6, background: 'transparent', border: 'none',
             cursor: 'pointer', transition: 'background 0.15s, transform 0.1s' }}
           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.1)'; }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
@@ -196,7 +196,7 @@ export default function Header() {
         {/* Dark mode toggle */}
         <button onClick={toggle} aria-label="Toggle dark mode"
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34,
-            borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid #2d3a52',
+            borderRadius: 6, background: 'rgba(255,255,255,0.04)', border: '1px solid #2d3a52',
             cursor: 'pointer', color: '#94a3b8' }}>
           {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
         </button>
@@ -220,7 +220,7 @@ export default function Header() {
           <button
             onClick={() => setDropdownOpen(o => !o)}
             style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none',
-              border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 8,
+              border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 6,
               transition: 'background 0.15s' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)'; }}
             onMouseLeave={e => { if (!dropdownOpen) (e.currentTarget as HTMLElement).style.background = 'none'; }}>
@@ -248,8 +248,8 @@ export default function Header() {
 
           {dropdownOpen && (
             <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 1000,
-              background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10,
-              boxShadow: '0 8px 24px rgba(0,0,0,0.15)', minWidth: 230, overflow: 'hidden',
+              background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
+              boxShadow: '0 1px 3px rgba(0,0,0,0.06)', minWidth: 230, overflow: 'hidden',
               animation: 'fadeIn 0.15s ease' }}>
 
               <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-light)' }}>

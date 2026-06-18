@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
-const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' };
+const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' };
 const TITLE = { fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 };
 const SUB   = { fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 };
 

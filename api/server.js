@@ -1145,6 +1145,13 @@ const releaseNotes = {
     'License-blocked updates now show the standard "Manage License" link',
     'About tab heading and tech-spec rows aligned to the suite standard',
   ],
+  '1.2.6': [
+    'Tightened card corners and elevation for a cleaner operations-console look',
+    'Calibrated radii to the NocVault suite standard (8px cards/panels, 6px controls)',
+    'Downgraded heavy drop shadows on cards, dropdowns, and modals to a subtle border + faint shadow',
+    'Trimmed overly generous card padding by one step for a denser, enterprise feel',
+    'Kept pills, badges, status dots, and avatars rounded — visual-only calibration, no layout changes',
+  ],
   'default': [
     'Bug fixes and performance improvements',
   ],

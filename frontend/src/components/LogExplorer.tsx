@@ -170,8 +170,8 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
   return (
     <>
     <PageHeader title="Log Explorer" subtitle="Search and filter syslog entries with smart presets" />
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10,
-      padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
+      padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
       <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Log Explorer</div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>
         Search and filter all stored logs · Click preset for common investigations
@@ -200,13 +200,13 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
         {/* Message search */}
         <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && search()}
           placeholder="Search message text..." 
-          style={{ flex: 1, minWidth: 200, padding: '9px 12px', borderRadius: 7,
+          style={{ flex: 1, minWidth: 200, padding: '9px 12px', borderRadius: 6,
             border: '1px solid var(--border)', background: 'var(--input-bg)',
             color: 'var(--text-primary)', fontSize: 13, outline: 'none' }} />
 
         {/* Time range */}
         <select value={hours} onChange={e => setHours(e.target.value)}
-          style={{ padding: '9px 12px', borderRadius: 7, border: '1px solid var(--border)',
+          style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid var(--border)',
             background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 12, cursor: 'pointer', outline: 'none' }}>
           {[['0.25','15 min'],['1','1h'],['6','6h'],['24','24h'],['48','48h'],['168','7d'],['720','30d']].map(([v,l]) => (
             <option key={v} value={v}>{l}</option>
@@ -215,7 +215,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
 
         {/* Search button */}
         <button onClick={search} disabled={loading}
-          style={{ padding: '9px 22px', borderRadius: 7, border: 'none', cursor: 'pointer',
+          style={{ padding: '9px 22px', borderRadius: 6, border: 'none', cursor: 'pointer',
             fontSize: 13, fontWeight: 600, background: '#C8102E', color: '#fff', opacity: loading ? 0.7 : 1 }}>
           {loading ? 'Searching...' : 'Search'}
         </button>
@@ -225,7 +225,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
           const params = new URLSearchParams({ hours, ...(q && { q }), ...(vendor && { vendor }), ...(severity && { severity }), ...(category && { category }), ...(host && { host }) });
           window.open(`/api/logs/export?${params}`, '_blank');
         }} title="Export to CSV"
-          style={{ padding: '9px 12px', borderRadius: 7, border: '1px solid var(--border)',
+          style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid var(--border)',
             cursor: 'pointer', fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-secondary)',
             display: 'flex', alignItems: 'center', gap: 5 }}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">

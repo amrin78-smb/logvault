@@ -23,9 +23,9 @@ interface Settings {
   email_notify_cooldown_mins: string;
 }
 
-const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, marginBottom: 20, boxShadow: 'var(--shadow-sm)' };
+const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 20, boxShadow: 'var(--shadow-sm)' };
 const LABEL = { fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6, display: 'block' as const };
-const INPUT = { width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)',
+const INPUT = { width: '100%', padding: '9px 12px', borderRadius: 6, border: '1px solid var(--border)',
   background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 13.5, outline: 'none',
   boxSizing: 'border-box' as const };
 const SECTION_HEADER = { fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 16 };
@@ -226,7 +226,7 @@ function UpdateOverlay() {
     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.5)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <style>{'@keyframes lv-spin { to { transform: rotate(360deg); } }'}</style>
-      <div style={{ background: 'var(--bg-card)', borderRadius: 12, boxShadow: 'var(--shadow-md)',
+      <div style={{ background: 'var(--bg-card)', borderRadius: 8, boxShadow: 'var(--shadow-md)',
         padding: 40, maxWidth: 480, width: '100%', textAlign: 'center' }}>
         {phase !== 'back_up' && phase !== 'timeout' && (
           <div style={{ fontSize: 44, lineHeight: 1, display: 'inline-block',
@@ -248,7 +248,7 @@ function UpdateOverlay() {
           <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>(This usually takes 1-3 minutes)</p>
         )}
         <button onClick={phase === 'back_up' ? () => { window.location.href = '/?updated=true'; } : () => window.location.reload()}
-          style={{ marginTop: 10, padding: '9px 22px', borderRadius: 8, border: 'none',
+          style={{ marginTop: 10, padding: '9px 22px', borderRadius: 6, border: 'none',
             background: 'var(--primary)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
           Reload Now
         </button>
@@ -525,7 +525,7 @@ export default function Settings() {
 
           {/* Save */}
           <button onClick={save} disabled={saving}
-            style={{ padding: '10px 28px', borderRadius: 8, border: 'none', cursor: 'pointer',
+            style={{ padding: '10px 28px', borderRadius: 6, border: 'none', cursor: 'pointer',
               fontSize: 13, fontWeight: 600, background: 'var(--primary)', color: '#fff',
               opacity: saving ? 0.7 : 1, transition: 'all 0.15s' }}>
             {saving ? 'Saving...' : 'Save Settings'}
@@ -782,7 +782,7 @@ export default function Settings() {
 
           {/* Shared Save (SMTP + recipients + filters + delivery) */}
           <button onClick={save} disabled={saving}
-            style={{ padding: '10px 28px', borderRadius: 8, border: 'none', cursor: 'pointer',
+            style={{ padding: '10px 28px', borderRadius: 6, border: 'none', cursor: 'pointer',
               fontSize: 13, fontWeight: 600, background: 'var(--primary)', color: '#fff',
               opacity: saving ? 0.7 : 1, transition: 'all 0.15s', marginBottom: 16 }}>
             {saving ? 'Saving...' : 'Save Settings'}
@@ -818,7 +818,7 @@ export default function Settings() {
                         )}
                       </div>
                       <button onClick={() => saveRuleEmail(rule.id)} disabled={savingRule === rule.id}
-                        style={{ padding: '9px 18px', borderRadius: 7, border: '1px solid var(--border)', cursor: 'pointer',
+                        style={{ padding: '9px 18px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer',
                           fontSize: 12, fontWeight: 600, background: 'var(--input-bg)', color: 'var(--text-primary)',
                           opacity: savingRule === rule.id ? 0.7 : 1, whiteSpace: 'nowrap' }}>
                         {savingRule === rule.id ? 'Saving...' : 'Save'}
@@ -844,7 +844,7 @@ export default function Settings() {
                   placeholder="you@example.com" />
               </div>
               <button onClick={sendTest} disabled={testing}
-                style={{ padding: '9px 20px', borderRadius: 7, border: '1px solid var(--border)', cursor: 'pointer',
+                style={{ padding: '9px 20px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer',
                   fontSize: 12, fontWeight: 600, background: 'var(--input-bg)', color: 'var(--text-primary)',
                   opacity: testing ? 0.7 : 1, whiteSpace: 'nowrap' }}>
                 {testing ? 'Sending...' : 'Send Test'}
@@ -876,7 +876,7 @@ export default function Settings() {
                 {updateStatus?.error}
               </div>
               <button onClick={checkUpdate}
-                style={{ padding: '8px 18px', borderRadius: 7, border: '1px solid var(--border)',
+                style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)',
                   background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 12,
                   fontWeight: 600, cursor: 'pointer' }}>
                 Re-check
@@ -893,7 +893,7 @@ export default function Settings() {
                 </div>
               )}
               <button onClick={checkUpdate}
-                style={{ padding: '8px 18px', borderRadius: 7, border: '1px solid var(--border)',
+                style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)',
                   background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 12,
                   fontWeight: 600, cursor: 'pointer' }}>
                 Re-check
@@ -944,13 +944,13 @@ export default function Settings() {
 
               <div style={{ display: 'flex', gap: 10 }}>
                 <button onClick={() => setShowConfirmModal(true)} disabled={updating}
-                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none',
+                  style={{ padding: '9px 22px', borderRadius: 6, border: 'none',
                     cursor: updating ? 'default' : 'pointer', opacity: updating ? 0.6 : 1,
                     fontSize: 13, fontWeight: 600, background: '#C8102E', color: '#fff' }}>
                   Update Now
                 </button>
                 <button onClick={checkUpdate}
-                  style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border)',
+                  style={{ padding: '9px 18px', borderRadius: 6, border: '1px solid var(--border)',
                     background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 13,
                     fontWeight: 600, cursor: 'pointer' }}>
                   Re-check
@@ -971,7 +971,7 @@ export default function Settings() {
             </div>
           ) : (
             <button onClick={checkUpdate}
-              style={{ padding: '8px 18px', borderRadius: 7, border: '1px solid var(--border)',
+              style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)',
                 background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 12,
                 fontWeight: 600, cursor: 'pointer' }}>
               Check for Updates
@@ -986,8 +986,8 @@ export default function Settings() {
           style={{ position: 'fixed', inset: 0, zIndex: 9998, background: 'rgba(0,0,0,0.5)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div onMouseDown={e => e.stopPropagation()}
-            style={{ background: 'var(--bg-card)', borderRadius: 12, width: '100%', maxWidth: 460,
-              overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.3)' }}>
+            style={{ background: 'var(--bg-card)', borderRadius: 8, width: '100%', maxWidth: 460,
+              overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.12)' }}>
             <div style={{ background: '#1a2744', color: '#fff', padding: '14px 20px', fontSize: 15, fontWeight: 700 }}>
               Start Update?
             </div>
@@ -997,13 +997,13 @@ export default function Settings() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button onClick={() => setShowConfirmModal(false)}
-                  style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border)',
+                  style={{ padding: '9px 18px', borderRadius: 6, border: '1px solid var(--border)',
                     background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 13,
                     fontWeight: 600, cursor: 'pointer' }}>
                   Cancel
                 </button>
                 <button onClick={startUpdate}
-                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                  style={{ padding: '9px 22px', borderRadius: 6, border: 'none', cursor: 'pointer',
                     fontSize: 13, fontWeight: 600, background: '#C8102E', color: '#fff' }}>
                   Start Update
                 </button>

@@ -16,7 +16,7 @@ function formatInterval(val: any): string {
   return String(val);
 }
 
-const CARD = { background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 10, padding: 20, marginBottom: 16 };
+const CARD = { background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 8, padding: 20, marginBottom: 16 };
 const TH   = { padding: '8px 12px', textAlign: 'left' as const, color: '#718096', fontWeight: 600, fontSize: 11 };
 const TD   = { padding: '9px 12px' };
 
@@ -207,7 +207,7 @@ export default function AlertEvents() {
           : group.rule_name.toLowerCase().includes('vpn') ? '#ea580c' : '#ca8a04';
 
         return (
-          <div key={group.rule_name} style={{ marginBottom: 8, border: '1px solid #e2e6ea', borderRadius: 10, overflow: 'hidden' }}>
+          <div key={group.rule_name} style={{ marginBottom: 8, border: '1px solid #e2e6ea', borderRadius: 8, overflow: 'hidden' }}>
             {/* Group header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
               background: group.unacked_count > 0 ? '#fffbeb' : '#f8f9fb', cursor: 'pointer',
@@ -327,7 +327,7 @@ export default function AlertEvents() {
 
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: '#fff',
-        border: '1px solid #e2e6ea', borderRadius: 10, padding: 6, alignItems: 'center' }}>
+        border: '1px solid #e2e6ea', borderRadius: 8, padding: 6, alignItems: 'center' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id as any)}
             style={{ padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { PageHeader, TableSkeleton, CardSkeleton, EmptyState } from './ui';
 
-const CARD = { background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 10, padding: 20, marginBottom: 16 };
+const CARD = { background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 8, padding: 16, marginBottom: 16 };
 const TH   = { padding: '8px 12px', textAlign: 'left' as const, color: '#718096', fontWeight: 600, fontSize: 11 };
 const TD   = { padding: '9px 12px', fontSize: 12 };
 const MONO = { fontFamily: 'JetBrains Mono, monospace' };
@@ -45,7 +45,7 @@ function StatCard({ value, label, color, bg, border, warn = false }: {
   value: number; label: string; color: string; bg: string; border: string; warn?: boolean;
 }) {
   return (
-    <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 10, padding: '16px 18px',
+    <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 8, padding: '16px 18px',
       position: 'relative', overflow: 'hidden' }}>
       {warn && value > 0 && (
         <div style={{ position: 'absolute', top: 8, right: 10, fontSize: 16 }}>⚠️</div>
@@ -121,7 +121,7 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
 
       {/* Section nav */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: '#fff',
-        border: '1px solid #e2e6ea', borderRadius: 10, padding: 6, flexWrap: 'wrap' }}>
+        border: '1px solid #e2e6ea', borderRadius: 8, padding: 6, flexWrap: 'wrap' }}>
         {SECTIONS.map(s => (
           <button key={s.id} onClick={() => setActiveSection(s.id)}
             style={{ padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
@@ -172,7 +172,7 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
 
               {/* Critical banners */}
               {summary.brute_force_success > 0 && (
-                <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 10,
+                <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 8,
                   padding: '14px 20px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontSize: 22 }}>🚨</span>
                   <div>
@@ -190,7 +190,7 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
               )}
 
               {summary.ips_events > 0 && (
-                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10,
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
                   padding: '14px 20px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontSize: 22 }}>🛡️</span>
                   <div>
@@ -208,7 +208,7 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
               )}
 
               {summary.after_hours_events > 0 && (
-                <div style={{ background: '#fefce8', border: '1px solid #fde68a', borderRadius: 10,
+                <div style={{ background: '#fefce8', border: '1px solid #fde68a', borderRadius: 8,
                   padding: '14px 20px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontSize: 22 }}>🌙</span>
                   <div>

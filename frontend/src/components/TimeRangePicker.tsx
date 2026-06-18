@@ -64,7 +64,7 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} ref={ref}>
       {/* Refresh interval */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4,
-        background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 7, padding: '4px 8px' }}>
+        background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px' }}>
         <svg width="16" height="16" viewBox="0 0 16 16" style={{ flexShrink: 0 }}>
           <circle cx="8" cy="8" r="6" fill="none" stroke="var(--border)" strokeWidth="2"/>
           <circle cx="8" cy="8" r="6" fill="none" stroke="#2563eb" strokeWidth="2"
@@ -91,7 +91,7 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
 
       {/* Time range presets */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 3, position: 'relative',
-        background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 7, padding: '4px 6px' }}>
+        background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 6px' }}>
         <span style={{ fontSize: 10, color: 'var(--text-muted)', marginRight: 2 }}>Range</span>
         {PRESETS.map(p => (
           <button key={p.value} onClick={() => { onHoursChange(p.value); setShowCustom(false); }}
@@ -117,8 +117,8 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
         {/* Custom dropdown */}
         {showCustom && (
           <div style={{ position: 'absolute', top: 34, right: 0, zIndex: 200,
-            background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10,
-            padding: 16, boxShadow: '0 8px 24px rgba(0,0,0,0.15)', minWidth: 260 }}>
+            background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
+            padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', minWidth: 260 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>
               Quick Ranges
             </div>

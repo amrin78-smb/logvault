@@ -136,9 +136,9 @@ export default function IdleTimeout() {
           width: '100%',
           maxWidth: 420,
           background: '#ffffff',
-          borderRadius: 10,
+          borderRadius: 8,
           overflow: 'hidden',
-          boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
           fontFamily: 'system-ui, -apple-system, sans-serif',
         }}
       >

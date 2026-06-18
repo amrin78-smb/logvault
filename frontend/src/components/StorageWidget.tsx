@@ -19,7 +19,7 @@ export default function StorageWidget() {
   }, []);
 
   if (loading) return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: 20 }}>
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
       <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading storage info...</div>
     </div>
   );
@@ -50,7 +50,7 @@ export default function StorageWidget() {
   const CARD_INNER = { background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px' };
 
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
       <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Storage & Capacity</div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>Database size and log volume trends</div>
 

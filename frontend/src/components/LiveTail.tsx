@@ -89,7 +89,7 @@ export default function LiveTail() {
   return (
     <>
     <PageHeader title="Live Tail" subtitle="Real-time streaming syslog feed" />
-    <div style={{ background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 10, padding: 20 }}>
+    <div style={{ background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 8, padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 14, fontWeight: 600, color: '#1a202c' }}>Live Tail</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6,

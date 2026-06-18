@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { PageHeader, TableSkeleton, CardSkeleton, EmptyState } from './ui';
 
 // ── Shared styles ─────────────────────────────────────────────
-const CARD  = { background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 10, padding: 20, marginBottom: 16 };
+const CARD  = { background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 8, padding: 16, marginBottom: 16 };
 const TH    = { padding: '8px 12px', textAlign: 'left' as const, color: '#718096', fontWeight: 600, fontSize: 11 };
 const TD    = { padding: '9px 12px', fontSize: 12 };
 const MONO  = { fontFamily: 'JetBrains Mono, monospace' };
@@ -136,7 +136,7 @@ export default function NetworkHealth({ hours }: { hours: number }) {
 
       {/* Section nav */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: '#fff',
-        border: '1px solid #e2e6ea', borderRadius: 10, padding: 6, flexWrap: 'wrap' }}>
+        border: '1px solid #e2e6ea', borderRadius: 8, padding: 6, flexWrap: 'wrap' }}>
         {SECTIONS.map(s => (
           <button key={s.id} onClick={() => setActiveSection(s.id)}
             style={{ padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
@@ -181,7 +181,7 @@ export default function NetworkHealth({ hours }: { hours: number }) {
 
               {/* Loop/STP warning banner */}
               {(summary.mac_flap_events > 0 || summary.stp_loop_events > 0) && (
-                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10,
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
                   padding: '14px 20px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontSize: 22 }}>⚠️</span>
                   <div>
@@ -204,7 +204,7 @@ export default function NetworkHealth({ hours }: { hours: number }) {
 
               {/* Config changes warning */}
               {summary.config_changes > 0 && (
-                <div style={{ background: '#fefce8', border: '1px solid #fde68a', borderRadius: 10,
+                <div style={{ background: '#fefce8', border: '1px solid #fde68a', borderRadius: 8,
                   padding: '14px 20px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontSize: 22 }}>🔧</span>
                   <div>

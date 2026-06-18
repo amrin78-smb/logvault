@@ -22,7 +22,7 @@ export default function RecentCritical({ hours, onRowClick }: {
   }, [hours]);
 
   return (
-    <div style={{ background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 10, padding: 20 }}>
+    <div style={{ background: '#ffffff', border: '1px solid #e2e6ea', borderRadius: 8, padding: 16 }}>
       <div style={{ fontSize: 14, fontWeight: 600, color: '#1a202c', marginBottom: 2 }}>Recent Critical &amp; Error Events</div>
       <div style={{ fontSize: 11, color: '#718096', marginBottom: 16 }}>
         {onRowClick ? 'Click a row to view similar logs' : 'Latest severity 0–3 events'}

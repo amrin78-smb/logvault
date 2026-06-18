@@ -20,7 +20,7 @@ interface Host {
 
 const EMPTY = { ip_address: '', hostname: '', vendor: 'generic', description: '' };
 
-const INPUT = { padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)',
+const INPUT = { padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)',
   background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 13,
   width: '100%', outline: 'none', boxSizing: 'border-box' as const };
 
@@ -108,7 +108,7 @@ export default function KnownHosts() {
       <PageHeader title="Known Hosts" subtitle="IP-to-hostname mapping with NetVault asset sync" />
 
       {/* Add / Edit form */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: 20, marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
           {editIp ? 'Edit Host' : 'Add Known Host'}
         </div>
@@ -147,13 +147,13 @@ export default function KnownHosts() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={save} disabled={loading}
-            style={{ padding: '8px 20px', borderRadius: 7, border: 'none', cursor: 'pointer',
+            style={{ padding: '8px 20px', borderRadius: 6, border: 'none', cursor: 'pointer',
               fontSize: 13, fontWeight: 600, background: '#C8102E', color: '#fff', opacity: loading ? 0.7 : 1 }}>
             {loading ? 'Saving...' : editIp ? 'Update Host' : 'Add Host'}
           </button>
           {editIp && (
             <button onClick={() => { setForm(EMPTY); setEditIp(null); setError(null); }}
-              style={{ padding: '8px 16px', borderRadius: 7, border: '1px solid var(--border)',
+              style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)',
                 cursor: 'pointer', fontSize: 13, background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
               Cancel
             </button>
@@ -162,7 +162,7 @@ export default function KnownHosts() {
       </div>
 
       {/* Host list */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
@@ -180,7 +180,7 @@ export default function KnownHosts() {
           <div style={{ display: 'flex', gap: 8 }}>
             {/* Sync from NetVault button */}
             <button onClick={triggerSync} disabled={syncing}
-              style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid #bfdbfe',
+              style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid #bfdbfe',
                 cursor: 'pointer', fontSize: 12, fontWeight: 600,
                 background: syncing ? '#e0f2fe' : '#eff6ff', color: '#2563eb',
                 display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -288,7 +288,7 @@ export default function KnownHosts() {
         {filtered.length > LIMIT && (
           <div style={{ textAlign: 'center', marginTop: 12 }}>
             <button onClick={() => setShowAll(s => !s)}
-              style={{ padding: '7px 20px', borderRadius: 7, border: '1px solid var(--border)',
+              style={{ padding: '7px 20px', borderRadius: 6, border: '1px solid var(--border)',
                 cursor: 'pointer', fontSize: 12, fontWeight: 500,
                 background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
               {showAll

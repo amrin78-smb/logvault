@@ -22,7 +22,7 @@ export default class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)',
-          borderRadius: 10, padding: '20px 16px', textAlign: 'center' }}>
+          borderRadius: 8, padding: '20px 16px', textAlign: 'center' }}>
           <div style={{ fontSize: 20, marginBottom: 6 }}>⚠️</div>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
             {this.props.name || 'Widget'} failed to load

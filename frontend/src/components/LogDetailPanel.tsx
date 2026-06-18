@@ -121,7 +121,7 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
       {/* Panel */}
       <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 480,
         background: 'var(--bg-card)', borderLeft: '1px solid var(--border)',
-        boxShadow: '-8px 0 32px rgba(0,0,0,0.15)', zIndex: 201, display: 'flex',
+        boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 201, display: 'flex',
         flexDirection: 'column', animation: 'slideInRight 0.25s ease' }}>
 
         {/* Header */}
@@ -213,31 +213,31 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
               textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Quick Actions</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               <button onClick={() => { onFilterIP(cleanIP); onClose(); }}
-                style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid var(--border)',
+                style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--border)',
                   cursor: 'pointer', fontSize: 12, background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   display: 'flex', alignItems: 'center', gap: 5 }}>
                 📍 Filter by IP
               </button>
               <button onClick={() => { onFilterVendor(log.vendor); onClose(); }}
-                style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid var(--border)',
+                style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--border)',
                   cursor: 'pointer', fontSize: 12, background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   display: 'flex', alignItems: 'center', gap: 5 }}>
                 🏷️ Filter by Vendor
               </button>
               <button onClick={() => { onFilterSeverity(SEVERITIES[log.severity] || ''); onClose(); }}
-                style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid var(--border)',
+                style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--border)',
                   cursor: 'pointer', fontSize: 12, background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   display: 'flex', alignItems: 'center', gap: 5 }}>
                 🔴 Filter by Severity
               </button>
               <button onClick={() => navigator.clipboard.writeText(log.message)}
-                style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid var(--border)',
+                style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--border)',
                   cursor: 'pointer', fontSize: 12, background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   display: 'flex', alignItems: 'center', gap: 5 }}>
                 ⎘ Copy Message
               </button>
               <button onClick={() => navigator.clipboard.writeText(JSON.stringify(log, null, 2))}
-                style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid var(--border)',
+                style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--border)',
                   cursor: 'pointer', fontSize: 12, background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   display: 'flex', alignItems: 'center', gap: 5 }}>
                 ⎘ Copy Raw JSON
