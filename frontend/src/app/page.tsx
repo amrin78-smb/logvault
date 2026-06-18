@@ -195,20 +195,6 @@ export default function Home() {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', fontFamily: 'Inter, system-ui, sans-serif', color: 'var(--text-primary)' }}>
       <Header />
-      <AlertBanner />
-      <UpdatedNotice />
-
-      {/* Site-restriction notice for regular users */}
-      {role === 'user' && (
-        <div style={{ background: '#1a2744', color: '#ffffff', padding: '8px 20px',
-          fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path d="M8 1L2 4v5c0 3.5 2.5 6.5 6 7.4C11.5 15.5 14 12.5 14 9V4L8 1z"
-              stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round" />
-          </svg>
-          Your access is restricted to your assigned sites only
-        </div>
-      )}
 
       <div style={{ display: 'flex', minHeight: 'calc(100vh - 72px)' }}>
         {/* Sidebar — pinned to the viewport (sticky) so the footer/version stays
@@ -283,8 +269,24 @@ export default function Home() {
           )}
         </div>
 
-        {/* Main content */}
-        <div style={{ flex: 1, padding: 16, overflow: 'auto' }}>
+        {/* Main content column — banners live INSIDE here so they span only the
+            content width (not the full screen over the sidebar), matching the suite.
+            The tab content below them keeps the 16px padding. */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+          <AlertBanner />
+          <UpdatedNotice />
+          {/* Site-restriction notice for regular users */}
+          {role === 'user' && (
+            <div style={{ background: '#1a2744', color: '#ffffff', padding: '8px 20px',
+              fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M8 1L2 4v5c0 3.5 2.5 6.5 6 7.4C11.5 15.5 14 12.5 14 9V4L8 1z"
+                  stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round" />
+              </svg>
+              Your access is restricted to your assigned sites only
+            </div>
+          )}
+          <div style={{ flex: 1, padding: 16 }}>
           {tab === 'dashboard' && (
             <>
               {/* Header row */}
@@ -386,6 +388,7 @@ export default function Home() {
           {tab === 'security'  && <ErrorBoundary name="Security"><SecurityAnalysis hours={hours} /></ErrorBoundary>}
           {tab === 'hosts'     && <ErrorBoundary name="Known Hosts"><KnownHosts /></ErrorBoundary>}
           {tab === 'settings'  && isAdmin && <ErrorBoundary name="Settings"><Settings /></ErrorBoundary>}
+          </div>
         </div>
       </div>
     </div>

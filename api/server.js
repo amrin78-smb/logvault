@@ -1195,6 +1195,9 @@ const releaseNotes = {
     'Top bar is now sticky — it stays visible while scrolling instead of disappearing, matching the rest of the NocVault suite',
     'Aligned the pinned sidebar to the 72px header height so the two tuck together cleanly while scrolling',
   ],
+  '1.3.4': [
+    'Alert and update banners now span only the main content area instead of the full screen, so the sidebar stays full-height beside them — matching the rest of the NocVault suite',
+  ],
   'default': [
     'Bug fixes and performance improvements',
   ],
