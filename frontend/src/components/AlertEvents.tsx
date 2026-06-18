@@ -16,8 +16,8 @@ function formatInterval(val: any): string {
   return String(val);
 }
 
-const CARD = { background: 'var(--bg-card)', border: '1px solid #e2e6ea', borderRadius: 8, padding: 20, marginBottom: 16 };
-const TH   = { padding: '8px 12px', textAlign: 'left' as const, color: '#718096', fontWeight: 600, fontSize: 'var(--text-xs)' };
+const CARD = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 20, marginBottom: 16 };
+const TH   = { padding: '8px 12px', textAlign: 'left' as const, color: 'var(--text-muted)', fontWeight: 600, fontSize: 'var(--text-xs)' };
 const TD   = { padding: '9px 12px' };
 
 const CORRELATION_RULES = [
@@ -188,7 +188,7 @@ export default function AlertEvents() {
           </button>
           <button onClick={() => setSelected(new Set())}
             style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid #bfdbfe', cursor: 'pointer',
-              background: '#fff', color: '#2563eb', fontSize: 'var(--text-sm)' }}>
+              background: 'var(--bg-card)', color: '#2563eb', fontSize: 'var(--text-sm)' }}>
             Clear Selection
           </button>
         </div>
@@ -207,17 +207,17 @@ export default function AlertEvents() {
           : group.rule_name.toLowerCase().includes('vpn') ? '#ea580c' : '#ca8a04';
 
         return (
-          <div key={group.rule_name} style={{ marginBottom: 8, border: '1px solid #e2e6ea', borderRadius: 8, overflow: 'hidden' }}>
+          <div key={group.rule_name} style={{ marginBottom: 8, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
             {/* Group header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
               background: group.unacked_count > 0 ? '#fffbeb' : '#f8f9fb', cursor: 'pointer',
-              borderBottom: isExpanded ? '1px solid #e2e6ea' : 'none' }}
+              borderBottom: isExpanded ? '1px solid var(--border)' : 'none' }}
               onClick={() => toggleExpand(group.rule_name)}>
 
               {/* Expand arrow */}
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none"
                 style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>
-                <polyline points="3,2 9,6 3,10" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                <polyline points="3,2 9,6 3,10" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
               </svg>
 
               {/* CORR badge */}
@@ -237,8 +237,8 @@ export default function AlertEvents() {
                     {group.unacked_count} unacked
                   </span>
                 )}
-                <span style={{ fontSize: 'var(--text-xs)', color: '#9ca3af' }}>{group.total_count} total</span>
-                <span style={{ fontSize: 'var(--text-xs)', color: '#9ca3af', fontFamily: 'var(--font-mono)' }}>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{group.total_count} total</span>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
                   Last: {new Date(group.latest).toLocaleTimeString()}
                 </span>
 
@@ -260,7 +260,7 @@ export default function AlertEvents() {
               <div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
                   <thead>
-                    <tr style={{ background: '#f8f9fb', borderBottom: '1px solid #f0f2f5' }}>
+                    <tr style={{ background: '#f8f9fb', borderBottom: '1px solid var(--border-light)' }}>
                       <th style={{ ...TH, width: 36 }}>
                         <input type="checkbox"
                           checked={displayEvents.filter(e => !e.acknowledged).every(e => selected.has(e.id)) && displayEvents.some(e => !e.acknowledged)}
@@ -272,8 +272,8 @@ export default function AlertEvents() {
                   </thead>
                   <tbody>
                     {displayEvents.map((evt, i) => (
-                      <tr key={evt.id} style={{ borderBottom: '1px solid #f0f2f5',
-                        background: evt.acknowledged ? '#fafbfc' : i % 2 === 0 ? '#fff' : '#fffef8',
+                      <tr key={evt.id} style={{ borderBottom: '1px solid var(--border-light)',
+                        background: evt.acknowledged ? 'var(--bg-primary)' : i % 2 === 0 ? 'var(--bg-card)' : '#fffef8',
                         opacity: evt.acknowledged ? 0.6 : 1 }}>
                         <td style={{ ...TD, width: 36 }}>
                           {!evt.acknowledged && (
@@ -281,14 +281,14 @@ export default function AlertEvents() {
                               onChange={() => toggleSelect(evt.id)} style={{ cursor: 'pointer' }} />
                           )}
                         </td>
-                        <td style={{ ...TD, fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: '#9ca3af', whiteSpace: 'nowrap' }}>
+                        <td style={{ ...TD, fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                           {new Date(evt.fired_at).toLocaleString()}
                         </td>
-                        <td style={{ ...TD, fontFamily: 'var(--font-mono)', color: '#1a202c', fontWeight: 500 }}>
+                        <td style={{ ...TD, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', fontWeight: 500 }}>
                           {evt.source_host || evt.source_ip || '—'}
                         </td>
-                        <td style={{ ...TD, fontWeight: 600, color: '#4a5568' }}>{evt.match_count}</td>
-                        <td style={{ ...TD, color: '#4a5568', maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <td style={{ ...TD, fontWeight: 600, color: 'var(--text-secondary)' }}>{evt.match_count}</td>
+                        <td style={{ ...TD, color: 'var(--text-secondary)', maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {evt.sample_message}
                         </td>
                         <td style={{ ...TD, whiteSpace: 'nowrap' }}>
@@ -296,8 +296,8 @@ export default function AlertEvents() {
                             <span style={{ color: '#16a34a', fontSize: 'var(--text-xs)', fontWeight: 600 }}>✓ Acked</span>
                           ) : (
                             <button onClick={() => acknowledge(evt.id)}
-                              style={{ padding: '3px 10px', borderRadius: 5, border: '1px solid #e2e6ea',
-                                cursor: 'pointer', fontSize: 'var(--text-xs)', background: '#f8f9fb', color: '#4a5568', fontWeight: 500 }}>
+                              style={{ padding: '3px 10px', borderRadius: 5, border: '1px solid var(--border)',
+                                cursor: 'pointer', fontSize: 'var(--text-xs)', background: '#f8f9fb', color: 'var(--text-secondary)', fontWeight: 500 }}>
                               Acknowledge
                             </button>
                           )}
@@ -327,13 +327,13 @@ export default function AlertEvents() {
 
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--bg-card)',
-        border: '1px solid #e2e6ea', borderRadius: 8, padding: 6, alignItems: 'center' }}>
+        border: '1px solid var(--border)', borderRadius: 8, padding: 6, alignItems: 'center' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id as any)}
             style={{ padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
               fontSize: 'var(--text-sm)', fontWeight: activeTab === t.id ? 600 : 400,
-              background: activeTab === t.id ? '#1a202c' : 'transparent',
-              color: activeTab === t.id ? '#fff' : '#6b7280', transition: 'all 0.15s' }}>
+              background: activeTab === t.id ? 'var(--text-primary)' : 'transparent',
+              color: activeTab === t.id ? '#fff' : 'var(--text-muted)', transition: 'all 0.15s' }}>
             {t.label}
           </button>
         ))}
@@ -343,7 +343,7 @@ export default function AlertEvents() {
 
         {/* Show acked toggle — only on active/history */}
         {(activeTab === 'active' || activeTab === 'history') && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--text-sm)', color: '#718096', cursor: 'pointer', marginRight: 8 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--text-sm)', color: 'var(--text-muted)', cursor: 'pointer', marginRight: 8 }}>
             <input type="checkbox" checked={showAcked} onChange={e => setShowAcked(e.target.checked)} style={{ cursor: 'pointer' }} />
             Show acknowledged
           </label>
@@ -365,8 +365,8 @@ export default function AlertEvents() {
         <div style={CARD}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <div>
-              <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: '#1a202c' }}>Active Alerts</div>
-              <div style={{ fontSize: 'var(--text-xs)', color: '#718096', marginTop: 2 }}>
+              <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)' }}>Active Alerts</div>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2 }}>
                 Grouped by rule — expand to see individual events
               </div>
             </div>
@@ -381,8 +381,8 @@ export default function AlertEvents() {
       {/* ── ALL HISTORY ── */}
       {activeTab === 'history' && (
         <div style={CARD}>
-          <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: '#1a202c', marginBottom: 2 }}>Alert History</div>
-          <div style={{ fontSize: 'var(--text-xs)', color: '#718096', marginBottom: 16 }}>All alerts — grouped by rule</div>
+          <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Alert History</div>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>All alerts — grouped by rule</div>
           {renderGroups(historyGroups)}
         </div>
       )}
@@ -390,19 +390,19 @@ export default function AlertEvents() {
       {/* ── THRESHOLD RULES ── */}
       {activeTab === 'threshold' && (
         <div style={CARD}>
-          <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: '#1a202c', marginBottom: 2 }}>Threshold Alert Rules</div>
-          <div style={{ fontSize: 'var(--text-xs)', color: '#718096', marginBottom: 16 }}>
+          <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Threshold Alert Rules</div>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
             Single-event rules that fire when a count threshold is reached within a time window
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
             <thead>
-              <tr style={{ borderBottom: '2px solid #f0f2f5' }}>
+              <tr style={{ borderBottom: '2px solid var(--border-light)' }}>
                 {['Status','Rule','Description','Threshold','Window'].map(h => <th key={h} style={TH}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {thresholdRules.map((rule, i) => (
-                <tr key={rule.id} style={{ borderBottom: '1px solid #f0f2f5', background: i % 2 === 0 ? '#fafbfc' : '#fff' }}>
+                <tr key={rule.id} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
                   <td style={TD}>
                     <span style={{ padding: '3px 12px', borderRadius: 12, fontSize: 'var(--text-xs)', fontWeight: 600,
                       background: rule.is_enabled ? '#dcfce7' : '#f3f4f6',
@@ -410,10 +410,10 @@ export default function AlertEvents() {
                       {rule.is_enabled ? 'Active' : 'Disabled'}
                     </span>
                   </td>
-                  <td style={{ ...TD, color: '#1a202c', fontWeight: 600 }}>{rule.name}</td>
-                  <td style={{ ...TD, color: '#4a5568' }}>{rule.description || '-'}</td>
-                  <td style={{ ...TD, color: '#4a5568' }}>{rule.threshold_count} events</td>
-                  <td style={{ ...TD, color: '#4a5568' }}>{formatInterval(rule.threshold_window)}</td>
+                  <td style={{ ...TD, color: 'var(--text-primary)', fontWeight: 600 }}>{rule.name}</td>
+                  <td style={{ ...TD, color: 'var(--text-secondary)' }}>{rule.description || '-'}</td>
+                  <td style={{ ...TD, color: 'var(--text-secondary)' }}>{rule.threshold_count} events</td>
+                  <td style={{ ...TD, color: 'var(--text-secondary)' }}>{formatInterval(rule.threshold_window)}</td>
                 </tr>
               ))}
             </tbody>
@@ -424,8 +424,8 @@ export default function AlertEvents() {
       {/* ── CORRELATION RULES ── */}
       {activeTab === 'correlation' && (
         <div style={CARD}>
-          <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: '#1a202c', marginBottom: 2 }}>Correlation Engine Rules</div>
-          <div style={{ fontSize: 'var(--text-xs)', color: '#718096', marginBottom: 16 }}>
+          <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Correlation Engine Rules</div>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
             Multi-event pattern rules evaluated in real time as logs arrive
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -434,7 +434,7 @@ export default function AlertEvents() {
               const firedCount = events.filter(e => e.rule_name === rule.name).length;
               const unackedCount = events.filter(e => e.rule_name === rule.name && !e.acknowledged).length;
               return (
-                <div key={i} style={{ background: '#f8f9fb', border: '1px solid #e2e6ea',
+                <div key={i} style={{ background: '#f8f9fb', border: '1px solid var(--border)',
                   borderRadius: 8, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
                   <div style={{ width: 36, height: 36, borderRadius: 8, background: sev.bg,
                     border: `1px solid ${sev.color}33`, display: 'flex', alignItems: 'center',
@@ -445,7 +445,7 @@ export default function AlertEvents() {
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                      <span style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: '#1a202c' }}>{rule.name}</span>
+                      <span style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)' }}>{rule.name}</span>
                       <span style={{ padding: '1px 7px', borderRadius: 10, fontSize: 'var(--text-xs)', fontWeight: 600,
                         background: sev.bg, color: sev.color, textTransform: 'uppercase' }}>
                         {rule.severity}
@@ -455,7 +455,7 @@ export default function AlertEvents() {
                         window: {rule.window}
                       </span>
                     </div>
-                    <div style={{ fontSize: 'var(--text-sm)', color: '#4a5568' }}>{rule.description}</div>
+                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>{rule.description}</div>
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     {firedCount > 0 ? (
@@ -465,7 +465,7 @@ export default function AlertEvents() {
                         <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: unackedCount > 0 ? '#dc2626' : '#16a34a' }}>
                           {unackedCount > 0 ? unackedCount : firedCount}
                         </div>
-                        <div style={{ fontSize: 'var(--text-xs)', color: '#9ca3af' }}>
+                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
                           {unackedCount > 0 ? 'unacked' : 'all acked'}
                         </div>
                       </div>

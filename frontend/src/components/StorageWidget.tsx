@@ -91,7 +91,7 @@ export default function StorageWidget() {
             <div style={{ height: '100%', width: `${diskPct}%`, borderRadius: 4, transition: 'width 0.5s',
               background: diskPct > 80 ? '#dc2626' : diskPct > 60 ? '#ca8a04' : '#2563eb' }} />
           ) : (
-            <div style={{ height: '100%', width: '30%', borderRadius: 4, background: '#e5e7eb' }} />
+            <div style={{ height: '100%', width: '30%', borderRadius: 4, background: 'var(--border)' }} />
           )}
         </div>
       </div>

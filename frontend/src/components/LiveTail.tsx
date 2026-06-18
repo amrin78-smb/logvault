@@ -89,9 +89,9 @@ export default function LiveTail() {
   return (
     <>
     <PageHeader title="Live Tail" subtitle="Real-time streaming syslog feed" />
-    <div style={{ background: 'var(--bg-card)', border: '1px solid #e2e6ea', borderRadius: 8, padding: 16 }}>
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: '#1a202c' }}>Live Tail</span>
+        <span style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)' }}>Live Tail</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6,
           background: connected ? '#f0fdf4' : '#fef2f2',
           border: `1px solid ${connected ? '#bbf7d0' : '#fecaca'}`,
@@ -103,7 +103,7 @@ export default function LiveTail() {
             {connected ? (paused ? 'Paused' : 'Live') : 'Disconnected'}
           </span>
         </div>
-        <span style={{ fontSize: 'var(--text-xs)', color: '#9ca3af' }}>{count.toLocaleString()} total · {filtered.length.toLocaleString()} shown</span>
+        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{count.toLocaleString()} total · {filtered.length.toLocaleString()} shown</span>
         {!autoScroll && (
           <button onClick={() => { setAutoScroll(true); if (containerRef.current) containerRef.current.scrollTop = containerRef.current.scrollHeight; }}
             style={{ padding: '3px 10px', borderRadius: 4, border: '1px solid #2563eb', cursor: 'pointer', fontSize: 'var(--text-xs)', background: '#eff6ff', color: '#2563eb', fontWeight: 600 }}>
@@ -111,18 +111,18 @@ export default function LiveTail() {
           </button>
         )}
         <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Filter by host, vendor, message..."
-          style={{ marginLeft: 'auto', background: '#f8f9fb', border: '1px solid #e2e6ea', borderRadius: 6,
-            padding: '6px 12px', color: '#1a202c', fontSize: 'var(--text-sm)', outline: 'none', width: 240 }} />
+          style={{ marginLeft: 'auto', background: '#f8f9fb', border: '1px solid var(--border)', borderRadius: 6,
+            padding: '6px 12px', color: 'var(--text-primary)', fontSize: 'var(--text-sm)', outline: 'none', width: 240 }} />
         <button onClick={() => setPaused(p => !p)}
           style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid',
             cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 500,
             background: paused ? '#eff6ff' : '#f8f9fb',
-            borderColor: paused ? '#2563eb' : '#e2e6ea',
-            color: paused ? '#2563eb' : '#4a5568' }}>
+            borderColor: paused ? '#2563eb' : 'var(--border)',
+            color: paused ? '#2563eb' : 'var(--text-secondary)' }}>
           {paused ? '▶ Resume' : '⏸ Pause'}
         </button>
         <button onClick={clearLogs}
-          style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #e2e6ea', cursor: 'pointer', fontSize: 'var(--text-sm)', background: '#f8f9fb', color: '#9ca3af' }}>
+          style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer', fontSize: 'var(--text-sm)', background: '#f8f9fb', color: 'var(--text-muted)' }}>
           Clear
         </button>
       </div>

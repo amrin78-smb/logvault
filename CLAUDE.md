@@ -443,33 +443,30 @@ if (sf.clause) { conditions.push(sf.clause.replace(/^AND\s+/i, '')); params.push
   --primary:        #C8102E;   /* TU Red — buttons, accents, active nav */
   --primary-dark:   #a00d24;
   --navy:           #1a2744;   /* Header + sidebar background */
-  --bg-primary:     #f8f8f8;   /* Page background */
+  --bg-primary:     #f4f6f9;   /* Page background (suite slate) */
   --bg-card:        #ffffff;   /* Card background */
-  --border:         #e5e7eb;
-  --border-light:   #f3f4f6;
-  --text-primary:   #111827;
-  --text-secondary: #374151;
-  --text-muted:     #6b7280;
-  --input-bg:       #ffffff;
-  --bg-hover:       #f9fafb;
-  --shadow-sm:      0 1px 3px rgba(0,0,0,0.06);
+  --border:         #e2e8f0;
+  --border-light:   #f1f5f9;
+  --text-primary:   #0f172a;
+  --text-secondary: #334155;
+  --text-muted:     #64748b;
+  --shadow-sm:      0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.04);
 }
 [data-theme="dark"] {
-  --bg-primary:     #0f172a;
-  --bg-card:        #1e293b;
-  --border:         #334155;
-  --border-light:   #1e293b;
+  --bg-primary:     #0d1220;
+  --bg-card:        #1a2235;
+  --border:         #2d3a52;
+  --border-light:   #243050;
   --text-primary:   #f1f5f9;
   --text-secondary: #cbd5e1;
-  --text-muted:     #64748b;
-  --input-bg:       #0f172a;
+  --text-muted:     #94a3b8;
   --bg-hover:       #253352;
 }
 ```
 
 **Sidebar:** Navy `#1a2744`, active item = red left border `#C8102E` + red-tinted bg  
 **Cards:** white, `1px solid var(--border)`, `border-radius: 10px`, `box-shadow: var(--shadow-sm)`  
-**Tables:** `#f9fafb` header, uppercase labels, `#6b7280` color  
+**Tables:** `var(--bg-primary)` header, uppercase labels, `var(--text-muted)` color  
 **Buttons:** Red `#C8102E`, hover `#a00d24`  
 **Font:** `system-ui, -apple-system, sans-serif`
 
@@ -503,6 +500,14 @@ not change per theme, so they live in `:root` only):
   color pairs) are intentional semantic palettes with no matching token — leave them.
 - This is the **NocVault SUITE-WIDE standard**: the same scale and `--font-mono` token are
   used in **spanvault, ddivault, and netvault**. Keep them in sync.
+
+**Neutral palette (suite slate ramp):** LogVault's neutral tokens — `--text-primary/-secondary/-muted`,
+`--border`, `--border-light`, `--bg-primary`, `--bg-card` (light + dark) — are aligned to the
+suite **slate** ramp, matching spanvault/ddivault/netvault (page bg `#f4f6f9` light / `#0d1220`
+dark). Hardcoded gray-ramp hexes in components were swept onto these tokens so dark mode and
+app-switching stay consistent. The `--primary` brand red, `--navy*`, status colors
+(`--green/--yellow/--red/...`), and the `SEV_COLORS`/`VENDOR_COLORS` palettes are intentionally
+NOT part of the neutral ramp — leave them.
 
 ---
 

@@ -76,7 +76,7 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
           <button key={s} onClick={() => onRefreshChange(s)}
             style={{ padding: '3px 7px', borderRadius: 4, border: 'none', fontSize: 'var(--text-xs)', cursor: 'pointer',
               fontWeight: refreshInterval === s ? 600 : 400,
-              background: refreshInterval === s ? '#1a202c' : 'transparent',
+              background: refreshInterval === s ? 'var(--text-primary)' : 'transparent',
               color: refreshInterval === s ? '#fff' : 'var(--text-muted)' }}>
             {s < 60 ? `${s}s` : `${s/60}m`}
           </button>
@@ -97,7 +97,7 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
           <button key={p.value} onClick={() => { onHoursChange(p.value); setShowCustom(false); }}
             style={{ padding: '3px 8px', borderRadius: 4, border: 'none', fontSize: 'var(--text-xs)', cursor: 'pointer',
               fontWeight: hours === p.value ? 600 : 400,
-              background: hours === p.value ? '#1a202c' : 'transparent',
+              background: hours === p.value ? 'var(--text-primary)' : 'transparent',
               color: hours === p.value ? '#fff' : 'var(--text-muted)' }}>
             {p.label}
           </button>

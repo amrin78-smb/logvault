@@ -11,13 +11,13 @@ const SUB   = { fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBo
 const CustomTooltip = ({ active, payload, label, unit = 'events' }: any) => {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid #e2e6ea', borderRadius: 8,
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
       padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: 'var(--text-sm)' }}>
-      <div style={{ fontWeight: 600, color: '#1a202c', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>{label}</div>
       {payload.map((p: any, i: number) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, color: p.color }}>
           <div style={{ width: 8, height: 8, borderRadius: 2, background: p.color }} />
-          <span style={{ color: '#4a5568' }}>{parseInt(p.value).toLocaleString()} {unit}</span>
+          <span style={{ color: 'var(--text-secondary)' }}>{parseInt(p.value).toLocaleString()} {unit}</span>
         </div>
       ))}
     </div>
@@ -98,7 +98,7 @@ export function TopBlockedDestinations({ hours, onNavigate }: { hours: number; o
                       {row.dst_ip || '—'}
                     </span>
                     {row.vendor && (
-                      <span style={{ fontSize: 'var(--text-xs)', color: '#9ca3af', background: '#f0f2f5',
+                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', background: 'var(--border-light)',
                         padding: '1px 4px', borderRadius: 4, flexShrink: 0, textTransform: 'capitalize' }}>
                         {row.vendor}
                       </span>
@@ -108,7 +108,7 @@ export function TopBlockedDestinations({ hours, onNavigate }: { hours: number; o
                     {parseInt(row.deny_count).toLocaleString()}
                   </span>
                 </div>
-                <div style={{ height: 5, background: '#f0f2f5', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ height: 5, background: 'var(--border-light)', borderRadius: 2, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: '#dc2626', borderRadius: 2, transition: 'width 0.5s' }} />
                 </div>
               </div>
@@ -147,7 +147,7 @@ export function TopConnectionFailures({ hours, onNavigate }: { hours: number; on
                       {row.dst_ip || '—'}
                     </span>
                     {row.service && (
-                      <span style={{ fontSize: 'var(--text-xs)', color: '#9ca3af', background: '#f0f2f5',
+                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', background: 'var(--border-light)',
                         padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>
                         {row.service}
                       </span>
@@ -157,7 +157,7 @@ export function TopConnectionFailures({ hours, onNavigate }: { hours: number; on
                     {parseInt(row.fail_count).toLocaleString()}
                   </span>
                 </div>
-                <div style={{ height: 5, background: '#f0f2f5', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ height: 5, background: 'var(--border-light)', borderRadius: 2, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: '#ea580c', borderRadius: 2, transition: 'width 0.5s' }} />
                 </div>
               </div>
@@ -188,7 +188,7 @@ export function VPNStatus({ hours, onNavigate }: { hours: number; onNavigate?: (
       <div style={TITLE}>VPN Status</div>
       <div style={SUB}>SSL VPN & IPSec — {hours}h · Click to drill down</div>
       {!data ? (
-        <div style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 'var(--text-base)' }}>No VPN data</div>
+        <div style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-base)' }}>No VPN data</div>
       ) : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 12 }}>
@@ -200,15 +200,15 @@ export function VPNStatus({ hours, onNavigate }: { hours: number; onNavigate?: (
               <div key={s.label} title={s.tip}
                 style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: 6, padding: '8px', textAlign: 'center' }}>
                 <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: s.color }}>{s.value.toLocaleString()}</div>
-                <div style={{ fontSize: 'var(--text-xs)', color: '#718096', fontWeight: 500, marginTop: 2 }}>{s.label}</div>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 500, marginTop: 2 }}>{s.label}</div>
               </div>
             ))}
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-            <span style={{ fontSize: 'var(--text-sm)', color: '#4a5568', fontWeight: 500 }}>Success Rate</span>
+            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 500 }}>Success Rate</span>
             <span style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: successRate >= 80 ? '#16a34a' : '#dc2626' }}>{successRate}%</span>
           </div>
-          <div style={{ height: 6, background: '#f0f2f5', borderRadius: 3, overflow: 'hidden' }}>
+          <div style={{ height: 6, background: 'var(--border-light)', borderRadius: 3, overflow: 'hidden' }}>
             <div style={{ height: '100%', width: `${successRate}%`, borderRadius: 3,
               background: successRate >= 80 ? '#16a34a' : '#dc2626', transition: 'width 0.5s' }} />
           </div>
@@ -242,13 +242,13 @@ export function ActiveAlertsSummary({ onNavigate }: { onNavigate: () => void }) 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={TITLE}>Active Alerts</div>
         <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
-          <path d="M6 1L1 10h10L6 1z" stroke="#718096" strokeWidth="1.2" strokeLinejoin="round" fill="none"/>
-          <line x1="6" y1="5" x2="6" y2="7.5" stroke="#718096" strokeWidth="1.2" strokeLinecap="round"/>
-          <circle cx="6" cy="9" r="0.6" fill="#718096"/>
+          <path d="M6 1L1 10h10L6 1z" stroke="var(--text-muted)" strokeWidth="1.2" strokeLinejoin="round" fill="none"/>
+          <line x1="6" y1="5" x2="6" y2="7.5" stroke="var(--text-muted)" strokeWidth="1.2" strokeLinecap="round"/>
+          <circle cx="6" cy="9" r="0.6" fill="var(--text-muted)"/>
         </svg>
       </div>
       <div style={{ ...SUB, marginBottom: 10 }}>Click to manage in Alerts tab</div>
-      {!data ? <div style={{ color: '#9ca3af', fontSize: 'var(--text-sm)' }}>Loading...</div> : (
+      {!data ? <div style={{ color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>Loading...</div> : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
             <div title={`${data.unacknowledged} alerts need attention`}
@@ -258,19 +258,19 @@ export function ActiveAlertsSummary({ onNavigate }: { onNavigate: () => void }) 
               <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: data.unacknowledged > 0 ? '#dc2626' : '#16a34a' }}>
                 {data.unacknowledged}
               </div>
-              <div style={{ fontSize: 'var(--text-xs)', color: '#718096', fontWeight: 600 }}>UNACKED</div>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 600 }}>UNACKED</div>
             </div>
             <div title="Alerts fired in last 24 hours"
-              style={{ background: '#f8f9fb', border: '1px solid #e2e6ea', borderRadius: 6, padding: '10px 8px', textAlign: 'center' }}>
-              <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: '#4a5568' }}>{data.total_24h}</div>
-              <div style={{ fontSize: 'var(--text-xs)', color: '#718096', fontWeight: 600 }}>FIRED 24H</div>
+              style={{ background: '#f8f9fb', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 8px', textAlign: 'center' }}>
+              <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--text-secondary)' }}>{data.total_24h}</div>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 600 }}>FIRED 24H</div>
             </div>
           </div>
           {data.recent?.map((r: any, i: number) => (
             <div key={i} title={`Fired at ${new Date(r.fired_at).toLocaleString()}`}
-              style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderTop: '1px solid #f0f2f5' }}>
+              style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderTop: '1px solid var(--border-light)' }}>
               <span style={{ fontSize: 'var(--text-xs)', color: '#dc2626', fontWeight: 500 }}>{r.rule_name}</span>
-              <span style={{ fontSize: 'var(--text-xs)', color: '#9ca3af', fontFamily: 'var(--font-mono)' }}>
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
                 {new Date(r.fired_at).toLocaleTimeString()}
               </span>
             </div>
@@ -314,7 +314,7 @@ export function FirewallActions({ hours }: { hours: number }) {
       <div style={TITLE}>Firewall Actions</div>
       <div style={SUB}>Traffic disposition breakdown — {hours}h · Hover for meaning</div>
       {data.length === 0 ? (
-        <div style={{ height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 'var(--text-base)' }}>No data</div>
+        <div style={{ height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-base)' }}>No data</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           {data.slice(0, 7).map((row, i) => {
@@ -325,12 +325,12 @@ export function FirewallActions({ hours }: { hours: number }) {
               <div key={i} title={`${tip} — ${parseInt(row.count).toLocaleString()} events (${pct}%)`}
                 style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <div style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
-                <span style={{ fontSize: 'var(--text-sm)', color: '#4a5568', fontWeight: 500, minWidth: 85 }}>{row.action}</span>
-                <div style={{ flex: 1, height: 5, background: '#f0f2f5', borderRadius: 2, overflow: 'hidden' }}>
+                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 500, minWidth: 85 }}>{row.action}</span>
+                <div style={{ flex: 1, height: 5, background: 'var(--border-light)', borderRadius: 2, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2, transition: 'width 0.5s' }} />
                 </div>
-                <span style={{ fontSize: 'var(--text-xs)', color: '#718096', minWidth: 32, textAlign: 'right' }}>{pct}%</span>
-                <span style={{ fontSize: 'var(--text-xs)', color: '#9ca3af', minWidth: 48, textAlign: 'right' }}>{parseInt(row.count).toLocaleString()}</span>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', minWidth: 32, textAlign: 'right' }}>{pct}%</span>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', minWidth: 48, textAlign: 'right' }}>{parseInt(row.count).toLocaleString()}</span>
               </div>
             );
           })}
@@ -362,11 +362,11 @@ export function InterfaceEventsSummary({ hours, onNavigate }: { hours: number; o
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={TITLE}>Network Health</div>
         <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
-          <polyline points="1,6 3,3 5,7.5 7,2 9,6 10,4.5 11,6" stroke="#718096" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+          <polyline points="1,6 3,3 5,7.5 7,2 9,6 10,4.5 11,6" stroke="var(--text-muted)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
         </svg>
       </div>
       <div style={{ ...SUB, marginBottom: 10 }}>Click → Network Health tab · Hover for details</div>
-      {!data ? <div style={{ color: '#9ca3af', fontSize: 'var(--text-sm)' }}>Loading...</div> : (
+      {!data ? <div style={{ color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>Loading...</div> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {ITEMS.map(item => {
             const value = data[item.key] || 0;
@@ -376,7 +376,7 @@ export function InterfaceEventsSummary({ hours, onNavigate }: { hours: number; o
               <div key={item.key} title={item.tip}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   padding: '5px 8px', background: bg, borderRadius: 6 }}>
-                <span style={{ fontSize: 'var(--text-sm)', color: '#4a5568' }}>{item.icon} {item.label}</span>
+                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>{item.icon} {item.label}</span>
                 <span style={{ fontSize: 'var(--text-base)', fontWeight: 700, color }}>{value}</span>
               </div>
             );

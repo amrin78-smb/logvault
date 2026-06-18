@@ -153,7 +153,7 @@ export default function IdleTimeout() {
         >
           Session Timeout
         </div>
-        <div style={{ padding: '20px', color: '#111827', fontSize: 'var(--text-md)', lineHeight: 1.5 }}>
+        <div style={{ padding: '20px', color: 'var(--text-primary)', fontSize: 'var(--text-md)', lineHeight: 1.5 }}>
           You will be logged out in 60 seconds due to inactivity
         </div>
         <div
@@ -190,8 +190,8 @@ export default function IdleTimeout() {
             }}
             style={{
               background: 'var(--bg-card)',
-              color: '#374151',
-              border: '1px solid #e5e7eb',
+              color: 'var(--text-secondary)',
+              border: '1px solid var(--border)',
               borderRadius: 6,
               padding: '10px 16px',
               fontSize: 'var(--text-md)',

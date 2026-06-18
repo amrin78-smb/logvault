@@ -1159,6 +1159,13 @@ const releaseNotes = {
     'Replaced hardcoded colors that duplicated theme tokens, fixing dark-mode color bugs',
     'Preserved intentional severity/vendor palettes and display-size numbers',
   ],
+  '1.2.8': [
+    'Aligned the neutral color palette to the NocVault suite for a consistent look when switching apps',
+    'Switched the page background and neutral text/border tokens to the shared suite slate ramp',
+    'Swept leftover hardcoded gray colors in dashboards, alerts, and log views onto theme tokens',
+    'Improved dark-mode consistency by removing off-token surface and text colors',
+    'Kept severity, vendor, and chart-series palettes intentionally untouched',
+  ],
   'default': [
     'Bug fixes and performance improvements',
   ],

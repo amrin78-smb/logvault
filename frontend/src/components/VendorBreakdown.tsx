@@ -19,8 +19,8 @@ export default function VendorBreakdown({ hours, onVendorClick, compact }: {
   return (
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
       padding: '16px 20px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-      <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: '#1a202c', marginBottom: 1, flexShrink: 0 }}>Logs by Vendor</div>
-      <div style={{ fontSize: 'var(--text-xs)', color: '#9ca3af', marginBottom: 8, flexShrink: 0 }}>Distribution — {hours}h</div>
+      <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 1, flexShrink: 0 }}>Logs by Vendor</div>
+      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 8, flexShrink: 0 }}>Distribution — {hours}h</div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7, justifyContent: 'space-evenly' }}>
         {data.map(row => {
           const count = parseInt(row.log_count); const pct = Math.round((count / total) * 100);
@@ -32,22 +32,22 @@ export default function VendorBreakdown({ hours, onVendorClick, compact }: {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                   <div style={{ width: 7, height: 7, borderRadius: 2, background: color }} />
-                  <span style={{ fontSize: 'var(--text-xs)', color: '#1a202c', fontWeight: 600, textTransform: 'capitalize' }}>{row.vendor}</span>
-                  <span style={{ fontSize: 'var(--text-xs)', color: '#9ca3af' }}>{pct}%</span>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 600, textTransform: 'capitalize' }}>{row.vendor}</span>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{pct}%</span>
                 </div>
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                   {crit > 0 && <span style={{ fontSize: 'var(--text-xs)', color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', padding: '1px 4px', borderRadius: 6, fontWeight: 600 }}>{crit}c</span>}
                   {err  > 0 && <span style={{ fontSize: 'var(--text-xs)', color: '#ea580c', background: '#fff7ed', border: '1px solid #fed7aa', padding: '1px 4px', borderRadius: 6, fontWeight: 600 }}>{err}e</span>}
-                  <span style={{ fontSize: 'var(--text-xs)', color: '#4a5568', fontWeight: 700 }}>{count.toLocaleString()}</span>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 700 }}>{count.toLocaleString()}</span>
                 </div>
               </div>
-              <div style={{ height: 4, background: '#f0f2f5', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ height: 4, background: 'var(--border-light)', borderRadius: 2, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2 }} />
               </div>
             </div>
           );
         })}
-        {data.length === 0 && <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 'var(--text-sm)' }}>No data</div>}
+        {data.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>No data</div>}
       </div>
     </div>
   );
