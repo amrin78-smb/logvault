@@ -26,7 +26,7 @@ interface Settings {
 const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 20, boxShadow: 'var(--shadow-sm)' };
 const LABEL = { fontSize: 'var(--text-base)', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6, display: 'block' as const };
 const INPUT = { width: '100%', padding: '9px 12px', borderRadius: 6, border: '1px solid var(--border)',
-  background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 'var(--text-md)', outline: 'none',
+  background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-md)', outline: 'none',
   boxSizing: 'border-box' as const };
 const SECTION_HEADER = { fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 16 };
 
@@ -819,7 +819,7 @@ export default function Settings() {
                       </div>
                       <button onClick={() => saveRuleEmail(rule.id)} disabled={savingRule === rule.id}
                         style={{ padding: '9px 18px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer',
-                          fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--input-bg)', color: 'var(--text-primary)',
+                          fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--bg-input)', color: 'var(--text-primary)',
                           opacity: savingRule === rule.id ? 0.7 : 1, whiteSpace: 'nowrap' }}>
                         {savingRule === rule.id ? 'Saving...' : 'Save'}
                       </button>
@@ -845,7 +845,7 @@ export default function Settings() {
               </div>
               <button onClick={sendTest} disabled={testing}
                 style={{ padding: '9px 20px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer',
-                  fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--input-bg)', color: 'var(--text-primary)',
+                  fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--bg-input)', color: 'var(--text-primary)',
                   opacity: testing ? 0.7 : 1, whiteSpace: 'nowrap' }}>
                 {testing ? 'Sending...' : 'Send Test'}
               </button>
@@ -877,7 +877,7 @@ export default function Settings() {
               </div>
               <button onClick={checkUpdate}
                 style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)',
-                  background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)',
+                  background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)',
                   fontWeight: 600, cursor: 'pointer' }}>
                 Re-check
               </button>
@@ -894,7 +894,7 @@ export default function Settings() {
               )}
               <button onClick={checkUpdate}
                 style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)',
-                  background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)',
+                  background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)',
                   fontWeight: 600, cursor: 'pointer' }}>
                 Re-check
               </button>
@@ -951,7 +951,7 @@ export default function Settings() {
                 </button>
                 <button onClick={checkUpdate}
                   style={{ padding: '9px 18px', borderRadius: 6, border: '1px solid var(--border)',
-                    background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 'var(--text-base)',
+                    background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-base)',
                     fontWeight: 600, cursor: 'pointer' }}>
                   Re-check
                 </button>
@@ -972,7 +972,7 @@ export default function Settings() {
           ) : (
             <button onClick={checkUpdate}
               style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)',
-                background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)',
+                background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)',
                 fontWeight: 600, cursor: 'pointer' }}>
               Check for Updates
             </button>
@@ -998,7 +998,7 @@ export default function Settings() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button onClick={() => setShowConfirmModal(false)}
                   style={{ padding: '9px 18px', borderRadius: 6, border: '1px solid var(--border)',
-                    background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 'var(--text-base)',
+                    background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-base)',
                     fontWeight: 600, cursor: 'pointer' }}>
                   Cancel
                 </button>

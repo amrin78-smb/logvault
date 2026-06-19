@@ -201,13 +201,13 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
         <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && search()}
           placeholder="Search message text..." 
           style={{ flex: 1, minWidth: 200, padding: '9px 12px', borderRadius: 6,
-            border: '1px solid var(--border)', background: 'var(--input-bg)',
+            border: '1px solid var(--border)', background: 'var(--bg-input)',
             color: 'var(--text-primary)', fontSize: 'var(--text-base)', outline: 'none' }} />
 
         {/* Time range */}
         <select value={hours} onChange={e => setHours(e.target.value)}
           style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid var(--border)',
-            background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)', cursor: 'pointer', outline: 'none' }}>
+            background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)', cursor: 'pointer', outline: 'none' }}>
           {[['0.25','15 min'],['1','1h'],['6','6h'],['24','24h'],['48','48h'],['168','7d'],['720','30d']].map(([v,l]) => (
             <option key={v} value={v}>{l}</option>
           ))}
@@ -226,7 +226,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
           window.open(`/api/logs/export?${params}`, '_blank');
         }} title="Export to CSV"
           style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid var(--border)',
-            cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--input-bg)', color: 'var(--text-secondary)',
+            cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--bg-input)', color: 'var(--text-secondary)',
             display: 'flex', alignItems: 'center', gap: 5 }}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
             <path d="M6 1v7M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>

@@ -21,7 +21,7 @@ interface Host {
 const EMPTY = { ip_address: '', hostname: '', vendor: 'generic', description: '' };
 
 const INPUT = { padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)',
-  background: 'var(--input-bg)', color: 'var(--text-primary)', fontSize: 'var(--text-base)',
+  background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-base)',
   width: '100%', outline: 'none', boxSizing: 'border-box' as const };
 
 const VENDOR_COLORS: Record<string, string> = {

@@ -1117,6 +1117,9 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '1.3.11': [
+    'Fixed an undefined CSS token on time-range selects so they use the correct adaptive input background',
+  ],
   '1.3.10': [
     'Dropdown and select menus are now readable in dark mode',
     'Native select option popups, scrollbars and date/number controls follow the theme via color-scheme',

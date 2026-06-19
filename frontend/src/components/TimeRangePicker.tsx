@@ -83,7 +83,7 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
         ))}
         <button onClick={onRefreshNow}
           style={{ padding: '3px 7px', borderRadius: 4, border: '1px solid var(--border)',
-            cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--input-bg)',
+            cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--bg-input)',
             color: 'var(--text-secondary)', marginLeft: 2 }}>
           Now
         </button>
@@ -104,7 +104,7 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
         ))}
         <button onClick={() => setShowCustom(s => !s)}
           style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--border)',
-            fontSize: 'var(--text-xs)', cursor: 'pointer', background: 'var(--input-bg)',
+            fontSize: 'var(--text-xs)', cursor: 'pointer', background: 'var(--bg-input)',
             color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
             <rect x="1" y="1" width="8" height="8" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none"/>
@@ -127,10 +127,10 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
                 <button key={q.label}
                   onClick={() => { onHoursChange(Math.max(q.hours, 0.1)); setShowCustom(false); }}
                   style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)',
-                    fontSize: 'var(--text-xs)', cursor: 'pointer', background: 'var(--input-bg)',
+                    fontSize: 'var(--text-xs)', cursor: 'pointer', background: 'var(--bg-input)',
                     color: 'var(--text-secondary)', transition: 'all 0.15s' }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'var(--input-bg)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; }}>
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-input)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; }}>
                   {q.label}
                 </button>
               ))}
@@ -138,7 +138,7 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
             <button onClick={() => setShowCustom(false)}
               style={{ width: '100%', marginTop: 12, padding: '6px', borderRadius: 6,
                 border: '1px solid var(--border)', cursor: 'pointer', fontSize: 'var(--text-xs)',
-                background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
+                background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>
               Close
             </button>
           </div>
