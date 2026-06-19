@@ -13,7 +13,7 @@ const { Pool } = require('pg');
 const http     = require('http');
 const { WebSocketServer } = require('ws');
 const { testEmail } = require('../collector/emailer');
-const { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter } = require('./rbac');
+const { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter, getStatsSiteFilter } = require('./rbac');
 const { getLicense, getLicenseState } = require('./licenseCheck');
 const { writeAudit } = require('./auditLog');
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env.local') });
@@ -138,7 +138,7 @@ app.use(enforceLicense);
 
 app.get('/api/stats/summary', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
+  const sf = getStatsSiteFilter(req.rbac, 2, 'syslog_entries');
   const cacheKey = `summary:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 30000, async () => {
     const { rows } = await pool.query(`
@@ -158,7 +158,7 @@ app.get('/api/stats/timeline', asyncHandler(async (req, res) => {
   const bucket = hours <= 6 ? '5 minutes' : hours <= 48 ? '1 hour' : '6 hours';
   const trunc  = hours <= 6 ? 'minute' : 'hour';
   const mod    = hours <= 6 ? 5 : hours <= 48 ? 1 : 6;
-  const sf = getSiteFilter(req.rbac, 3, 'syslog_entries');
+  const sf = getStatsSiteFilter(req.rbac, 3, 'syslog_entries');
   const cacheKey = `timeline:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 30000, async () => {
     const { rows } = await pool.query(`
@@ -181,7 +181,7 @@ app.get('/api/stats/timeline', asyncHandler(async (req, res) => {
 app.get('/api/stats/top-talkers', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const limit = safeInt(req.query.limit, 10, 50);
-  const sf = getSiteFilter(req.rbac, 3, 'se');
+  const sf = getStatsSiteFilter(req.rbac, 3, 'se');
   const cacheKey = `top-talkers:${hours}:${limit}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 30000, async () => {
     const { rows } = await pool.query(`
@@ -225,7 +225,7 @@ app.get('/api/stats/by-vendor', asyncHandler(async (req, res) => {
 
 app.get('/api/stats/top-security-events', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
+  const sf = getStatsSiteFilter(req.rbac, 2, 'syslog_entries');
   const cacheKey = `top-security-events:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 30000, async () => {
     const { rows } = await pool.query(`
@@ -257,7 +257,7 @@ app.get('/api/stats/top-security-events', asyncHandler(async (req, res) => {
 
 app.get('/api/stats/top-failures', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
+  const sf = getStatsSiteFilter(req.rbac, 2, 'syslog_entries');
   const cacheKey = `top-failures:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 30000, async () => {
     const { rows } = await pool.query(`
@@ -314,7 +314,7 @@ app.get('/api/stats/top-failures', asyncHandler(async (req, res) => {
 
 app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
+  const sf = getStatsSiteFilter(req.rbac, 2, 'syslog_entries');
   const cacheKey = `top-blocked:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 30000, async () => {
     const { rows } = await pool.query(`
@@ -1230,6 +1230,10 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.1.5': [
+    'Fixed Top Blocked Destinations, Top Connection Failures, Top Talkers, Top Security Events, Severity Summary and the activity Timeline rendering empty for regular (non-admin) users — the site filter on these aggregate dashboard widgets was too strict',
+    'Dashboard stat widgets now treat unregistered/unassigned devices (e.g. a firewall not yet assigned a site in known_hosts) as visible to all users; only devices explicitly assigned to a site are restricted. Detailed log access (Log Explorer, export, alerts) keeps the strict per-site filter',
+  ],
   '2.1.4': [
     'Fixed Top Blocked Destinations and Top Connection Failures widgets returning empty — the destination-IP geo join now casts the address to text (works whether the column is inet or text and never errors on a non-IP destination)',
     'Top Blocked Destinations now detects blocks vendor-agnostically (matches the actual action values in the data, e.g. Fortinet "blocked", Palo Alto "deny"/"drop") instead of narrow per-vendor rules that silently matched nothing',

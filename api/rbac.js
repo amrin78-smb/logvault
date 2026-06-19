@@ -147,4 +147,52 @@ function getSiteFilter(rbac, startParamIndex, tableAlias = 'se') {
   };
 }
 
-module.exports = { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter };
+/**
+ * Permissive variant of getSiteFilter for AGGREGATE DASHBOARD STATS only
+ * (summary, timeline, top-talkers, top-security-events, top-failures,
+ * top-blocked). These widgets are firewall-centric: the source_ip is almost
+ * always a single firewall/collector device. If that device is unregistered or
+ * has no site assigned in known_hosts, the strict getSiteFilter matched ZERO
+ * rows for every non-admin, so the widgets rendered empty for regular users
+ * even though super_admin (no filter) saw data.
+ *
+ * Here a row is visible when its source_ip belongs to one of the user's sites
+ * OR when source_ip is NOT assigned to ANY site — i.e. unregistered/unassigned
+ * devices are visible to everyone, only explicitly site-assigned devices are
+ * restricted. Detailed log access (/api/logs, /api/logs/export, alert events)
+ * deliberately keeps the strict getSiteFilter — this loosening is scoped to the
+ * aggregate dashboard tiles only.
+ *
+ * Same parameter footprint as getSiteFilter (one $N array param, or none for a
+ * user with no sites) so call sites need no parameter reindexing.
+ */
+function getStatsSiteFilter(rbac, startParamIndex, tableAlias = 'se') {
+  if (!rbac || rbac.allowedSiteIds === null || rbac.allowedSiteIds === undefined) {
+    return { clause: '', params: [], nextParamIndex: startParamIndex };
+  }
+  // "Assigned" = source IPs that belong to some site in known_hosts. Anything
+  // not in that set is unregistered/unassigned and visible to all. The
+  // ip_address IS NOT NULL guard is required: a single NULL inside a NOT IN
+  // subquery makes the whole predicate return no rows.
+  const unassigned = `${tableAlias}.source_ip NOT IN (
+    SELECT kh.ip_address FROM known_hosts kh
+    WHERE kh.site_id IS NOT NULL AND kh.ip_address IS NOT NULL
+  )`;
+  if (rbac.allowedSiteIds.length === 0) {
+    // User has no sites — still sees unassigned/unregistered devices.
+    return { clause: `AND (${unassigned})`, params: [], nextParamIndex: startParamIndex };
+  }
+  const clause = `AND (
+    ${tableAlias}.source_ip IN (
+      SELECT kh.ip_address FROM known_hosts kh WHERE kh.site_id = ANY($${startParamIndex}::int[])
+    )
+    OR ${unassigned}
+  )`;
+  return {
+    clause,
+    params: [rbac.allowedSiteIds],
+    nextParamIndex: startParamIndex + 1,
+  };
+}
+
+module.exports = { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter, getStatsSiteFilter };
