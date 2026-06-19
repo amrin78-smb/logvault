@@ -186,8 +186,8 @@ app.get('/api/stats/top-talkers', asyncHandler(async (req, res) => {
   const data = await getCached(cacheKey, 30000, async () => {
     const { rows } = await pool.query(`
       SELECT
-        COALESCE(kh.hostname, se.source_host, se.source_ip::TEXT) AS host,
-        se.source_ip::TEXT AS source_ip,
+        COALESCE(kh.hostname, se.source_host, host(se.source_ip)) AS host,
+        host(se.source_ip) AS source_ip,
         COALESCE(kh.vendor, se.vendor) AS vendor,
         kh.country_code, kh.country_name, kh.asn_org,
         kh.abuse_score, kh.is_known_bad, kh.is_external,
@@ -269,14 +269,16 @@ app.get('/api/stats/top-failures', asyncHandler(async (req, res) => {
         COUNT(*) AS fail_count
       FROM syslog_entries
       -- This widget displays the DESTINATION IP, so join geo/threat on dstip (the
-      -- external IP in firewall logs), not source_ip (the internal device). Compare
-      -- ip_address CAST TO TEXT (not host(), which only exists for inet) so the join
-      -- works whether ip_address is inet or text and NEVER errors on a non-IP dstip.
-      -- The IPv4-shape guard limits the join to address-shaped values. This is a
-      -- LEFT JOIN, so rows are kept even when no known_hosts match (geo cols NULL).
+      -- external IP in firewall logs), not source_ip (the internal device). Use
+      -- host(ip_address): known_hosts.ip_address is INET and is stored WITH a /32
+      -- mask (e.g. 17.248.154.174/32), so ip_address::text renders "…/32" and never
+      -- matched the unmasked dstip string. host() strips the mask to the bare
+      -- address and works on any inet. The IPv4-shape guard limits the join to
+      -- address-shaped dstip values. This is a LEFT JOIN, so rows are kept even when
+      -- no known_hosts match (geo cols NULL).
       LEFT JOIN known_hosts kh
         ON structured_data->>'dstip' ~ '^[0-9.]+$'
-       AND kh.ip_address::text = structured_data->>'dstip'
+       AND host(kh.ip_address) = structured_data->>'dstip'
       WHERE received_at > NOW() - make_interval(hours => $1)
         AND (
           -- Fortinet connection failures
@@ -327,14 +329,16 @@ app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
         COUNT(*) AS deny_count
       FROM syslog_entries
       -- This widget displays the DESTINATION IP, so join geo/threat on dstip (the
-      -- external IP in firewall logs), not source_ip (the internal device). Compare
-      -- ip_address CAST TO TEXT (not host(), which only exists for inet) so the join
-      -- works whether ip_address is inet or text and NEVER errors on a non-IP dstip.
-      -- The IPv4-shape guard limits the join to address-shaped values. This is a
-      -- LEFT JOIN, so rows are kept even when no known_hosts match (geo cols NULL).
+      -- external IP in firewall logs), not source_ip (the internal device). Use
+      -- host(ip_address): known_hosts.ip_address is INET and is stored WITH a /32
+      -- mask (e.g. 17.248.154.174/32), so ip_address::text renders "…/32" and never
+      -- matched the unmasked dstip string. host() strips the mask to the bare
+      -- address and works on any inet. The IPv4-shape guard limits the join to
+      -- address-shaped dstip values. This is a LEFT JOIN, so rows are kept even when
+      -- no known_hosts match (geo cols NULL).
       LEFT JOIN known_hosts kh
         ON structured_data->>'dstip' ~ '^[0-9.]+$'
-       AND kh.ip_address::text = structured_data->>'dstip'
+       AND host(kh.ip_address) = structured_data->>'dstip'
       WHERE received_at > NOW() - make_interval(hours => $1)
         AND (
           -- Vendor-AGNOSTIC block detection. The old per-vendor branches missed real
@@ -1230,6 +1234,10 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.1.6': [
+    'Fixed country flag / GeoIP context never appearing on Top Blocked Destinations and Top Connection Failures — the destination-IP join compared known_hosts.ip_address::text (which keeps the /32 mask, e.g. "17.248.154.174/32") against the unmasked dstip and never matched. It now joins on host(ip_address), so country/ASN/flag show for enriched destinations',
+    'Top Talkers now displays source IPs without the trailing /32 mask',
+  ],
   '2.1.5': [
     'Fixed Top Blocked Destinations, Top Connection Failures, Top Talkers, Top Security Events, Severity Summary and the activity Timeline rendering empty for regular (non-admin) users — the site filter on these aggregate dashboard widgets was too strict',
     'Dashboard stat widgets now treat unregistered/unassigned devices (e.g. a firewall not yet assigned a site in known_hosts) as visible to all users; only devices explicitly assigned to a site are restricted. Detailed log access (Log Explorer, export, alerts) keeps the strict per-site filter',
