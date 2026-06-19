@@ -1117,6 +1117,11 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '1.3.10': [
+    'Dropdown and select menus are now readable in dark mode',
+    'Native select option popups, scrollbars and date/number controls follow the theme via color-scheme',
+    'Custom dropdown panels use adaptive surface tokens instead of light backgrounds',
+  ],
   '1.3.9': [
     'Settings nav icon is now a gear (was a sun)',
     'Fixed the Security shield icon being clipped at the bottom',

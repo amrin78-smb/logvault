@@ -557,6 +557,21 @@ severity/vendor palettes are left as-is — those are data signals (the raw colo
 `--primary-light` also has a dark override (`rgba(200,16,46,0.18)`).
 This is the **suite-wide standard** — the same tokens exist in **ddivault** and **spanvault**.
 
+### Dropdown / select readability in dark mode (suite standard)
+
+- **Native form controls** (`<select>` option popups, native scrollbars, date/number
+  spinners) are rendered by the browser/OS and can't be styled with normal CSS background
+  rules. They are themed via the CSS **`color-scheme`** property: `color-scheme: light` in
+  `:root`, `color-scheme: dark` in `[data-theme="dark"]`. A base `select { … }` /
+  `option { … }` rule using `var(--bg-card)` + `var(--text-primary)` is added as
+  belt-and-suspenders. Without `color-scheme`, native `<select>` option lists render with a
+  light background and near-invisible text in dark mode.
+- **Custom dropdown / menu / combobox / popover panels** must use `var(--bg-card)` +
+  `border: 1px solid var(--border)` for the panel surface, with `var(--surface-subtle)` (or
+  the appropriate `--tint-*`) for hover/active rows and `var(--text-primary)`/`--text-secondary`
+  for option text — **never** a hardcoded light hex (`#fff`, `#f8fafc`, `#eff6ff`, etc.).
+- This is the **suite-wide standard** — **ddivault** and **spanvault** get the same treatment.
+
 **Neutral palette (suite slate ramp):** LogVault's neutral tokens — `--text-primary/-secondary/-muted`,
 `--border`, `--border-light`, `--bg-primary`, `--bg-card` (light + dark) — are aligned to the
 suite **slate** ramp, matching spanvault/ddivault/netvault (page bg `#f4f6f9` light / `#0d1220`

@@ -9,6 +9,7 @@
 }
 
 :root {
+  color-scheme: light;
   --primary:        #C8102E;
   --primary-dark:   #a00d24;
   --primary-light:  #fef2f4;
@@ -68,6 +69,7 @@
 }
 
 [data-theme="dark"] {
+  color-scheme: dark;
   --bg-primary:     #0d1220;
   --bg-card:        #1a2235;
   --border:         #2d3a52;
@@ -300,6 +302,17 @@ tbody tr:hover td { background: var(--bg-primary); }
 .input:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(200,16,46,0.1);
+}
+
+/* Native select/option base — keep styled selects and their option popups
+   theme-aware (belt-and-suspenders alongside color-scheme above). */
+select {
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+}
+option {
+  background-color: var(--bg-card);
+  color: var(--text-primary);
 }
 
 /* ── Sidebar active indicator ──────────────────────────────── */
