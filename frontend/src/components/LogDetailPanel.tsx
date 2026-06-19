@@ -20,10 +20,10 @@ interface LogRow {
 }
 
 function riskBadge(score: number): { label: string; color: string; bg: string } {
-  if (score >= 81) return { label: 'Critical Risk', color: '#dc2626', bg: '#fef2f2' };
-  if (score >= 61) return { label: 'High Risk',     color: '#ea580c', bg: '#fff7ed' };
-  if (score >= 31) return { label: 'Medium Risk',   color: '#ca8a04', bg: '#fefce8' };
-  return { label: 'Low Risk', color: '#16a34a', bg: '#f0fdf4' };
+  if (score >= 81) return { label: 'Critical Risk', color: 'var(--tint-danger-fg)',  bg: 'var(--tint-danger)' };
+  if (score >= 61) return { label: 'High Risk',     color: 'var(--tint-warn-fg)',    bg: 'var(--tint-warn)' };
+  if (score >= 31) return { label: 'Medium Risk',   color: 'var(--tint-warn-fg)',    bg: 'var(--tint-warn)' };
+  return { label: 'Low Risk', color: 'var(--tint-success-fg)', bg: 'var(--tint-success)' };
 }
 
 interface Props {
@@ -35,14 +35,14 @@ interface Props {
 }
 
 const SEV_COLORS: Record<string, { color: string; bg: string }> = {
-  emergency: { color: '#dc2626', bg: '#fef2f2' },
-  alert:     { color: '#dc2626', bg: '#fef2f2' },
-  critical:  { color: '#dc2626', bg: '#fef2f2' },
-  error:     { color: '#ea580c', bg: '#fff7ed' },
-  warning:   { color: '#ca8a04', bg: '#fefce8' },
-  notice:    { color: '#2563eb', bg: '#eff6ff' },
-  info:      { color: '#16a34a', bg: '#f0fdf4' },
-  debug:     { color: '#9ca3af', bg: '#f9fafb' },
+  emergency: { color: 'var(--tint-danger-fg)',  bg: 'var(--tint-danger)' },
+  alert:     { color: 'var(--tint-danger-fg)',  bg: 'var(--tint-danger)' },
+  critical:  { color: 'var(--tint-danger-fg)',  bg: 'var(--tint-danger)' },
+  error:     { color: 'var(--tint-warn-fg)',    bg: 'var(--tint-warn)' },
+  warning:   { color: 'var(--tint-warn-fg)',    bg: 'var(--tint-warn)' },
+  notice:    { color: 'var(--tint-info-fg)',    bg: 'var(--tint-info)' },
+  info:      { color: 'var(--tint-success-fg)', bg: 'var(--tint-success)' },
+  debug:     { color: 'var(--text-muted)',      bg: 'var(--surface-subtle)' },
 };
 
 const VENDOR_COLORS: Record<string, string> = {
@@ -104,7 +104,7 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
 
   if (!log) return null;
 
-  const sevStyle  = SEV_COLORS[log.severity_label] || { color: '#9ca3af', bg: '#f9fafb' };
+  const sevStyle  = SEV_COLORS[log.severity_label] || { color: 'var(--text-muted)', bg: 'var(--surface-subtle)' };
   const risk      = riskBadge(log.risk_score || 0);
   const cleanIP   = log.source_ip?.replace('/32', '');
   const sdEntries = log.structured_data ? Object.entries(log.structured_data).filter(([, v]) => v !== null && v !== '') : [];
@@ -261,7 +261,7 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {related.map((r, i) => {
-                  const rs = SEV_COLORS[r.severity_label] || { color: '#9ca3af', bg: '#f9fafb' };
+                  const rs = SEV_COLORS[r.severity_label] || { color: 'var(--text-muted)', bg: 'var(--surface-subtle)' };
                   return (
                     <div key={i} style={{ padding: '8px 12px', background: 'var(--bg-primary)',
                       border: '1px solid var(--border)', borderRadius: 8 }}>

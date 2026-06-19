@@ -532,6 +532,30 @@ not change per theme, so they live in `:root` only):
 - This is the **NocVault SUITE-WIDE standard**: the same scale and `--font-mono` token are
   used in **spanvault, ddivault, and netvault**. Keep them in sync.
 
+### Adaptive surface & status-tint tokens (suite standard)
+
+`globals.css` defines a shared set of **adaptive tint tokens** in both `:root` and
+`[data-theme="dark"]`:
+
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `--surface-subtle` | `#f8fafc` | `rgba(255,255,255,0.04)` | neutral near-white tiles/rows/headers/dropdowns |
+| `--tint-info` / `--tint-info-fg` | `#eff6ff` / `#1d4ed8` | `rgba(59,130,246,0.13)` / `#93c5fd` | blue info chips/banners |
+| `--tint-success` / `--tint-success-fg` | `#f0fdf4` / `#15803d` | `rgba(34,197,94,0.13)` / `#86efac` | green success chips/tiles |
+| `--tint-warn` / `--tint-warn-fg` | `#fffbeb` / `#b45309` | `rgba(217,119,6,0.15)` / `#fcd34d` | amber/orange warn chips/banners |
+| `--tint-danger` / `--tint-danger-fg` | `#fef2f2` / `#b91c1c` | `rgba(220,38,38,0.13)` / `#fca5a5` | red danger chips/banners/rows |
+
+**Rule:** any tinted or neutral **surface that sits behind text** (tiles, table
+rows/headers, badge/chip backgrounds, banners, dropdowns) MUST use these tokens — never a
+hardcoded light hex like `#fef2f2`/`#f0fdf4`/`#f8f9fb`. The light hex does not adapt, so in
+dark mode near-white text becomes unreadable and light chips float on dark cards. For a
+**self-contained badge pair** (a hardcoded bg AND a matching dark text defined together, e.g.
+`{ bg:'#fef2f2', color:'#dc2626' }`) swap **both** — bg→`--tint-*`, text→`--tint-*-fg`. For a
+surface holding already-tokenized text, just swap the bg. Chart series/dot/line colors and the
+purple severity palettes (no purple token) are left as-is — those are data signals.
+`--primary-light` also has a dark override (`rgba(200,16,46,0.18)`).
+This is the **suite-wide standard** — the same tokens exist in **ddivault** and **spanvault**.
+
 **Neutral palette (suite slate ramp):** LogVault's neutral tokens — `--text-primary/-secondary/-muted`,
 `--border`, `--border-light`, `--bg-primary`, `--bg-card` (light + dark) — are aligned to the
 suite **slate** ramp, matching spanvault/ddivault/netvault (page bg `#f4f6f9` light / `#0d1220`

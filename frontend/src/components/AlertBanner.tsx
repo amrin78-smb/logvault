@@ -45,9 +45,9 @@ export default function AlertBanner() {
   const isBrute = /brute force/i.test(latest.rule_name);
   const isIPS   = /ips/i.test(latest.rule_name);
   const emoji   = isLoop ? '🔁' : isBrute ? '🚨' : isIPS ? '🛡️' : '⚠️';
-  const bg      = isLoop || isBrute ? '#fef2f2' : '#fefce8';
-  const border  = isLoop || isBrute ? '#fecaca' : '#fde68a';
-  const color   = isLoop || isBrute ? '#dc2626' : '#ca8a04';
+  const bg      = isLoop || isBrute ? 'var(--tint-danger)' : 'var(--tint-warn)';
+  const border  = isLoop || isBrute ? 'var(--tint-danger)' : 'var(--tint-warn)';
+  const color   = isLoop || isBrute ? 'var(--tint-danger-fg)' : 'var(--tint-warn-fg)';
 
   return (
     <div style={{ background: bg, border: `1px solid ${border}`, borderBottom: `2px solid ${border}`,

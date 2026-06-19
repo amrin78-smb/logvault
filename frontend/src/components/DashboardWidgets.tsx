@@ -193,9 +193,9 @@ export function VPNStatus({ hours, onNavigate }: { hours: number; onNavigate?: (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 12 }}>
             {[
-              { label: 'Total',      value: parseInt(data.total      || 0), color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe', tip: 'Total VPN events' },
-              { label: 'Failures',   value: parseInt(data.failures   || 0), color: '#dc2626', bg: '#fef2f2', border: '#fecaca', tip: 'Failed VPN logins' },
-              { label: 'SSL Alerts', value: parseInt(data.ssl_alerts || 0), color: '#ea580c', bg: '#fff7ed', border: '#fed7aa', tip: 'SSL handshake errors' },
+              { label: 'Total',      value: parseInt(data.total      || 0), color: 'var(--tint-info-fg)',    bg: 'var(--tint-info)',    border: 'var(--tint-info)',    tip: 'Total VPN events' },
+              { label: 'Failures',   value: parseInt(data.failures   || 0), color: 'var(--tint-danger-fg)',  bg: 'var(--tint-danger)',  border: 'var(--tint-danger)',  tip: 'Failed VPN logins' },
+              { label: 'SSL Alerts', value: parseInt(data.ssl_alerts || 0), color: 'var(--tint-warn-fg)',    bg: 'var(--tint-warn)',    border: 'var(--tint-warn)',    tip: 'SSL handshake errors' },
             ].map(s => (
               <div key={s.label} title={s.tip}
                 style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: 6, padding: '8px', textAlign: 'center' }}>
@@ -213,8 +213,8 @@ export function VPNStatus({ hours, onNavigate }: { hours: number; onNavigate?: (
               background: successRate >= 80 ? '#16a34a' : '#dc2626', transition: 'width 0.5s' }} />
           </div>
           {parseInt(data.ssl_alerts || 0) > 10 && (
-            <div style={{ marginTop: 10, padding: '6px 10px', background: '#fff7ed', border: '1px solid #fed7aa',
-              borderRadius: 6, fontSize: 'var(--text-xs)', color: '#92400e' }}>
+            <div style={{ marginTop: 10, padding: '6px 10px', background: 'var(--tint-warn)', border: '1px solid var(--tint-warn)',
+              borderRadius: 6, fontSize: 'var(--text-xs)', color: 'var(--tint-warn-fg)' }}>
               ⚠️ High SSL alerts — possible cert/protocol issue
             </div>
           )}
@@ -252,10 +252,10 @@ export function ActiveAlertsSummary({ onNavigate }: { onNavigate: () => void }) 
         <>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
             <div title={`${data.unacknowledged} alerts need attention`}
-              style={{ background: data.unacknowledged > 0 ? '#fef2f2' : '#f0fdf4',
-                border: `1px solid ${data.unacknowledged > 0 ? '#fecaca' : '#bbf7d0'}`,
+              style={{ background: data.unacknowledged > 0 ? 'var(--tint-danger)' : 'var(--tint-success)',
+                border: `1px solid ${data.unacknowledged > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'}`,
                 borderRadius: 6, padding: '10px 8px', textAlign: 'center' }}>
-              <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: data.unacknowledged > 0 ? '#dc2626' : '#16a34a' }}>
+              <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: data.unacknowledged > 0 ? 'var(--tint-danger-fg)' : 'var(--tint-success-fg)' }}>
                 {data.unacknowledged}
               </div>
               <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 600 }}>UNACKED</div>

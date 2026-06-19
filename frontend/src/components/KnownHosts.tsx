@@ -32,10 +32,10 @@ const VENDOR_COLORS: Record<string, string> = {
 };
 
 const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
-  'Active':    { bg: '#dcfce7', color: '#16a34a' },
-  'Decommed':  { bg: '#f3f4f6', color: '#6b7280' },
-  'Spare':     { bg: '#fef3c7', color: '#92400e' },
-  'Faulty':    { bg: '#ffedd5', color: '#9a3412' },
+  'Active':    { bg: 'var(--tint-success)', color: 'var(--tint-success-fg)' },
+  'Decommed':  { bg: 'var(--surface-subtle)', color: 'var(--text-muted)' },
+  'Spare':     { bg: 'var(--tint-warn)', color: 'var(--tint-warn-fg)' },
+  'Faulty':    { bg: 'var(--tint-warn)', color: 'var(--tint-warn-fg)' },
 };
 
 export default function KnownHosts() {
@@ -116,8 +116,8 @@ export default function KnownHosts() {
           Register device IPs for friendly name display in logs
         </div>
         {error && (
-          <div style={{ padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca',
-            borderRadius: 6, color: '#dc2626', fontSize: 'var(--text-sm)', marginBottom: 12 }}>{error}</div>
+          <div style={{ padding: '8px 12px', background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)',
+            borderRadius: 6, color: 'var(--tint-danger-fg)', fontSize: 'var(--text-sm)', marginBottom: 12 }}>{error}</div>
         )}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
           <div>
@@ -180,9 +180,9 @@ export default function KnownHosts() {
           <div style={{ display: 'flex', gap: 8 }}>
             {/* Sync from NetVault button */}
             <button onClick={triggerSync} disabled={syncing}
-              style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid #bfdbfe',
+              style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--tint-info)',
                 cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600,
-                background: syncing ? '#e0f2fe' : '#eff6ff', color: '#2563eb',
+                background: 'var(--tint-info)', color: 'var(--tint-info-fg)',
                 display: 'flex', alignItems: 'center', gap: 6 }}>
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                 <path d="M10 6A4 4 0 1 1 6 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
@@ -213,7 +213,7 @@ export default function KnownHosts() {
             </thead>
             <tbody>
               {displayed.map((h, i) => {
-                const statusStyle = STATUS_STYLE[h.device_status] || { bg: '#f3f4f6', color: '#6b7280' };
+                const statusStyle = STATUS_STYLE[h.device_status] || { bg: 'var(--surface-subtle)', color: 'var(--text-muted)' };
                 return (
                   <tr key={h.ip_address} style={{ borderBottom: '1px solid var(--border-light)',
                     background: i % 2 === 0 ? 'transparent' : 'var(--bg-primary)' }}
@@ -251,12 +251,12 @@ export default function KnownHosts() {
                     <td style={{ padding: '10px 12px' }}>
                       {h.synced_from_nv ? (
                         <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)',
-                          background: '#eff6ff', color: '#2563eb', fontWeight: 500 }}>
+                          background: 'var(--tint-info)', color: 'var(--tint-info-fg)', fontWeight: 500 }}>
                           NetVault
                         </span>
                       ) : (
                         <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)',
-                          background: '#f3f4f6', color: '#6b7280' }}>
+                          background: 'var(--surface-subtle)', color: 'var(--text-muted)' }}>
                           Manual
                         </span>
                       )}

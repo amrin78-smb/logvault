@@ -97,11 +97,11 @@ export default function SeverityChart({ summary, onSeverityClick, compact }: {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 6, flexShrink: 0 }}>
             {data.map(d => (
               <div key={d.name} onClick={() => handleClick(d)}
-                style={{ display: 'flex', alignItems: 'center', gap: 3, background: '#f8f9fb',
+                style={{ display: 'flex', alignItems: 'center', gap: 3, background: 'var(--surface-subtle)',
                   border: '1px solid var(--border)', borderRadius: 20, padding: '2px 6px',
                   cursor: onSeverityClick ? 'pointer' : 'default' }}
-                onMouseEnter={e => { if (onSeverityClick) (e.currentTarget as HTMLElement).style.background = '#eff6ff'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#f8f9fb'; }}>
+                onMouseEnter={e => { if (onSeverityClick) (e.currentTarget as HTMLElement).style.background = 'var(--tint-info)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'var(--surface-subtle)'; }}>
                 <div style={{ width: 5, height: 5, borderRadius: 2, background: d.color }} />
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{d.name}</span>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 700 }}>{d.value}</span>

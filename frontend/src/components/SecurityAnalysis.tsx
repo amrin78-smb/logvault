@@ -10,13 +10,13 @@ const MONO = { fontFamily: 'var(--font-mono)' };
 
 function SevBadge({ label }: { label: string }) {
   const s: Record<string, { bg: string; color: string; border: string }> = {
-    emergency: { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
-    alert:     { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
-    critical:  { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
-    error:     { bg: '#fff7ed', color: '#ea580c', border: '#fed7aa' },
-    warning:   { bg: '#fefce8', color: '#ca8a04', border: '#fde68a' },
-    notice:    { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
-    info:      { bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
+    emergency: { bg: 'var(--tint-danger)',  color: 'var(--tint-danger-fg)',  border: 'var(--tint-danger)' },
+    alert:     { bg: 'var(--tint-danger)',  color: 'var(--tint-danger-fg)',  border: 'var(--tint-danger)' },
+    critical:  { bg: 'var(--tint-danger)',  color: 'var(--tint-danger-fg)',  border: 'var(--tint-danger)' },
+    error:     { bg: 'var(--tint-warn)',    color: 'var(--tint-warn-fg)',    border: 'var(--tint-warn)' },
+    warning:   { bg: 'var(--tint-warn)',    color: 'var(--tint-warn-fg)',    border: 'var(--tint-warn)' },
+    notice:    { bg: 'var(--tint-info)',    color: 'var(--tint-info-fg)',    border: 'var(--tint-info)' },
+    info:      { bg: 'var(--tint-success)', color: 'var(--tint-success-fg)', border: 'var(--tint-success)' },
   };
   const st = s[label] || s.info;
   return (
@@ -30,9 +30,9 @@ function SevBadge({ label }: { label: string }) {
 
 function RiskBadge({ count, thresholds }: { count: number; thresholds: [number, number] }) {
   const [warn, danger] = thresholds;
-  let bg = '#f0fdf4'; let color = '#16a34a'; let label = 'Low';
-  if (count >= danger) { bg = '#fef2f2'; color = '#dc2626'; label = 'High'; }
-  else if (count >= warn) { bg = '#fefce8'; color = '#ca8a04'; label = 'Med'; }
+  let bg = 'var(--tint-success)'; let color = 'var(--tint-success-fg)'; let label = 'Low';
+  if (count >= danger) { bg = 'var(--tint-danger)'; color = 'var(--tint-danger-fg)'; label = 'High'; }
+  else if (count >= warn) { bg = 'var(--tint-warn)'; color = 'var(--tint-warn-fg)'; label = 'Med'; }
   return (
     <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)', fontWeight: 700,
       background: bg, color }}>
@@ -137,7 +137,7 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
           </button>
         ))}
         <button onClick={fetchAll} style={{ marginLeft: 'auto', padding: '6px 12px', borderRadius: 6,
-          border: '1px solid var(--border)', cursor: 'pointer', fontSize: 'var(--text-xs)', background: '#f8f9fb', color: 'var(--text-muted)' }}>
+          border: '1px solid var(--border)', cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--surface-subtle)', color: 'var(--text-muted)' }}>
           ↻ Refresh
         </button>
       </div>
@@ -162,12 +162,12 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
           {activeSection === 'overview' && summary && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 16 }}>
-                <StatCard value={summary.auth_failures}      label="Auth Failures"       color={summary.auth_failures > 0 ? '#dc2626' : '#16a34a'}  bg={summary.auth_failures > 0 ? '#fef2f2' : '#f0fdf4'} border={summary.auth_failures > 0 ? '#fecaca' : '#bbf7d0'} warn />
-                <StatCard value={summary.brute_force_success} label="Brute Force Success" color={summary.brute_force_success > 0 ? '#7c3aed' : '#16a34a'} bg={summary.brute_force_success > 0 ? '#f5f3ff' : '#f0fdf4'} border={summary.brute_force_success > 0 ? '#ddd6fe' : '#bbf7d0'} warn />
-                <StatCard value={summary.firewall_denies}    label="Firewall Denies"     color='#ea580c' bg='#fff7ed' border='#fed7aa' />
-                <StatCard value={summary.vpn_events}         label="VPN Events"          color='#2563eb' bg='#eff6ff' border='#bfdbfe' />
-                <StatCard value={summary.ips_events}         label="IPS / Threat Events" color={summary.ips_events > 0 ? '#dc2626' : '#16a34a'} bg={summary.ips_events > 0 ? '#fef2f2' : '#f0fdf4'} border={summary.ips_events > 0 ? '#fecaca' : '#bbf7d0'} warn />
-                <StatCard value={summary.after_hours_events} label="After-Hours Activity" color={summary.after_hours_events > 0 ? '#ca8a04' : '#16a34a'} bg={summary.after_hours_events > 0 ? '#fefce8' : '#f0fdf4'} border={summary.after_hours_events > 0 ? '#fde68a' : '#bbf7d0'} warn />
+                <StatCard value={summary.auth_failures}      label="Auth Failures"       color={summary.auth_failures > 0 ? 'var(--tint-danger-fg)' : 'var(--tint-success-fg)'}  bg={summary.auth_failures > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'} border={summary.auth_failures > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'} warn />
+                <StatCard value={summary.brute_force_success} label="Brute Force Success" color={summary.brute_force_success > 0 ? '#7c3aed' : 'var(--tint-success-fg)'} bg={summary.brute_force_success > 0 ? '#f5f3ff' : 'var(--tint-success)'} border={summary.brute_force_success > 0 ? '#ddd6fe' : 'var(--tint-success)'} warn />
+                <StatCard value={summary.firewall_denies}    label="Firewall Denies"     color='var(--tint-warn-fg)' bg='var(--tint-warn)' border='var(--tint-warn)' />
+                <StatCard value={summary.vpn_events}         label="VPN Events"          color='var(--tint-info-fg)' bg='var(--tint-info)' border='var(--tint-info)' />
+                <StatCard value={summary.ips_events}         label="IPS / Threat Events" color={summary.ips_events > 0 ? 'var(--tint-danger-fg)' : 'var(--tint-success-fg)'} bg={summary.ips_events > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'} border={summary.ips_events > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'} warn />
+                <StatCard value={summary.after_hours_events} label="After-Hours Activity" color={summary.after_hours_events > 0 ? 'var(--tint-warn-fg)' : 'var(--tint-success-fg)'} bg={summary.after_hours_events > 0 ? 'var(--tint-warn)' : 'var(--tint-success)'} border={summary.after_hours_events > 0 ? 'var(--tint-warn)' : 'var(--tint-success)'} warn />
               </div>
 
               {/* Critical banners */}
@@ -190,36 +190,36 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
               )}
 
               {summary.ips_events > 0 && (
-                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
+                <div style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 8,
                   padding: '14px 20px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontSize: 'var(--text-xl)' }}>🛡️</span>
                   <div>
-                    <div style={{ fontSize: 'var(--text-md)', fontWeight: 700, color: '#dc2626' }}>IPS Threats Detected</div>
-                    <div style={{ fontSize: 'var(--text-sm)', color: '#991b1b', marginTop: 2 }}>
+                    <div style={{ fontSize: 'var(--text-md)', fontWeight: 700, color: 'var(--tint-danger-fg)' }}>IPS Threats Detected</div>
+                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--tint-danger-fg)', marginTop: 2 }}>
                       {summary.ips_events} IPS/threat event(s) triggered. Review threat signatures and source IPs.
                     </div>
                   </div>
                   <button onClick={() => setActiveSection('ips')}
-                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 6, border: '1px solid #fecaca',
-                      cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: '#fff', color: '#dc2626' }}>
+                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 6, border: '1px solid var(--tint-danger)',
+                      cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--bg-card)', color: 'var(--tint-danger-fg)' }}>
                     Review →
                   </button>
                 </div>
               )}
 
               {summary.after_hours_events > 0 && (
-                <div style={{ background: '#fefce8', border: '1px solid #fde68a', borderRadius: 8,
+                <div style={{ background: 'var(--tint-warn)', border: '1px solid var(--tint-warn)', borderRadius: 8,
                   padding: '14px 20px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontSize: 'var(--text-xl)' }}>🌙</span>
                   <div>
-                    <div style={{ fontSize: 'var(--text-md)', fontWeight: 700, color: '#ca8a04' }}>After-Hours Activity Detected</div>
-                    <div style={{ fontSize: 'var(--text-sm)', color: '#92400e', marginTop: 2 }}>
+                    <div style={{ fontSize: 'var(--text-md)', fontWeight: 700, color: 'var(--tint-warn-fg)' }}>After-Hours Activity Detected</div>
+                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--tint-warn-fg)', marginTop: 2 }}>
                       {summary.after_hours_events} security event(s) occurred outside business hours (7AM–7PM).
                     </div>
                   </div>
                   <button onClick={() => setActiveSection('afterhours')}
-                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 6, border: '1px solid #fde68a',
-                      cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: '#fff', color: '#ca8a04' }}>
+                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 6, border: '1px solid var(--tint-warn)',
+                      cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--bg-card)', color: 'var(--tint-warn-fg)' }}>
                     Review →
                   </button>
                 </div>
@@ -244,7 +244,7 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
                           <td style={{ ...TD, ...MONO, color: '#dc2626', fontWeight: 600 }}>{r.source_ip}</td>
                           <td style={{ ...TD, ...MONO, color: 'var(--text-primary)' }}>{r.source_host || '—'}</td>
                           <td style={{ ...TD, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{r.vendor}</td>
-                          <td style={TD}><span style={{ fontWeight: 700, color: '#dc2626', background: '#fef2f2', padding: '2px 8px', borderRadius: 10 }}>{r.failure_count}</span></td>
+                          <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 10 }}>{r.failure_count}</span></td>
                           <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.first_attempt).toLocaleTimeString()}</td>
                           <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.last_attempt).toLocaleTimeString()}</td>
                           <td style={TD}><RiskBadge count={parseInt(r.failure_count)} thresholds={[5, 20]} /></td>
@@ -277,7 +277,7 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
                         <td style={{ ...TD, ...MONO, color: '#dc2626', fontWeight: 600 }}>{r.source_ip}</td>
                         <td style={{ ...TD, ...MONO, color: 'var(--text-primary)' }}>{r.source_host || '—'}</td>
                         <td style={{ ...TD, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{r.vendor}</td>
-                        <td style={TD}><span style={{ fontWeight: 700, color: '#dc2626', background: '#fef2f2', padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-sm)' }}>{r.failure_count}</span></td>
+                        <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-sm)' }}>{r.failure_count}</span></td>
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.first_attempt).toLocaleString()}</td>
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.last_attempt).toLocaleString()}</td>
                         <td style={TD}><RiskBadge count={parseInt(r.failure_count)} thresholds={[5, 20]} /></td>
@@ -312,7 +312,7 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
                         background: r.success_after_failure ? '#fdf4ff' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
                         <td style={{ ...TD, ...MONO, color: r.success_after_failure ? '#7c3aed' : '#dc2626', fontWeight: 600 }}>{r.source_ip}</td>
                         <td style={{ ...TD, ...MONO, color: 'var(--text-primary)' }}>{r.host}</td>
-                        <td style={TD}><span style={{ fontWeight: 700, color: '#dc2626', background: '#fef2f2', padding: '2px 8px', borderRadius: 10 }}>{r.fail_count}</span></td>
+                        <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 10 }}>{r.fail_count}</span></td>
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.first_fail).toLocaleString()}</td>
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.last_fail).toLocaleString()}</td>
                         <td style={TD}>
@@ -350,7 +350,7 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
                         {fwDenies.by_source?.map((r: any, i: number) => (
                           <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
                             <td style={{ ...TD, ...MONO, color: '#dc2626', fontWeight: 600 }}>{r.src_ip}</td>
-                            <td style={TD}><span style={{ fontWeight: 700, color: '#ea580c', background: '#fff7ed', padding: '2px 8px', borderRadius: 10 }}>{r.deny_count}</span></td>
+                            <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-warn-fg)', background: 'var(--tint-warn)', padding: '2px 8px', borderRadius: 10 }}>{r.deny_count}</span></td>
                             <td style={{ ...TD, color: 'var(--text-secondary)', fontSize: 'var(--text-xs)' }}>{Array.isArray(r.destinations) ? r.destinations.slice(0, 3).join(', ') : '—'}</td>
                           </tr>
                         ))}
@@ -374,7 +374,7 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
                         {fwDenies.by_destination?.map((r: any, i: number) => (
                           <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
                             <td style={{ ...TD, ...MONO, color: '#2563eb', fontWeight: 600 }}>{r.dst_ip}</td>
-                            <td style={TD}><span style={{ fontWeight: 700, color: '#ea580c', background: '#fff7ed', padding: '2px 8px', borderRadius: 10 }}>{r.deny_count}</span></td>
+                            <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-warn-fg)', background: 'var(--tint-warn)', padding: '2px 8px', borderRadius: 10 }}>{r.deny_count}</span></td>
                             <td style={{ ...TD, color: 'var(--text-secondary)', fontSize: 'var(--text-xs)' }}>{Array.isArray(r.sources) ? r.sources.slice(0, 3).join(', ') : '—'}</td>
                           </tr>
                         ))}
@@ -392,7 +392,7 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
                     const maxCount = fwDenies.by_service?.[0]?.deny_count || 1;
                     const pct = Math.round((r.deny_count / maxCount) * 100);
                     return (
-                      <div key={i} style={{ background: '#f8f9fb', border: '1px solid var(--border)', borderRadius: 8,
+                      <div key={i} style={{ background: 'var(--surface-subtle)', border: '1px solid var(--border)', borderRadius: 8,
                         padding: '10px 14px', minWidth: 120 }}>
                         <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>{r.service}</div>
                         <div style={{ fontSize: 'var(--text-xs)', color: '#ea580c', fontWeight: 700, marginBottom: 6 }}>{r.deny_count} denies</div>
@@ -425,14 +425,14 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
                   <tbody>
                     {vpnEvents.map((r, i) => (
                       <tr key={i} style={{ borderBottom: '1px solid var(--border-light)',
-                        background: r.event_type === 'failure' ? '#fff8f8' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
+                        background: r.event_type === 'failure' ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(r.received_at).toLocaleTimeString()}</td>
                         <td style={{ ...TD, ...MONO, color: 'var(--text-primary)', fontWeight: 500 }}>{r.source_host || r.source_ip}</td>
                         <td style={{ ...TD, ...MONO, color: '#2563eb', fontSize: 'var(--text-xs)' }}>{r.vpn_src_ip || '—'}</td>
                         <td style={TD}>
                           <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)', fontWeight: 600,
-                            background: r.event_type === 'failure' ? '#fef2f2' : r.event_type === 'success' ? '#f0fdf4' : '#eff6ff',
-                            color: r.event_type === 'failure' ? '#dc2626' : r.event_type === 'success' ? '#16a34a' : '#2563eb' }}>
+                            background: r.event_type === 'failure' ? 'var(--tint-danger)' : r.event_type === 'success' ? 'var(--tint-success)' : 'var(--tint-info)',
+                            color: r.event_type === 'failure' ? 'var(--tint-danger-fg)' : r.event_type === 'success' ? 'var(--tint-success-fg)' : 'var(--tint-info-fg)' }}>
                             {r.event_type}
                           </span>
                         </td>
@@ -459,14 +459,14 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
                       const max = ipsEvents.by_threat[0]?.hit_count || 1;
                       const pct = Math.round((r.hit_count / max) * 100);
                       return (
-                        <div key={i} style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', minWidth: 150 }}>
-                          <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: '#991b1b', marginBottom: 2, wordBreak: 'break-word' }}>{r.threat}</div>
+                        <div key={i} style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 8, padding: '10px 14px', minWidth: 150 }}>
+                          <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--tint-danger-fg)', marginBottom: 2, wordBreak: 'break-word' }}>{r.threat}</div>
                           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 4, textTransform: 'capitalize' }}>{r.subtype}</div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                            <span style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: '#dc2626' }}>{r.hit_count} hits</span>
+                            <span style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--tint-danger-fg)' }}>{r.hit_count} hits</span>
                             <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{r.unique_sources} src</span>
                           </div>
-                          <div style={{ height: 3, background: '#fecaca', borderRadius: 2 }}>
+                          <div style={{ height: 3, background: 'var(--border-light)', borderRadius: 2 }}>
                             <div style={{ height: '100%', width: `${pct}%`, background: '#dc2626', borderRadius: 2 }} />
                           </div>
                         </div>
@@ -487,7 +487,7 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
                     </tr></thead>
                     <tbody>
                       {ipsEvents.events?.map((r: any, i: number) => (
-                        <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? '#fff8f8' : 'var(--bg-card)' }}>
+                        <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? 'var(--tint-danger)' : 'var(--bg-card)' }}>
                           <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(r.received_at).toLocaleTimeString()}</td>
                           <td style={{ ...TD, ...MONO, color: 'var(--text-primary)', fontWeight: 500 }}>{r.source_host || r.source_ip}</td>
                           <td style={{ ...TD, ...MONO, color: '#dc2626', fontSize: 'var(--text-xs)' }}>{r.src_ip || '—'}</td>
@@ -522,14 +522,14 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
                   </tr></thead>
                   <tbody>
                     {afterHours.map((r, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? '#fffef5' : 'var(--bg-card)' }}>
+                      <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? 'var(--tint-warn)' : 'var(--bg-card)' }}>
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(r.received_at).toLocaleString()}</td>
                         <td style={{ ...TD, fontWeight: 700, color: '#ca8a04' }}>{String(r.hour_of_day).padStart(2,'0')}:xx</td>
                         <td style={{ ...TD, ...MONO, color: 'var(--text-primary)', fontWeight: 500 }}>{r.source_host || r.source_ip}</td>
                         <td style={{ ...TD, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{r.vendor}</td>
                         <td style={TD}>
                           <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)', fontWeight: 600,
-                            background: '#fefce8', color: '#ca8a04', border: '1px solid #fde68a' }}>
+                            background: 'var(--tint-warn)', color: 'var(--tint-warn-fg)', border: '1px solid var(--tint-warn)' }}>
                             {r.event_type}
                           </span>
                         </td>
@@ -548,9 +548,9 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
             <div>
               {wirelessAuth.summary && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 16 }}>
-                  <StatCard value={parseInt(wirelessAuth.summary.failures  || 0)} label="802.1X Failures"  color='#dc2626' bg='#fef2f2' border='#fecaca' warn />
-                  <StatCard value={parseInt(wirelessAuth.summary.successes || 0)} label="Successful Auths" color='#16a34a' bg='#f0fdf4' border='#bbf7d0' />
-                  <StatCard value={parseInt(wirelessAuth.summary.devices   || 0)} label="Unique Devices"   color='#2563eb' bg='#eff6ff' border='#bfdbfe' />
+                  <StatCard value={parseInt(wirelessAuth.summary.failures  || 0)} label="802.1X Failures"  color='var(--tint-danger-fg)'  bg='var(--tint-danger)'  border='var(--tint-danger)' warn />
+                  <StatCard value={parseInt(wirelessAuth.summary.successes || 0)} label="Successful Auths" color='var(--tint-success-fg)' bg='var(--tint-success)' border='var(--tint-success)' />
+                  <StatCard value={parseInt(wirelessAuth.summary.devices   || 0)} label="Unique Devices"   color='var(--tint-info-fg)'    bg='var(--tint-info)'    border='var(--tint-info)' />
                 </div>
               )}
               <div style={CARD}>

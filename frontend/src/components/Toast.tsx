@@ -24,10 +24,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const ICONS: Record<ToastType, string> = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
   const COLORS: Record<ToastType, { bg: string; border: string; color: string }> = {
-    success: { bg: '#f0fdf4', border: '#bbf7d0', color: '#16a34a' },
-    error:   { bg: '#fef2f2', border: '#fecaca', color: '#dc2626' },
-    warning: { bg: '#fefce8', border: '#fde68a', color: '#ca8a04' },
-    info:    { bg: '#eff6ff', border: '#bfdbfe', color: '#2563eb' },
+    success: { bg: 'var(--tint-success)', border: 'var(--tint-success)', color: 'var(--tint-success-fg)' },
+    error:   { bg: 'var(--tint-danger)',  border: 'var(--tint-danger)',  color: 'var(--tint-danger-fg)' },
+    warning: { bg: 'var(--tint-warn)',    border: 'var(--tint-warn)',    color: 'var(--tint-warn-fg)' },
+    info:    { bg: 'var(--tint-info)',     border: 'var(--tint-info)',     color: 'var(--tint-info-fg)' },
   };
 
   return (

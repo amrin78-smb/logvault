@@ -36,8 +36,8 @@ export default function VendorBreakdown({ hours, onVendorClick, compact }: {
                   <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{pct}%</span>
                 </div>
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                  {crit > 0 && <span style={{ fontSize: 'var(--text-xs)', color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', padding: '1px 4px', borderRadius: 6, fontWeight: 600 }}>{crit}c</span>}
-                  {err  > 0 && <span style={{ fontSize: 'var(--text-xs)', color: '#ea580c', background: '#fff7ed', border: '1px solid #fed7aa', padding: '1px 4px', borderRadius: 6, fontWeight: 600 }}>{err}e</span>}
+                  {crit > 0 && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', padding: '1px 4px', borderRadius: 6, fontWeight: 600 }}>{crit}c</span>}
+                  {err  > 0 && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--tint-warn-fg)', background: 'var(--tint-warn)', border: '1px solid var(--tint-warn)', padding: '1px 4px', borderRadius: 6, fontWeight: 600 }}>{err}e</span>}
                   <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 700 }}>{count.toLocaleString()}</span>
                 </div>
               </div>

@@ -93,36 +93,36 @@ export default function LiveTail() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)' }}>Live Tail</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6,
-          background: connected ? '#f0fdf4' : '#fef2f2',
-          border: `1px solid ${connected ? '#bbf7d0' : '#fecaca'}`,
+          background: connected ? 'var(--tint-success)' : 'var(--tint-danger)',
+          border: `1px solid ${connected ? 'var(--tint-success)' : 'var(--tint-danger)'}`,
           borderRadius: 20, padding: '3px 10px' }}>
           <div style={{ width: 7, height: 7, borderRadius: '50%',
             background: connected ? '#22c55e' : '#ef4444',
             boxShadow: connected && !paused ? '0 0 5px #22c55e' : 'none' }} />
-          <span style={{ fontSize: 'var(--text-xs)', color: connected ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
+          <span style={{ fontSize: 'var(--text-xs)', color: connected ? 'var(--tint-success-fg)' : 'var(--tint-danger-fg)', fontWeight: 600 }}>
             {connected ? (paused ? 'Paused' : 'Live') : 'Disconnected'}
           </span>
         </div>
         <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{count.toLocaleString()} total · {filtered.length.toLocaleString()} shown</span>
         {!autoScroll && (
           <button onClick={() => { setAutoScroll(true); if (containerRef.current) containerRef.current.scrollTop = containerRef.current.scrollHeight; }}
-            style={{ padding: '3px 10px', borderRadius: 4, border: '1px solid #2563eb', cursor: 'pointer', fontSize: 'var(--text-xs)', background: '#eff6ff', color: '#2563eb', fontWeight: 600 }}>
+            style={{ padding: '3px 10px', borderRadius: 4, border: '1px solid var(--tint-info)', cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--tint-info)', color: 'var(--tint-info-fg)', fontWeight: 600 }}>
             ↓ Jump to latest
           </button>
         )}
         <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Filter by host, vendor, message..."
-          style={{ marginLeft: 'auto', background: '#f8f9fb', border: '1px solid var(--border)', borderRadius: 6,
+          style={{ marginLeft: 'auto', background: 'var(--surface-subtle)', border: '1px solid var(--border)', borderRadius: 6,
             padding: '6px 12px', color: 'var(--text-primary)', fontSize: 'var(--text-sm)', outline: 'none', width: 240 }} />
         <button onClick={() => setPaused(p => !p)}
           style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid',
             cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 500,
-            background: paused ? '#eff6ff' : '#f8f9fb',
-            borderColor: paused ? '#2563eb' : 'var(--border)',
-            color: paused ? '#2563eb' : 'var(--text-secondary)' }}>
+            background: paused ? 'var(--tint-info)' : 'var(--surface-subtle)',
+            borderColor: paused ? 'var(--tint-info)' : 'var(--border)',
+            color: paused ? 'var(--tint-info-fg)' : 'var(--text-secondary)' }}>
           {paused ? '▶ Resume' : '⏸ Pause'}
         </button>
         <button onClick={clearLogs}
-          style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer', fontSize: 'var(--text-sm)', background: '#f8f9fb', color: 'var(--text-muted)' }}>
+          style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--surface-subtle)', color: 'var(--text-muted)' }}>
           Clear
         </button>
       </div>

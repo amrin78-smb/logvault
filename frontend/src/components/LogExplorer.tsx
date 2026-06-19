@@ -48,11 +48,11 @@ const CATEGORIES = [
   { label: 'System',    value: 'system',         color: '#6b7280' },
 ];
 const SEVERITIES = [
-  { label: 'Critical',  value: '0,1,2', color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
-  { label: 'Error',     value: '3',     color: '#ea580c', bg: '#fff7ed', border: '#fed7aa' },
-  { label: 'Warning',   value: '4',     color: '#ca8a04', bg: '#fefce8', border: '#fde68a' },
-  { label: 'Notice',    value: '5',     color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' },
-  { label: 'Info',      value: '6',     color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
+  { label: 'Critical',  value: '0,1,2', color: 'var(--tint-danger-fg)',  bg: 'var(--tint-danger)',  border: 'var(--tint-danger)' },
+  { label: 'Error',     value: '3',     color: 'var(--tint-warn-fg)',    bg: 'var(--tint-warn)',    border: 'var(--tint-warn)' },
+  { label: 'Warning',   value: '4',     color: 'var(--tint-warn-fg)',    bg: 'var(--tint-warn)',    border: 'var(--tint-warn)' },
+  { label: 'Notice',    value: '5',     color: 'var(--tint-info-fg)',    bg: 'var(--tint-info)',    border: 'var(--tint-info)' },
+  { label: 'Info',      value: '6',     color: 'var(--tint-success-fg)', bg: 'var(--tint-success)', border: 'var(--tint-success)' },
 ];
 
 interface ActiveFilter { type: 'vendor' | 'severity' | 'category' | 'host' | 'q'; value: string; label: string; }
@@ -342,7 +342,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
       <div style={{ overflowX: 'auto', maxHeight: '60vh', overflowY: 'auto',
         border: '1px solid var(--border)', borderRadius: 8 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
-          <thead style={{ position: 'sticky', top: 0, background: '#f9fafb', zIndex: 1 }}>
+          <thead style={{ position: 'sticky', top: 0, background: 'var(--surface-subtle)', zIndex: 1 }}>
             <tr style={{ borderBottom: '2px solid var(--border)' }}>
               {['Time','Host','Vendor','Severity','Program','Message'].map(h => (
                 <th key={h} style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-muted)',
@@ -355,7 +355,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
             {logs.map((row, i) => (
               <tr key={i} onClick={() => setSelectedLog(row)}
                 style={{ borderBottom: '1px solid var(--border-light)', cursor: 'pointer',
-                  background: selectedLog?.id === row.id ? '#eff6ff' : i % 2 === 0 ? 'transparent' : 'var(--bg-primary)' }}
+                  background: selectedLog?.id === row.id ? 'var(--tint-info)' : i % 2 === 0 ? 'transparent' : 'var(--bg-primary)' }}
                 onMouseEnter={e => { if (selectedLog?.id !== row.id) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
                 onMouseLeave={e => { if (selectedLog?.id !== row.id) (e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? 'transparent' : 'var(--bg-primary)'; }}>
                 <td style={{ padding: '9px 12px', color: 'var(--text-muted)', whiteSpace: 'nowrap',

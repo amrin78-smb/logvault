@@ -2,10 +2,10 @@
 import { useEffect, useState } from 'react';
 
 const SEV_STYLE: Record<string, { bg: string; color: string; border: string }> = {
-  emergency: { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
-  alert:     { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
-  critical:  { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
-  error:     { bg: '#fff7ed', color: '#ea580c', border: '#fed7aa' },
+  emergency: { bg: 'var(--tint-danger)', color: 'var(--tint-danger-fg)', border: 'var(--tint-danger)' },
+  alert:     { bg: 'var(--tint-danger)', color: 'var(--tint-danger-fg)', border: 'var(--tint-danger)' },
+  critical:  { bg: 'var(--tint-danger)', color: 'var(--tint-danger-fg)', border: 'var(--tint-danger)' },
+  error:     { bg: 'var(--tint-warn)',   color: 'var(--tint-warn-fg)',   border: 'var(--tint-warn)' },
 };
 
 const SEV_FILTER: Record<string, string> = {
@@ -46,7 +46,7 @@ export default function RecentCritical({ hours, onRowClick }: {
                     background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)',
                     cursor: onRowClick ? 'pointer' : 'default',
                     transition: 'background 0.1s' }}
-                  onMouseEnter={e => { if (onRowClick) (e.currentTarget as HTMLElement).style.background = '#eff6ff'; }}
+                  onMouseEnter={e => { if (onRowClick) (e.currentTarget as HTMLElement).style.background = 'var(--tint-info)'; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)'; }}>
                   <td style={{ padding: '8px 12px', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}>
                     {new Date(row.received_at).toLocaleTimeString()}

@@ -12,13 +12,13 @@ const MONO  = { fontFamily: 'var(--font-mono)' };
 // ── Severity badge ────────────────────────────────────────────
 function SevBadge({ label }: { label: string }) {
   const s: Record<string, { bg: string; color: string; border: string }> = {
-    emergency: { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
-    alert:     { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
-    critical:  { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
-    error:     { bg: '#fff7ed', color: '#ea580c', border: '#fed7aa' },
-    warning:   { bg: '#fefce8', color: '#ca8a04', border: '#fde68a' },
-    notice:    { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
-    info:      { bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
+    emergency: { bg: 'var(--tint-danger)',  color: 'var(--tint-danger-fg)',  border: 'var(--tint-danger)' },
+    alert:     { bg: 'var(--tint-danger)',  color: 'var(--tint-danger-fg)',  border: 'var(--tint-danger)' },
+    critical:  { bg: 'var(--tint-danger)',  color: 'var(--tint-danger-fg)',  border: 'var(--tint-danger)' },
+    error:     { bg: 'var(--tint-warn)',    color: 'var(--tint-warn-fg)',    border: 'var(--tint-warn)' },
+    warning:   { bg: 'var(--tint-warn)',    color: 'var(--tint-warn-fg)',    border: 'var(--tint-warn)' },
+    notice:    { bg: 'var(--tint-info)',    color: 'var(--tint-info-fg)',    border: 'var(--tint-info)' },
+    info:      { bg: 'var(--tint-success)', color: 'var(--tint-success-fg)', border: 'var(--tint-success)' },
   };
   const style = s[label] || s.info;
   return (
@@ -34,10 +34,10 @@ function SevBadge({ label }: { label: string }) {
 function StatusPill({ value, label, warn = 1, danger = 5, inverse = false }: {
   value: number; label: string; warn?: number; danger?: number; inverse?: boolean;
 }) {
-  let bg = '#f0fdf4'; let color = '#16a34a'; let border = '#bbf7d0';
+  let bg = 'var(--tint-success)'; let color = 'var(--tint-success-fg)'; let border = 'var(--tint-success)';
   if (!inverse) {
-    if (value >= danger) { bg = '#fef2f2'; color = '#dc2626'; border = '#fecaca'; }
-    else if (value >= warn) { bg = '#fefce8'; color = '#ca8a04'; border = '#fde68a'; }
+    if (value >= danger) { bg = 'var(--tint-danger)'; color = 'var(--tint-danger-fg)'; border = 'var(--tint-danger)'; }
+    else if (value >= warn) { bg = 'var(--tint-warn)'; color = 'var(--tint-warn-fg)'; border = 'var(--tint-warn)'; }
   }
   return (
     <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 8,
@@ -58,23 +58,23 @@ function LinkBadge({ state }: { state: string }) {
 // ── Subcategory badge ─────────────────────────────────────────
 function SubcatBadge({ sub }: { sub: string }) {
   const map: Record<string, { color: string; bg: string; label: string }> = {
-    mac_flap:        { color: '#dc2626', bg: '#fef2f2', label: '⚠ MAC Flap' },
-    storm_control:   { color: '#dc2626', bg: '#fef2f2', label: '⚡ Storm' },
+    mac_flap:        { color: 'var(--tint-danger-fg)', bg: 'var(--tint-danger)', label: '⚠ MAC Flap' },
+    storm_control:   { color: 'var(--tint-danger-fg)', bg: 'var(--tint-danger)', label: '⚡ Storm' },
     storm_shutdown:  { color: '#7c3aed', bg: '#f5f3ff', label: '🛑 Shutdown' },
-    topology_change: { color: '#ea580c', bg: '#fff7ed', label: '🔄 Topology' },
-    root_change:     { color: '#ea580c', bg: '#fff7ed', label: '👑 Root Change' },
-    loop_detected:   { color: '#dc2626', bg: '#fef2f2', label: '🔁 Loop' },
-    port_removed:    { color: '#ca8a04', bg: '#fefce8', label: 'Port Removed' },
-    role_change:     { color: '#2563eb', bg: '#eff6ff', label: 'Role Change' },
-    port_blocked:    { color: '#ca8a04', bg: '#fefce8', label: 'Port Blocked' },
+    topology_change: { color: 'var(--tint-warn-fg)', bg: 'var(--tint-warn)', label: '🔄 Topology' },
+    root_change:     { color: 'var(--tint-warn-fg)', bg: 'var(--tint-warn)', label: '👑 Root Change' },
+    loop_detected:   { color: 'var(--tint-danger-fg)', bg: 'var(--tint-danger)', label: '🔁 Loop' },
+    port_removed:    { color: 'var(--tint-warn-fg)', bg: 'var(--tint-warn)', label: 'Port Removed' },
+    role_change:     { color: 'var(--tint-info-fg)', bg: 'var(--tint-info)', label: 'Role Change' },
+    port_blocked:    { color: 'var(--tint-warn-fg)', bg: 'var(--tint-warn)', label: 'Port Blocked' },
     ospf_neighbor:   { color: '#7c3aed', bg: '#f5f3ff', label: 'OSPF' },
     bgp_neighbor:    { color: '#7c3aed', bg: '#f5f3ff', label: 'BGP' },
     eigrp_neighbor:  { color: '#7c3aed', bg: '#f5f3ff', label: 'EIGRP' },
   };
-  const s = map[sub] || { color: '#718096', bg: '#f8f9fb', label: sub };
+  const s = map[sub] || { color: 'var(--text-muted)', bg: 'var(--surface-subtle)', label: sub };
   return (
     <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)', fontWeight: 600,
-      color: s.color, background: s.bg, border: `1px solid ${s.color}33` }}>
+      color: s.color, background: s.bg, border: `1px solid ${s.bg}` }}>
       {s.label}
     </span>
   );
@@ -152,7 +152,7 @@ export default function NetworkHealth({ hours }: { hours: number }) {
           </button>
         ))}
         <button onClick={fetchAll} style={{ marginLeft: 'auto', padding: '6px 12px', borderRadius: 6,
-          border: '1px solid var(--border)', cursor: 'pointer', fontSize: 'var(--text-xs)', background: '#f8f9fb', color: 'var(--text-muted)' }}>
+          border: '1px solid var(--border)', cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--surface-subtle)', color: 'var(--text-muted)' }}>
           ↻ Refresh
         </button>
       </div>
@@ -181,22 +181,22 @@ export default function NetworkHealth({ hours }: { hours: number }) {
 
               {/* Loop/STP warning banner */}
               {(summary.mac_flap_events > 0 || summary.stp_loop_events > 0) && (
-                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
+                <div style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 8,
                   padding: '14px 20px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontSize: 'var(--text-xl)' }}>⚠️</span>
                   <div>
-                    <div style={{ fontSize: 'var(--text-md)', fontWeight: 700, color: '#dc2626' }}>
+                    <div style={{ fontSize: 'var(--text-md)', fontWeight: 700, color: 'var(--tint-danger-fg)' }}>
                       Possible Network Loop Detected
                     </div>
-                    <div style={{ fontSize: 'var(--text-sm)', color: '#991b1b', marginTop: 2 }}>
+                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--tint-danger-fg)', marginTop: 2 }}>
                       {summary.mac_flap_events > 0 && `${summary.mac_flap_events} MAC flapping event(s) detected. `}
                       {summary.stp_loop_events > 0  && `${summary.stp_loop_events} STP/loop event(s) detected. `}
                       Check the STP/Loop and MAC Flapping sections immediately.
                     </div>
                   </div>
                   <button onClick={() => setActiveSection('stp')}
-                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 6, border: '1px solid #fecaca',
-                      cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: '#fff', color: '#dc2626' }}>
+                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 6, border: '1px solid var(--tint-danger)',
+                      cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--bg-card)', color: 'var(--tint-danger-fg)' }}>
                     Investigate →
                   </button>
                 </div>
@@ -204,20 +204,20 @@ export default function NetworkHealth({ hours }: { hours: number }) {
 
               {/* Config changes warning */}
               {summary.config_changes > 0 && (
-                <div style={{ background: '#fefce8', border: '1px solid #fde68a', borderRadius: 8,
+                <div style={{ background: 'var(--tint-warn)', border: '1px solid var(--tint-warn)', borderRadius: 8,
                   padding: '14px 20px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontSize: 'var(--text-xl)' }}>🔧</span>
                   <div>
-                    <div style={{ fontSize: 'var(--text-md)', fontWeight: 700, color: '#ca8a04' }}>
+                    <div style={{ fontSize: 'var(--text-md)', fontWeight: 700, color: 'var(--tint-warn-fg)' }}>
                       {summary.config_changes} Configuration Change(s) in Last {hours}h
                     </div>
-                    <div style={{ fontSize: 'var(--text-sm)', color: '#92400e', marginTop: 2 }}>
+                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--tint-warn-fg)', marginTop: 2 }}>
                       Network device configurations were modified. Review the Config Changes section.
                     </div>
                   </div>
                   <button onClick={() => setActiveSection('config')}
-                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 6, border: '1px solid #fde68a',
-                      cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: '#fff', color: '#ca8a04' }}>
+                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 6, border: '1px solid var(--tint-warn)',
+                      cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--bg-card)', color: 'var(--tint-warn-fg)' }}>
                     Review →
                   </button>
                 </div>
@@ -232,8 +232,8 @@ export default function NetworkHealth({ hours }: { hours: number }) {
                     const mins    = parseFloat(d.minutes_since_last_log);
                     const silent  = mins > 60;
                     const warning = mins > 15 && mins <= 60;
-                    const bg      = silent ? '#fef2f2' : warning ? '#fefce8' : '#f0fdf4';
-                    const border  = silent ? '#fecaca' : warning ? '#fde68a' : '#bbf7d0';
+                    const bg      = silent ? 'var(--tint-danger)' : warning ? 'var(--tint-warn)' : 'var(--tint-success)';
+                    const border  = silent ? 'var(--tint-danger)' : warning ? 'var(--tint-warn)' : 'var(--tint-success)';
                     const dot     = silent ? '#dc2626'  : warning ? '#ca8a04'  : '#16a34a';
                     return (
                       <div key={i} style={{ background: bg, border: `1px solid ${border}`,
@@ -253,12 +253,12 @@ export default function NetworkHealth({ hours }: { hours: number }) {
                         {(parseInt(d.critical_24h) > 0 || parseInt(d.error_24h) > 0) && (
                           <div style={{ marginTop: 6, display: 'flex', gap: 4 }}>
                             {parseInt(d.critical_24h) > 0 && (
-                              <span style={{ fontSize: 'var(--text-xs)', color: '#dc2626', background: '#fef2f2', padding: '1px 5px', borderRadius: 8 }}>
+                              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '1px 5px', borderRadius: 8 }}>
                                 {d.critical_24h} crit
                               </span>
                             )}
                             {parseInt(d.error_24h) > 0 && (
-                              <span style={{ fontSize: 'var(--text-xs)', color: '#ea580c', background: '#fff7ed', padding: '1px 5px', borderRadius: 8 }}>
+                              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--tint-warn-fg)', background: 'var(--tint-warn)', padding: '1px 5px', borderRadius: 8 }}>
                                 {d.error_24h} err
                               </span>
                             )}
@@ -298,7 +298,7 @@ export default function NetworkHealth({ hours }: { hours: number }) {
                     const dot    = silent ? '#dc2626' : warn ? '#ca8a04' : '#16a34a';
                     return (
                       <tr key={i} style={{ borderBottom: '1px solid var(--border-light)',
-                        background: silent ? '#fff8f8' : warn ? '#fffef0' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
+                        background: silent ? 'var(--tint-danger)' : warn ? 'var(--tint-warn)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
                         <td style={TD}>
                           <div style={{ width: 10, height: 10, borderRadius: '50%', background: dot,
                             boxShadow: silent ? 'none' : `0 0 5px ${dot}` }} />
@@ -340,12 +340,12 @@ export default function NetworkHealth({ hours }: { hours: number }) {
                     <tbody>
                       {flaps.map((f, i) => (
                         <tr key={i} style={{ borderBottom: '1px solid var(--border-light)',
-                          background: parseInt(f.event_count) >= 6 ? '#fff8f8' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
+                          background: parseInt(f.event_count) >= 6 ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
                           <td style={{ ...TD, ...MONO, fontWeight: 500, color: 'var(--text-primary)' }}>{f.host}</td>
                           <td style={{ ...TD, ...MONO, color: '#2563eb' }}>{f.interface || '—'}</td>
                           <td style={{ ...TD }}>
-                            <span style={{ fontWeight: 700, color: parseInt(f.event_count) >= 6 ? '#dc2626' : 'var(--text-secondary)',
-                              background: parseInt(f.event_count) >= 6 ? '#fef2f2' : 'var(--border-light)',
+                            <span style={{ fontWeight: 700, color: parseInt(f.event_count) >= 6 ? 'var(--tint-danger-fg)' : 'var(--text-secondary)',
+                              background: parseInt(f.event_count) >= 6 ? 'var(--tint-danger)' : 'var(--border-light)',
                               padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)' }}>
                               {f.event_count}
                             </span>
@@ -405,8 +405,8 @@ export default function NetworkHealth({ hours }: { hours: number }) {
                 </div>
               ) : (
                 <>
-                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
-                    padding: '12px 16px', marginBottom: 16, fontSize: 'var(--text-sm)', color: '#991b1b' }}>
+                  <div style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 8,
+                    padding: '12px 16px', marginBottom: 16, fontSize: 'var(--text-sm)', color: 'var(--tint-danger-fg)' }}>
                     <strong>⚠️ {stpEvents.length} STP/loop event(s) detected.</strong> Topology changes can cause temporary network outages.
                     MAC flapping (if present) indicates an active loop. Isolate the affected switch port immediately.
                   </div>
@@ -419,7 +419,7 @@ export default function NetworkHealth({ hours }: { hours: number }) {
                     <tbody>
                       {stpEvents.map((r, i) => (
                         <tr key={i} style={{ borderBottom: '1px solid var(--border-light)',
-                          background: ['mac_flap','storm_control','loop_detected'].includes(r.subcategory) ? '#fff8f8' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
+                          background: ['mac_flap','storm_control','loop_detected'].includes(r.subcategory) ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
                           <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(r.received_at).toLocaleTimeString()}</td>
                           <td style={{ ...TD, ...MONO, fontWeight: 500, color: 'var(--text-primary)' }}>{r.source_host || r.source_ip}</td>
                           <td style={TD}><SevBadge label={r.severity_label} /></td>
@@ -450,8 +450,8 @@ export default function NetworkHealth({ hours }: { hours: number }) {
                 </div>
               ) : (
                 <>
-                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
-                    padding: '12px 16px', marginBottom: 16, fontSize: 'var(--text-sm)', color: '#991b1b' }}>
+                  <div style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 8,
+                    padding: '12px 16px', marginBottom: 16, fontSize: 'var(--text-sm)', color: 'var(--tint-danger-fg)' }}>
                     <strong>🔴 Active loop suspected.</strong> MAC flapping means the same MAC address is being seen on multiple switch ports simultaneously.
                     This happens when frames are looping through the network. Identify the affected switch and ports, then disable the offending port.
                   </div>
@@ -463,11 +463,11 @@ export default function NetworkHealth({ hours }: { hours: number }) {
                     </thead>
                     <tbody>
                       {macFlaps.map((r, i) => (
-                        <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: '#fff8f8' }}>
+                        <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: 'var(--tint-danger)' }}>
                           <td style={{ ...TD, ...MONO, fontWeight: 500, color: 'var(--text-primary)' }}>{r.host}</td>
                           <td style={{ ...TD, ...MONO, color: '#dc2626', fontWeight: 700 }}>{r.mac_address || '—'}</td>
                           <td style={TD}>
-                            <span style={{ fontWeight: 700, color: '#dc2626', background: '#fef2f2',
+                            <span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)',
                               padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-sm)' }}>
                               {r.flap_count}
                             </span>
@@ -537,7 +537,7 @@ export default function NetworkHealth({ hours }: { hours: number }) {
                   <tbody>
                     {configChanges.map((r, i) => (
                       <tr key={i} style={{ borderBottom: '1px solid var(--border-light)',
-                        background: i % 2 === 0 ? '#fffef5' : 'var(--bg-card)' }}>
+                        background: i % 2 === 0 ? 'var(--tint-warn)' : 'var(--bg-card)' }}>
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(r.received_at).toLocaleString()}</td>
                         <td style={{ ...TD, ...MONO, fontWeight: 500, color: 'var(--text-primary)' }}>{r.source_host || r.source_ip}</td>
                         <td style={{ ...TD, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{r.vendor}</td>

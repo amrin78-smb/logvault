@@ -1206,6 +1206,12 @@ const releaseNotes = {
     'Fixed Network Health panel text being unreadable in dark mode',
     'Improved contrast of the Active Alerts "fired" tile in dark mode',
   ],
+  '1.3.7': [
+    'Dark-mode polish: introduced adaptive surface/tint design tokens (--surface-subtle, --tint-info/success/warn/danger + matching -fg)',
+    'Swept hardcoded light surface hexes (tiles, rows, table headers, badges, banners, dropdowns) onto the new tokens so they adapt to dark mode',
+    'Fixed unreadable amber/red alert banners, VPN/security stat tiles, and tinted table rows in dark mode',
+    'Added a dark override for --primary-light to match the rest of the suite',
+  ],
   'default': [
     'Bug fixes and performance improvements',
   ],

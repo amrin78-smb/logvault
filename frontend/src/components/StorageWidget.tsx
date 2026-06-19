@@ -118,11 +118,11 @@ export default function StorageWidget() {
           <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--text-primary)' }}>{data.avg_size_per_day}</div>
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2 }}>based on data stored so far</div>
         </div>
-        <div style={{ background: projected90dGB && parseFloat(projected90dGB) > 10 ? '#fefce8' : '#f0fdf4',
-          border: `1px solid ${projected90dGB && parseFloat(projected90dGB) > 10 ? '#fde68a' : '#bbf7d0'}`,
+        <div style={{ background: projected90dGB && parseFloat(projected90dGB) > 10 ? 'var(--tint-warn)' : 'var(--tint-success)',
+          border: `1px solid ${projected90dGB && parseFloat(projected90dGB) > 10 ? 'var(--tint-warn)' : 'var(--tint-success)'}`,
           borderRadius: 8, padding: '12px 14px' }}>
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Projected 90-Day Usage</div>
-          <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: projected90dGB && parseFloat(projected90dGB) > 10 ? '#ca8a04' : '#16a34a' }}>
+          <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: projected90dGB && parseFloat(projected90dGB) > 10 ? 'var(--tint-warn-fg)' : 'var(--tint-success-fg)' }}>
             {projected90dGB ? `${projected90dGB} GB` : 'Insufficient data'}
           </div>
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2 }}>at current ingestion rate</div>
@@ -146,11 +146,11 @@ export default function StorageWidget() {
       )}
 
       {/* Retention info */}
-      <div style={{ marginTop: 16, padding: '10px 14px', background: '#eff6ff',
-        border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 'var(--text-xs)', color: '#1e40af' }}>
+      <div style={{ marginTop: 16, padding: '10px 14px', background: 'var(--tint-info)',
+        border: '1px solid var(--tint-info)', borderRadius: 8, fontSize: 'var(--text-xs)', color: 'var(--tint-info-fg)' }}>
         <strong>Retention policy:</strong> Logs older than {process.env.RETENTION_DAYS || 90} days are automatically deleted nightly.
-        Adjust <code style={{ background: '#dbeafe', padding: '1px 4px', borderRadius: 3 }}>RETENTION_DAYS</code> in{' '}
-        <code style={{ background: '#dbeafe', padding: '1px 4px', borderRadius: 3 }}>.env.local</code> to change.
+        Adjust <code style={{ background: 'var(--tint-info)', padding: '1px 4px', borderRadius: 3 }}>RETENTION_DAYS</code> in{' '}
+        <code style={{ background: 'var(--tint-info)', padding: '1px 4px', borderRadius: 3 }}>.env.local</code> to change.
       </div>
     </div>
   );

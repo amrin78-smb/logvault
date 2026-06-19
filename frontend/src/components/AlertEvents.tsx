@@ -32,9 +32,9 @@ const CORRELATION_RULES = [
 ];
 
 const SEV_STYLE: Record<string, { bg: string; color: string }> = {
-  critical: { bg: '#fef2f2', color: '#dc2626' },
-  error:    { bg: '#fff7ed', color: '#ea580c' },
-  warning:  { bg: '#fefce8', color: '#ca8a04' },
+  critical: { bg: 'var(--tint-danger)', color: 'var(--tint-danger-fg)' },
+  error:    { bg: 'var(--tint-warn)',   color: 'var(--tint-warn-fg)' },
+  warning:  { bg: 'var(--tint-warn)',   color: 'var(--tint-warn-fg)' },
 };
 
 interface AlertEvent {
@@ -179,8 +179,8 @@ export default function AlertEvents() {
       {/* Bulk actions bar */}
       {selected.size > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-          background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, marginBottom: 12 }}>
-          <span style={{ fontSize: 'var(--text-base)', color: '#1e40af', fontWeight: 500 }}>{selected.size} alert(s) selected</span>
+          background: 'var(--tint-info)', border: '1px solid var(--tint-info)', borderRadius: 8, marginBottom: 12 }}>
+          <span style={{ fontSize: 'var(--text-base)', color: 'var(--tint-info-fg)', fontWeight: 500 }}>{selected.size} alert(s) selected</span>
           <button onClick={acknowledgeSelected} disabled={loading}
             style={{ padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
               background: '#2563eb', color: '#fff', fontSize: 'var(--text-sm)', fontWeight: 600 }}>
@@ -210,7 +210,7 @@ export default function AlertEvents() {
           <div key={group.rule_name} style={{ marginBottom: 8, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
             {/* Group header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
-              background: group.unacked_count > 0 ? '#fffbeb' : '#f8f9fb', cursor: 'pointer',
+              background: group.unacked_count > 0 ? 'var(--tint-warn)' : 'var(--surface-subtle)', cursor: 'pointer',
               borderBottom: isExpanded ? '1px solid var(--border)' : 'none' }}
               onClick={() => toggleExpand(group.rule_name)}>
 
@@ -222,8 +222,8 @@ export default function AlertEvents() {
 
               {/* CORR badge */}
               {group.is_correlation && (
-                <span style={{ fontSize: 'var(--text-xs)', padding: '1px 5px', borderRadius: 4, background: '#eff6ff',
-                  color: '#2563eb', border: '1px solid #bfdbfe', fontWeight: 600, flexShrink: 0 }}>CORR</span>
+                <span style={{ fontSize: 'var(--text-xs)', padding: '1px 5px', borderRadius: 4, background: 'var(--tint-info)',
+                  color: 'var(--tint-info-fg)', border: '1px solid var(--tint-info)', fontWeight: 600, flexShrink: 0 }}>CORR</span>
               )}
 
               {/* Rule name */}
@@ -232,8 +232,8 @@ export default function AlertEvents() {
               {/* Stats */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {group.unacked_count > 0 && (
-                  <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: '#dc2626', background: '#fef2f2',
-                    border: '1px solid #fecaca', padding: '2px 8px', borderRadius: 10 }}>
+                  <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)',
+                    border: '1px solid var(--tint-danger)', padding: '2px 8px', borderRadius: 10 }}>
                     {group.unacked_count} unacked
                   </span>
                 )}
@@ -246,9 +246,9 @@ export default function AlertEvents() {
                 {group.unacked_count > 0 && (
                   <button onClick={(e) => { e.stopPropagation(); acknowledgeGroup(group.rule_name); }}
                     disabled={loading}
-                    style={{ padding: '3px 10px', borderRadius: 5, border: '1px solid #fde68a',
-                      cursor: 'pointer', fontSize: 'var(--text-xs)', fontWeight: 600, background: '#fefce8',
-                      color: '#ca8a04', flexShrink: 0 }}>
+                    style={{ padding: '3px 10px', borderRadius: 5, border: '1px solid var(--tint-warn)',
+                      cursor: 'pointer', fontSize: 'var(--text-xs)', fontWeight: 600, background: 'var(--tint-warn)',
+                      color: 'var(--tint-warn-fg)', flexShrink: 0 }}>
                     Ack All ({group.unacked_count})
                   </button>
                 )}
@@ -260,7 +260,7 @@ export default function AlertEvents() {
               <div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
                   <thead>
-                    <tr style={{ background: '#f8f9fb', borderBottom: '1px solid var(--border-light)' }}>
+                    <tr style={{ background: 'var(--surface-subtle)', borderBottom: '1px solid var(--border-light)' }}>
                       <th style={{ ...TH, width: 36 }}>
                         <input type="checkbox"
                           checked={displayEvents.filter(e => !e.acknowledged).every(e => selected.has(e.id)) && displayEvents.some(e => !e.acknowledged)}
@@ -273,7 +273,7 @@ export default function AlertEvents() {
                   <tbody>
                     {displayEvents.map((evt, i) => (
                       <tr key={evt.id} style={{ borderBottom: '1px solid var(--border-light)',
-                        background: evt.acknowledged ? 'var(--bg-primary)' : i % 2 === 0 ? 'var(--bg-card)' : '#fffef8',
+                        background: evt.acknowledged ? 'var(--bg-primary)' : i % 2 === 0 ? 'var(--bg-card)' : 'var(--surface-subtle)',
                         opacity: evt.acknowledged ? 0.6 : 1 }}>
                         <td style={{ ...TD, width: 36 }}>
                           {!evt.acknowledged && (
@@ -297,7 +297,7 @@ export default function AlertEvents() {
                           ) : (
                             <button onClick={() => acknowledge(evt.id)}
                               style={{ padding: '3px 10px', borderRadius: 5, border: '1px solid var(--border)',
-                                cursor: 'pointer', fontSize: 'var(--text-xs)', background: '#f8f9fb', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                                cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--surface-subtle)', color: 'var(--text-secondary)', fontWeight: 500 }}>
                               Acknowledge
                             </button>
                           )}
@@ -352,9 +352,9 @@ export default function AlertEvents() {
         {/* Acknowledge all button */}
         {activeTab === 'active' && totalUnacked > 0 && (
           <button onClick={acknowledgeAll} disabled={loading}
-            style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #fecaca',
-              cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: '#fef2f2',
-              color: '#dc2626', transition: 'all 0.15s' }}>
+            style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--tint-danger)',
+              cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--tint-danger)',
+              color: 'var(--tint-danger-fg)', transition: 'all 0.15s' }}>
             {loading ? 'Processing...' : `Acknowledge All (${totalUnacked})`}
           </button>
         )}
@@ -405,8 +405,8 @@ export default function AlertEvents() {
                 <tr key={rule.id} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
                   <td style={TD}>
                     <span style={{ padding: '3px 12px', borderRadius: 12, fontSize: 'var(--text-xs)', fontWeight: 600,
-                      background: rule.is_enabled ? '#dcfce7' : '#f3f4f6',
-                      color: rule.is_enabled ? '#16a34a' : '#9ca3af' }}>
+                      background: rule.is_enabled ? 'var(--tint-success)' : 'var(--surface-subtle)',
+                      color: rule.is_enabled ? 'var(--tint-success-fg)' : 'var(--text-muted)' }}>
                       {rule.is_enabled ? 'Active' : 'Disabled'}
                     </span>
                   </td>
@@ -434,10 +434,10 @@ export default function AlertEvents() {
               const firedCount = events.filter(e => e.rule_name === rule.name).length;
               const unackedCount = events.filter(e => e.rule_name === rule.name && !e.acknowledged).length;
               return (
-                <div key={i} style={{ background: '#f8f9fb', border: '1px solid var(--border)',
+                <div key={i} style={{ background: 'var(--surface-subtle)', border: '1px solid var(--border)',
                   borderRadius: 8, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
                   <div style={{ width: 36, height: 36, borderRadius: 8, background: sev.bg,
-                    border: `1px solid ${sev.color}33`, display: 'flex', alignItems: 'center',
+                    border: `1px solid ${sev.bg}`, display: 'flex', alignItems: 'center',
                     justifyContent: 'center', flexShrink: 0 }}>
                     <span style={{ fontSize: 'var(--text-lg)' }}>
                       {rule.severity === 'critical' ? '🚨' : rule.severity === 'error' ? '⚠️' : '🔍'}
@@ -451,7 +451,7 @@ export default function AlertEvents() {
                         {rule.severity}
                       </span>
                       <span style={{ padding: '1px 7px', borderRadius: 10, fontSize: 'var(--text-xs)',
-                        background: '#eff6ff', color: '#2563eb' }}>
+                        background: 'var(--tint-info)', color: 'var(--tint-info-fg)' }}>
                         window: {rule.window}
                       </span>
                     </div>
@@ -459,10 +459,10 @@ export default function AlertEvents() {
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     {firedCount > 0 ? (
-                      <div style={{ background: unackedCount > 0 ? '#fef2f2' : '#f0fdf4',
-                        border: `1px solid ${unackedCount > 0 ? '#fecaca' : '#bbf7d0'}`,
+                      <div style={{ background: unackedCount > 0 ? 'var(--tint-danger)' : 'var(--tint-success)',
+                        border: `1px solid ${unackedCount > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'}`,
                         borderRadius: 8, padding: '6px 12px', textAlign: 'center' }}>
-                        <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: unackedCount > 0 ? '#dc2626' : '#16a34a' }}>
+                        <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: unackedCount > 0 ? 'var(--tint-danger-fg)' : 'var(--tint-success-fg)' }}>
                           {unackedCount > 0 ? unackedCount : firedCount}
                         </div>
                         <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
@@ -470,9 +470,9 @@ export default function AlertEvents() {
                         </div>
                       </div>
                     ) : (
-                      <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0',
+                      <div style={{ background: 'var(--tint-success)', border: '1px solid var(--tint-success)',
                         borderRadius: 8, padding: '6px 12px', textAlign: 'center' }}>
-                        <div style={{ fontSize: 'var(--text-sm)', color: '#16a34a', fontWeight: 600 }}>✓ Clear</div>
+                        <div style={{ fontSize: 'var(--text-sm)', color: 'var(--tint-success-fg)', fontWeight: 600 }}>✓ Clear</div>
                       </div>
                     )}
                   </div>
