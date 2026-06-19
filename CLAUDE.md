@@ -238,8 +238,14 @@ email, dlp, network). `syslog_entries.risk_score` is a 0-100 score from
 - Two `SECURITY DEFINER` functions (owned by `postgres`, EXECUTE granted to `logvault_user`)
   manage partitions: `ensure_syslog_partitions(days_ahead)` pre-creates future days,
   `drop_old_syslog_partitions(retention_days)` drops aged daily partitions (never the default).
-- **Retention is now partition DROP, not bulk DELETE.** `scripts/cleanup.js` calls
-  `ensure_syslog_partitions(7)` then `drop_old_syslog_partitions(RETENTION_DAYS)`.
+- **Retention is now partition DROP, not bulk DELETE.** The logic lives in
+  `scripts/cleanup.js`, which exports `runCleanup(pool)` (ensure 7 days of partitions ahead,
+  `drop_old_syslog_partitions(RETENTION_DAYS)`, auto-ack old alerts, delete old acked alerts).
+- **Cleanup runs IN-PROCESS in the collector** — no external Windows scheduled task needed.
+  `collector/collector.js` requires `runCleanup` and runs it ~60s after startup, then every
+  24h, reusing the collector's pool (never exits on error). `scripts/cleanup.js` is still
+  runnable standalone (`node scripts/cleanup.js`) via its `require.main` CLI block for a
+  manual/ad-hoc run.
 - **Fresh installs** get the partitioned table straight from `schema.sql`. **Existing live
   DBs** must be converted with `scripts/migration-phase3-partitioning.sql` — MANUAL run as
   `postgres`, in a maintenance window, with a `pg_dump` backup first (ATTACHes the existing
@@ -877,7 +883,7 @@ $env:PGPASSWORD = "<set-in-NSSM-env>"
 | Storage & capacity widget | Real disk usage via PowerShell Get-PSDrive |
 | Known hosts | NetVault sync + manual, collapsible list |
 | NocVault rebrand | Throughout UI (cookie name unchanged) |
-| Time-partitioned storage | `syslog_entries` daily RANGE partitions + DROP-partition retention via `cleanup.js` |
+| Time-partitioned storage | `syslog_entries` daily RANGE partitions + DROP-partition retention; cleanup runs in-process in the collector every 24h (no scheduled task) |
 | Tamper-evident log integrity | HMAC-SHA256 hash chain (`prev_hash`/`entry_hash`); `verify-integrity.js`; append-only app role |
 | Durable ingest spool | Disk write-ahead spool, replay on boot — no log loss on crash/restart/DB outage |
 | Audit trail | `audit_log` append-only table + `api/auditLog.js`; settings/export/ack/sync/update actions; `GET /api/audit` (super-admin) |

@@ -33,6 +33,7 @@ const { getCategory } = require('./taxonomy');
 const { scoreLog }    = require('./riskScorer');
 const { evaluateCorrelation } = require('./correlationEngine');
 const { syncFromNetVault }    = require('./netvaultSync');
+const { runCleanup }          = require('../scripts/cleanup');
 const { enrichIP, configureDNS } = require('./dnsLookup');
 const { sendAlertEmail }         = require('./emailer');
 
@@ -896,6 +897,17 @@ async function main() {
   setInterval(() => {
     syncFromNetVault(pool).catch(err => console.error('[NetVaultSync] Sync error:', err.message));
   }, 15 * 60 * 1000);
+
+  // Daily retention + partition maintenance, in-process — no external Windows
+  // scheduled task needed. Runs ~60s after startup (let ingestion settle) then
+  // every 24h. Reuses the collector's pool; never exits on error.
+  const DAILY_MS = 24 * 60 * 60 * 1000;
+  setTimeout(() => {
+    runCleanup(pool).catch(err => console.error('[Cleanup] error:', err.message));
+  }, 60 * 1000);
+  setInterval(() => {
+    runCleanup(pool).catch(err => console.error('[Cleanup] error:', err.message));
+  }, DAILY_MS);
 
   console.log('LogVault Collector running. Listening on ports 514 and 1514 (UDP+TCP).');
   console.log('[Correlation] Engine loaded with 8 rules');
