@@ -20,6 +20,19 @@ function Write-OK($msg)   { Write-Host "    [OK] $msg" -ForegroundColor Green }
 function Write-Warn($msg) { Write-Host "    [!!] $msg" -ForegroundColor Yellow }
 function Write-Err($msg)  { Write-Host "    [XX] $msg" -ForegroundColor Red }
 
+# psql is often not on PATH on Windows. Resolve it from PATH, then fall back to the
+# standard PostgreSQL install locations (newest version first). Returns $null if not
+# found - the schema step treats psql as optional (warn + skip, never fail).
+function Resolve-Psql {
+    $cmd = Get-Command psql -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $roots = @('C:\Program Files\PostgreSQL', 'C:\Program Files (x86)\PostgreSQL')
+    $found = Get-ChildItem -Path $roots -Filter 'psql.exe' -Recurse -ErrorAction SilentlyContinue |
+        Sort-Object FullName -Descending | Select-Object -First 1
+    if ($found) { return $found.FullName }
+    return $null
+}
+
 # Header
 Write-Host ""
 Write-Host "  ================================================" -ForegroundColor DarkGray
@@ -150,6 +163,46 @@ if ($ServerIp -and (Test-Path $rootEnvPath) -and -not (Get-Content $rootEnvPath 
     Add-Content -Path $rootEnvPath "`nSERVER_IP=$ServerIp"
     Add-Content -Path $frontendEnvPath "`nSERVER_IP=$ServerIp"
     Write-OK "Wrote SERVER_IP=$ServerIp to .env.local"
+}
+
+# Step 4.5: Apply database schema (idempotent) - mirrors the SpanVault pattern
+Write-Step "Applying database schema"
+
+$psql   = Resolve-Psql
+$schema = "$AppDir\scripts\schema.sql"
+if ($psql -and (Test-Path $schema)) {
+    # Connect as the 'postgres' superuser using POSTGRES_PASSWORD from .env.local.
+    # Unlike spanvault/ddivault, LogVault's schema.sql CANNOT be applied as the app
+    # user: it defines SECURITY DEFINER partition functions that must be OWNED BY
+    # postgres, plus self-REVOKEs UPDATE/DELETE from logvault_user (the append-only
+    # tamper-evidence model). Applying as logvault_user would break that ownership.
+    # This applies scripts/schema.sql ONLY (idempotent). The Phase 3 partitioning
+    # migration (scripts/migration-phase3-partitioning.sql) is destructive and must
+    # still be run MANUALLY, in a maintenance window, with a pg_dump backup first.
+    $envContent = if (Test-Path $rootEnvPath) { Get-Content $rootEnvPath -Raw } else { '' }
+    $dbName = [regex]::Match($envContent, 'LV_DB_NAME=(.+)').Groups[1].Value.Trim()
+    $pgPass = [regex]::Match($envContent, 'POSTGRES_PASSWORD=(.+)').Groups[1].Value.Trim()
+    if (-not $dbName) { $dbName = 'logvault' }
+    if ($pgPass) {
+        $env:PGPASSWORD = $pgPass
+        # --quiet suppresses NOTICE/INFO chatter psql writes to stderr (which would
+        # otherwise raise NativeCommandError over WinRM); consume both streams and
+        # gate success on $LASTEXITCODE.
+        try { $null = & $psql --quiet -U postgres -d $dbName -f $schema 2>&1 } catch {}
+        $psqlExit = $LASTEXITCODE
+        $env:PGPASSWORD = ''
+        # psql over WinRM commonly returns -1 on a successful run, so treat -1 as 0.
+        if ($psqlExit -eq 0 -or $psqlExit -eq -1) {
+            Write-OK "Schema applied (as postgres to $dbName)"
+        } else {
+            Write-Warn "psql exited with code $psqlExit - apply scripts\schema.sql manually as postgres."
+        }
+    } else {
+        Write-Warn "POSTGRES_PASSWORD not set in .env.local - skipping schema apply."
+        Write-Warn "Add POSTGRES_PASSWORD to .env.local, or apply scripts\schema.sql manually as postgres."
+    }
+} else {
+    Write-Warn "psql not found or schema.sql missing - skipping schema apply (run manually if needed)."
 }
 
 # Step 5: Install root dependencies

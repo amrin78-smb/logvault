@@ -249,7 +249,15 @@ email, dlp, network). `syslog_entries.risk_score` is a 0-100 score from
 - **Fresh installs** get the partitioned table straight from `schema.sql`. **Existing live
   DBs** must be converted with `scripts/migration-phase3-partitioning.sql` — MANUAL run as
   `postgres`, in a maintenance window, with a `pg_dump` backup first (ATTACHes the existing
-  table as one legacy partition, no row copy). The update script does NOT run SQL.
+  table as one legacy partition, no row copy).
+- **The update script applies `scripts/schema.sql` as `postgres` on every run** (idempotent;
+  mirrors the spanvault/ddivault pattern via `Resolve-Psql` + `--quiet`, psql-optional). It
+  connects as the `postgres` superuser using `POSTGRES_PASSWORD` from `.env.local` — NOT as
+  `logvault_user`, because `schema.sql` defines `SECURITY DEFINER` partition functions that
+  must be owned by `postgres` and self-`REVOKE`s UPDATE/DELETE from `logvault_user`. If
+  `POSTGRES_PASSWORD` or psql is missing, the step warns and skips (never fails the update).
+  **Migration scripts (e.g. `migration-phase3-partitioning.sql`) must still be run MANUALLY
+  with a `pg_dump` backup first** — the update script applies `schema.sql` only.
 
 ### Tamper prevention & log integrity (Phase 3)
 - `syslog_entries` and `audit_log` are **append-only for `logvault_user`**:
