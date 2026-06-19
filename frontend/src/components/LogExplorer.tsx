@@ -342,7 +342,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
       <div style={{ overflowX: 'auto', maxHeight: '60vh', overflowY: 'auto',
         border: '1px solid var(--border)', borderRadius: 8 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
-          <thead style={{ position: 'sticky', top: 0, background: 'var(--surface-subtle)', zIndex: 1 }}>
+          <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-card)', zIndex: 5, boxShadow: '0 1px 0 var(--border)' }}>
             <tr style={{ borderBottom: '2px solid var(--border)' }}>
               {['Time','Host','Vendor','Severity','Program','Message'].map(h => (
                 <th key={h} style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-muted)',

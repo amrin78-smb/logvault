@@ -1117,6 +1117,10 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '1.3.12': [
+    'Fixed the Log Explorer results table header bleeding through and looking garbled when scrolling in dark mode',
+    'Sticky table header now uses an opaque background so rows no longer show through it',
+  ],
   '1.3.11': [
     'Fixed an undefined CSS token on time-range selects so they use the correct adaptive input background',
   ],
