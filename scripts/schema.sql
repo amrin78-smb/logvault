@@ -15,8 +15,23 @@
 --   security, wireless, system, dns, web, email, dlp, network
 -- (assigned by collector/taxonomy.js; 'network' is the fallback)
 -- ============================================================
+-- ------------------------------------------------------------
+-- syslog_entries is TIME-PARTITIONED by RANGE (received_at) into daily
+-- partitions (syslog_entries_pYYYYMMDD), managed by the partition functions
+-- below and driven by scripts/cleanup.js (ensure ahead / drop old).
+--
+-- Partitioning notes for downstream workstreams (collector + API):
+--   * Partition key (received_at) MUST be part of any PK/unique constraint,
+--     so the primary key is the COMPOSITE (id, received_at). `id` is still
+--     globally unique via the shared BIGSERIAL sequence.
+--   * A standalone btree index on id alone keeps WHERE id = $1 lookups fast.
+--   * A DEFAULT partition (syslog_entries_default) catches any row whose
+--     received_at has no matching daily partition, so INSERTs never fail.
+-- This CREATE TABLE is for FRESH installs only; converting an existing
+-- populated table is done by scripts/migration-phase3-partitioning.sql.
+-- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS syslog_entries (
-    id              BIGSERIAL PRIMARY KEY,
+    id              BIGSERIAL,
     received_at     TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     log_timestamp   TIMESTAMPTZ,                          -- timestamp from the log message itself
     source_ip       INET            NOT NULL,
@@ -34,15 +49,37 @@ CREATE TABLE IF NOT EXISTS syslog_entries (
     is_parsed       BOOLEAN         DEFAULT FALSE,
     parser_version  TEXT,
     category        TEXT,                                  -- universal event taxonomy (auth, vpn, firewall, ...)
-    risk_score      SMALLINT        DEFAULT 0              -- 0-100 computed risk score
-);
+    risk_score      SMALLINT        DEFAULT 0,             -- 0-100 computed risk score
+    prev_hash       BYTEA,                                 -- tamper-evidence: hash of previous entry (NULL for legacy)
+    entry_hash      BYTEA,                                 -- tamper-evidence: hash of this entry (NULL for legacy)
+    PRIMARY KEY (id, received_at)                          -- composite PK required for partition key
+) PARTITION BY RANGE (received_at);
 
 -- Universal taxonomy + risk scoring columns (idempotent for existing installs)
 ALTER TABLE syslog_entries ADD COLUMN IF NOT EXISTS category   TEXT;
 ALTER TABLE syslog_entries ADD COLUMN IF NOT EXISTS risk_score SMALLINT DEFAULT 0;
 
+-- Tamper-evidence / integrity hash columns (idempotent for existing installs).
+-- Written by the collector (separate workstream). Legacy rows stay NULL —
+-- the hash chain starts fresh from the first row written after deployment.
+ALTER TABLE syslog_entries ADD COLUMN IF NOT EXISTS prev_hash  BYTEA;
+ALTER TABLE syslog_entries ADD COLUMN IF NOT EXISTS entry_hash BYTEA;
 
--- Indexes for common query patterns
+-- DEFAULT partition — safety net so an INSERT never fails when a daily
+-- partition for received_at is missing (e.g. clock skew, late ensure run).
+CREATE TABLE IF NOT EXISTS syslog_entries_default
+  PARTITION OF syslog_entries DEFAULT;
+
+
+-- Indexes for common query patterns.
+-- NOTE: on a PARTITIONED parent, CREATE INDEX CONCURRENTLY is NOT allowed, so
+-- every syslog_entries index is plain CREATE INDEX IF NOT EXISTS. These are
+-- fast on fresh (empty) installs and propagate automatically to each partition.
+-- (Existing live installs already have these indexes, so IF NOT EXISTS is a no-op.)
+
+-- Standalone index on id for point lookups (WHERE id = $1) across partitions.
+CREATE INDEX IF NOT EXISTS idx_syslog_id             ON syslog_entries (id);
+
 CREATE INDEX IF NOT EXISTS idx_syslog_source_ip      ON syslog_entries (source_ip, received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_syslog_severity       ON syslog_entries (severity, received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_syslog_vendor         ON syslog_entries (vendor, received_at DESC);
@@ -53,38 +90,131 @@ CREATE INDEX IF NOT EXISTS idx_syslog_received       ON syslog_entries (received
 CREATE INDEX IF NOT EXISTS idx_syslog_category       ON syslog_entries (category, received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_syslog_risk_score     ON syslog_entries (risk_score DESC, received_at DESC);
 
--- Composite indexes for time-ordered dashboard stat queries (received_at DESC leading
--- column). Created CONCURRENTLY on the live server to avoid locking the large table;
--- run these manually (CONCURRENTLY cannot run inside a transaction block).
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_syslog_received_vendor
+-- Composite indexes for time-ordered dashboard stat queries (received_at DESC
+-- leading column). Plain CREATE INDEX — CONCURRENTLY is not allowed on a
+-- partitioned parent.
+CREATE INDEX IF NOT EXISTS idx_syslog_received_vendor
   ON syslog_entries (received_at DESC, vendor);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_syslog_received_severity
+CREATE INDEX IF NOT EXISTS idx_syslog_received_severity
   ON syslog_entries (received_at DESC, severity);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_syslog_received_category
+CREATE INDEX IF NOT EXISTS idx_syslog_received_category
   ON syslog_entries (received_at DESC, category);
 
--- Slow-query fixes (perf EXPLAIN audit). All CONCURRENTLY — run one at a time
--- on the live server, never inside a transaction block.
+-- Slow-query fixes (perf EXPLAIN audit). Plain CREATE INDEX on the partitioned
+-- parent (CONCURRENTLY not allowed here); they cascade to every partition.
 
 -- PROBLEM 1: /api/health/device-status (7-day aggregation) was scanning ~753K
 -- rows via idx_syslog_source_ip when the real filter is received_at. Covering
 -- index with received_at DESC as the leading column lets the aggregation seek
 -- the 7-day window and read source_ip / source_host / vendor index-only.
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_syslog_received_source
+CREATE INDEX IF NOT EXISTS idx_syslog_received_source
   ON syslog_entries (received_at DESC, source_ip, source_host, vendor);
 
 -- PROBLEM 2: message ILIKE '%configured from%' (and other leading-wildcard
 -- ILIKE/LIKE on message) cannot use a btree index. A GIN trigram index makes
 -- substring ILIKE/LIKE on message fast.
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_syslog_message_trgm
+CREATE INDEX IF NOT EXISTS idx_syslog_message_trgm
   ON syslog_entries USING GIN (message gin_trgm_ops);
 
 -- PROBLEM 3: structured_data->>'subcategory' (MAC flap, config-change, STP, etc.)
 -- had no index. Partial expression index over the non-null subcategory values.
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_syslog_subcategory
+CREATE INDEX IF NOT EXISTS idx_syslog_subcategory
   ON syslog_entries ((structured_data->>'subcategory'))
   WHERE structured_data->>'subcategory' IS NOT NULL;
+
+
+-- ============================================================
+-- DAILY PARTITION MANAGEMENT (SECURITY DEFINER)
+-- These run as the function owner (postgres) so logvault_user can create/drop
+-- partitions even after UPDATE/DELETE on syslog_entries is revoked from it.
+-- Driven by scripts/cleanup.js on a schedule. Safe on a fresh/empty DB.
+-- Daily partition naming convention: syslog_entries_pYYYYMMDD
+-- ============================================================
+
+-- Create daily partitions for today .. today+days_ahead (idempotent). Returns count created.
+CREATE OR REPLACE FUNCTION ensure_syslog_partitions(days_ahead integer)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $func$
+DECLARE
+    d            date;
+    part_name    text;
+    created_cnt  integer := 0;
+BEGIN
+    IF days_ahead IS NULL OR days_ahead < 0 THEN
+        days_ahead := 0;
+    END IF;
+
+    FOR d IN
+        SELECT (current_date + g) FROM generate_series(0, days_ahead) AS g
+    LOOP
+        part_name := 'syslog_entries_p' || to_char(d, 'YYYYMMDD');
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_class WHERE relname = part_name
+        ) THEN
+            EXECUTE format(
+                'CREATE TABLE %I PARTITION OF syslog_entries FOR VALUES FROM (%L) TO (%L)',
+                part_name, d::text, (d + 1)::text
+            );
+            created_cnt := created_cnt + 1;
+        END IF;
+    END LOOP;
+
+    RETURN created_cnt;
+END;
+$func$;
+
+-- Drop daily partitions older than (current_date - retention_days). Returns count dropped.
+-- Only drops dated syslog_entries_pYYYYMMDD partitions — NEVER the DEFAULT partition.
+CREATE OR REPLACE FUNCTION drop_old_syslog_partitions(retention_days integer)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $func$
+DECLARE
+    rec          record;
+    part_date    date;
+    cutoff       date;
+    dropped_cnt  integer := 0;
+BEGIN
+    IF retention_days IS NULL OR retention_days < 0 THEN
+        retention_days := 30;
+    END IF;
+    cutoff := current_date - retention_days;
+
+    FOR rec IN
+        SELECT c.relname
+        FROM pg_inherits i
+        JOIN pg_class c       ON c.oid = i.inhrelid
+        JOIN pg_class parent  ON parent.oid = i.inhparent
+        WHERE parent.relname = 'syslog_entries'
+          AND c.relname ~ '^syslog_entries_p[0-9]{8}$'
+    LOOP
+        -- Parse YYYYMMDD out of the partition name (skips the DEFAULT partition,
+        -- which does not match the regex above).
+        BEGIN
+            part_date := to_date(right(rec.relname, 8), 'YYYYMMDD');
+        EXCEPTION WHEN others THEN
+            CONTINUE;
+        END;
+
+        IF part_date < cutoff THEN
+            EXECUTE format('DROP TABLE IF EXISTS %I', rec.relname);
+            dropped_cnt := dropped_cnt + 1;
+        END IF;
+    END LOOP;
+
+    RETURN dropped_cnt;
+END;
+$func$;
+
+-- Allow the app role to invoke partition management (functions run as owner).
+GRANT EXECUTE ON FUNCTION ensure_syslog_partitions(integer)   TO logvault_user;
+GRANT EXECUTE ON FUNCTION drop_old_syslog_partitions(integer) TO logvault_user;
 
 
 
@@ -268,6 +398,46 @@ INSERT INTO app_settings (key, value) VALUES ('collector_allowed_sources', '') O
 INSERT INTO app_settings (key, value) VALUES ('collector_rate_limit_enabled', 'false') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value) VALUES ('collector_rate_limit_pps', '0') ON CONFLICT (key) DO NOTHING;
 
+-- ============================================================
+-- AUDIT LOG TABLE (append-only security audit trail)
+-- Records sensitive API actions (settings.update, logs.export,
+-- alert.acknowledge, hosts.sync_netvault, system.update, ...).
+-- Written + read by the API (api/auditLog.js); never updated or
+-- deleted by the app (see REVOKE below). detail holds small
+-- structured context only — NEVER secrets/full payloads.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS audit_log (
+  id            BIGSERIAL PRIMARY KEY,
+  occurred_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  actor_user_id TEXT,             -- req.rbac.userId (NetVault user id as text), null if unknown
+  actor_role    TEXT,
+  action        TEXT NOT NULL,    -- e.g. 'settings.update','logs.export','alert.acknowledge','hosts.sync','system.update'
+  target        TEXT,             -- optional object/identifier acted on
+  detail        JSONB,            -- small structured context (NOT full payloads/secrets)
+  source_ip     TEXT,             -- client IP if available
+  result        TEXT              -- 'success' | 'error'
+);
+CREATE INDEX IF NOT EXISTS idx_audit_occurred ON audit_log (occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_actor    ON audit_log (actor_user_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_action   ON audit_log (action, occurred_at DESC);
+
 -- Grant permissions to logvault_user
 GRANT ALL ON ALL TABLES IN SCHEMA public TO logvault_user;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO logvault_user;
+
+-- Audit log is append-only: the API inserts and reads rows but must never
+-- update or delete them. Revoke those after the blanket GRANT ALL above
+-- (order matters — this runs after the GRANT). INSERT + SELECT remain.
+REVOKE UPDATE, DELETE ON audit_log FROM logvault_user;
+
+-- ── Tamper prevention ────────────────────────────────────────
+-- Logs are append-only for the app role: the collector INSERTs and the API
+-- only SELECTs, so revoke UPDATE/DELETE on syslog_entries from logvault_user.
+-- Row deletion for retention now happens via partition DROP (the SECURITY
+-- DEFINER functions above run as the table owner, not as logvault_user).
+-- The REVOKE cascades to every existing/future partition automatically.
+REVOKE UPDATE, DELETE ON syslog_entries FROM logvault_user;
+
+-- Note: alert_events is intentionally left writable — the API legitimately
+-- UPDATEs it for acknowledgements. Only syslog_entries + audit_log are
+-- locked down to append-only.

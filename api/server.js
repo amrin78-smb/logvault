@@ -15,6 +15,7 @@ const { WebSocketServer } = require('ws');
 const { testEmail } = require('../collector/emailer');
 const { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter } = require('./rbac');
 const { getLicense, getLicenseState } = require('./licenseCheck');
+const { writeAudit } = require('./auditLog');
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env.local') });
 
 // App version — single source of truth is the root package.json.
@@ -583,23 +584,28 @@ app.patch('/api/alerts/events/:id/acknowledge', asyncHandler(async (req, res) =>
     'UPDATE alert_events SET acknowledged=TRUE, acknowledged_at=NOW(), acknowledged_by=$2 WHERE id=$1',
     [req.params.id, ackBy]
   );
+  await writeAudit(pool, req, 'alert.acknowledge', { target: req.params.id });
   res.json({ ok: true });
 }));
 
 app.patch('/api/alerts/events/acknowledge-all', asyncHandler(async (req, res) => {
   const { ids } = req.body;
   const ackBy = (req.rbac && req.rbac.userId) ? String(req.rbac.userId) : null;
+  let auditTarget;
   if (ids && Array.isArray(ids) && ids.length > 0) {
     await pool.query(
       'UPDATE alert_events SET acknowledged=TRUE, acknowledged_at=NOW(), acknowledged_by=$2 WHERE id = ANY($1::int[])',
       [ids, ackBy]
     );
+    auditTarget = ids.join(',');
   } else {
     await pool.query(
       'UPDATE alert_events SET acknowledged=TRUE, acknowledged_at=NOW(), acknowledged_by=$1 WHERE acknowledged=FALSE',
       [ackBy]
     );
+    auditTarget = 'all-open';
   }
+  await writeAudit(pool, req, 'alert.acknowledge', { target: auditTarget });
   res.json({ ok: true });
 }));
 
@@ -668,6 +674,14 @@ app.get('/api/logs/export', asyncHandler(async (req, res) => {
   const csv = header + csvRows.join('\n');
   const filename = `logvault-export-${new Date().toISOString().slice(0, 10)}.csv`;
 
+  // Data-exfiltration audit — record the filters used and how many rows left.
+  await writeAudit(pool, req, 'logs.export', {
+    detail: {
+      filters: { q, vendor, severity, host, ip, category, hours },
+      row_count: rows.length,
+    },
+  });
+
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.send(csv);
@@ -720,9 +734,11 @@ const { syncFromNetVault } = require('./netvaultSync');
 app.post('/api/hosts/sync-netvault', requireSuperAdmin, asyncHandler(async (req, res) => {
   try {
     const result = await syncFromNetVault(pool);
+    await writeAudit(pool, req, 'hosts.sync_netvault', { detail: { synced: result?.synced || 0 } });
     res.json({ ok: true, synced: result?.synced || 0 });
   } catch (err) {
     console.error('[SyncNV] Error:', err.message);
+    await writeAudit(pool, req, 'hosts.sync_netvault', { result: 'error', detail: { message: err.message } });
     res.status(500).json({ error: 'Internal server error' });
   }
 }));
@@ -1131,6 +1147,13 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.0.0': [
+    'Log storage is now time-partitioned (daily) — retention drops whole partitions instead of slow bulk DELETEs, keeping the database fast as it grows',
+    'Tamper-evident log integrity: every entry is hash-chained (HMAC-SHA256) and logs are now append-only, so any modification is detectable (run scripts/verify-integrity.js to check)',
+    'Durable ingest spool: syslog is written to a disk write-ahead spool and replayed on restart, so a crash or database outage no longer loses logs',
+    'New immutable audit trail of privileged actions (settings changes, exports, acknowledgements, syncs, updates) — viewable by super-admins at /api/audit',
+    'DB migration required for existing servers: run scripts/migration-phase3-partitioning.sql manually (maintenance window + backup) — fresh installs get it automatically',
+  ],
   '1.5.0': [
     'Security hardening: removed all hardcoded credential fallbacks from code and scrubbed secrets from the repo — passwords and NEXTAUTH_SECRET now come only from NSSM/.env',
     'Session cookies now auto-enable the Secure flag when served over HTTPS (no change on HTTP deployments)',
@@ -1394,9 +1417,11 @@ app.post('/api/system/update', requireSuperAdmin, asyncHandler(async (req, res) 
     execSync('schtasks /run /tn "LogVaultUpdate"', { stdio: 'pipe' });
 
     console.log('[Update] Task scheduled under SYSTEM, ServerIp:', serverIp);
+    await writeAudit(pool, req, 'system.update', { detail: { version } });
     res.json({ started: true });
   } catch (err) {
     console.error('[Update] schtasks error:', err.message);
+    await writeAudit(pool, req, 'system.update', { result: 'error', detail: { message: err.message } });
     res.status(500).json({ error: 'Failed to schedule update: ' + err.message });
   }
 }));
@@ -1421,6 +1446,7 @@ app.post('/api/settings', requireSuperAdmin, asyncHandler(async (req, res) => {
     'email_notify_enabled', 'email_notify_severities', 'email_notify_categories',
     'email_notify_vendors', 'email_notify_min_risk', 'email_notify_digest_mode',
     'email_notify_digest_hour', 'email_notify_recipients', 'email_notify_cooldown_mins'];
+  const changedKeys = [];
   for (const key of allowed) {
     if (req.body[key] !== undefined) {
       await pool.query(
@@ -1428,8 +1454,11 @@ app.post('/api/settings', requireSuperAdmin, asyncHandler(async (req, res) => {
          ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
         [key, req.body[key]]
       );
+      changedKeys.push(key);
     }
   }
+  // Audit changed KEYS only — never the values (e.g. smtp_pass).
+  await writeAudit(pool, req, 'settings.update', { detail: { keys: changedKeys } });
   res.json({ ok: true });
 }));
 
@@ -1443,11 +1472,46 @@ app.post('/api/settings/test-email', requireSuperAdmin, asyncHandler(async (req,
     ? { host: smtp_host, port: smtp_port, user: smtp_user, pass: smtp_pass, from: smtp_from }
     : undefined;
   const result = await testEmail(to, pool, override);
+  // Audit the recipient + outcome only — never the SMTP credentials.
+  await writeAudit(pool, req, 'settings.test_email', {
+    target: to,
+    result: result.ok ? 'success' : 'error',
+  });
   if (result.ok) {
     res.json({ ok: true });
   } else {
     res.status(400).json({ error: result.error || 'Failed to send test email' });
   }
+}));
+
+// ── AUDIT TRAIL ──────────────────────────────────────────────
+// Super-admin-only view of the append-only audit_log. Optional filters:
+//   ?hours=  lookback window (default 720 / 30 days, max 8760)
+//   ?action= exact action match (e.g. 'logs.export')
+//   ?actor=  exact actor_user_id match
+//   ?limit=  max rows (default 200, max 1000)
+app.get('/api/audit', requireSuperAdmin, asyncHandler(async (req, res) => {
+  // Default to a 30-day window when ?hours= is omitted (safeHours' own default
+  // is 24h, too short for an audit view).
+  const hours = req.query.hours != null ? safeHours(req.query.hours, 8760) : 720;
+  const limit = safeInt(req.query.limit, 200, 1000);
+
+  const conditions = ['occurred_at > NOW() - make_interval(hours => $1)'];
+  const params = [hours];
+  let p = 2;
+
+  if (req.query.action) { conditions.push(`action = $${p++}`);        params.push(String(req.query.action)); }
+  if (req.query.actor)  { conditions.push(`actor_user_id = $${p++}`); params.push(String(req.query.actor)); }
+
+  params.push(limit);
+  const { rows } = await pool.query(`
+    SELECT id, occurred_at, actor_user_id, actor_role, action, target, detail, source_ip, result
+    FROM audit_log
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY occurred_at DESC
+    LIMIT $${p}
+  `, params);
+  res.json({ data: rows });
 }));
 
 // ── HEALTH CHECK ─────────────────────────────────────────────

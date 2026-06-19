@@ -10,16 +10,30 @@ const pool = new Pool({
   password: process.env.LV_DB_PASS,
 });
 
+// Days of partitions to pre-create ahead of "today" so an INSERT always lands
+// in a real daily partition rather than the DEFAULT catch-all.
+const PARTITION_DAYS_AHEAD = 7;
+
 async function cleanup() {
-  const days = parseInt(process.env.RETENTION_DAYS || '30');
+  const days = parseInt(process.env.RETENTION_DAYS || '30', 10);
   console.log(`[Cleanup] Starting — retention: ${days} days`);
 
   try {
-    // 1. Delete old syslog entries
-    const logs = await pool.query(
-      `DELETE FROM syslog_entries WHERE received_at < NOW() - INTERVAL '${days} days'`
+    // 1. syslog_entries is time-partitioned (daily). Retention is enforced by
+    //    dropping whole old partitions, NOT by row DELETE (DELETE on
+    //    syslog_entries is revoked from logvault_user for tamper prevention).
+    //    First make sure upcoming partitions exist, then drop the expired ones.
+    const ensured = await pool.query(
+      `SELECT ensure_syslog_partitions($1) AS n`,
+      [PARTITION_DAYS_AHEAD]
     );
-    console.log(`[Cleanup] Deleted ${logs.rowCount} log rows older than ${days} days`);
+    console.log(`[Cleanup] Ensured partitions — created ${ensured.rows[0].n} new (up to ${PARTITION_DAYS_AHEAD} days ahead)`);
+
+    const dropped = await pool.query(
+      `SELECT drop_old_syslog_partitions($1) AS n`,
+      [days]
+    );
+    console.log(`[Cleanup] Dropped ${dropped.rows[0].n} partitions older than ${days} days`);
 
     // 2. Auto-acknowledge alerts older than 7 days
     const autoAck = await pool.query(

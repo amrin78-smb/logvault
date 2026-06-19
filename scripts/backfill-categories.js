@@ -8,6 +8,11 @@
  * Safe to re-run: only touches rows where category IS NULL or ''.
  *
  *   node scripts/backfill-categories.js
+ *
+ * NOTE (Phase 3+): syslog_entries is now append-only for logvault_user
+ * (UPDATE/DELETE revoked for tamper prevention). This one-off UPDATEs rows,
+ * so if you ever need to re-run it, point DB_* / LV_DB_* at a privileged role
+ * (e.g. postgres) — it will fail with a permission error as logvault_user.
  */
 'use strict';
 

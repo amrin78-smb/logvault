@@ -9,8 +9,11 @@
 
 const dgram    = require('dgram');
 const net      = require('net');
+const crypto   = require('crypto');
+const fs       = require('fs');
+const path     = require('path');
 const { Pool } = require('pg');
-require('dotenv').config({ path: require('path').join(__dirname, '..', '.env.local') });
+require('dotenv').config({ path: path.join(__dirname, '..', '.env.local') });
 
 const { parseGeneric }  = require('../parsers/generic');
 const { parseCisco }    = require('../parsers/cisco');
@@ -186,6 +189,260 @@ const pool = new Pool({
   idleTimeoutMillis: 30000,
 });
 
+// ── Tamper-evident hash chain (integrity) ─────────────────────
+// HMAC-SHA256 chain over immutable fields of each entry. The chain links
+// each row to the previous via prev_hash, so any insert/edit/delete of an
+// in-between row is detectable by scripts/verify-integrity.js.
+//
+// Key from LOG_INTEGRITY_KEY. If unset, integrity is DISABLED (both columns
+// stored NULL) so installs without the key keep working.
+const INTEGRITY_KEY     = process.env.LOG_INTEGRITY_KEY || null;
+const INTEGRITY_ENABLED = !!INTEGRITY_KEY;
+let lastHash = null; // Buffer of the last entry_hash, or null at chain start
+
+// Build the canonical string for an entry. MUST match scripts/verify-integrity.js
+// EXACTLY (field order, '|' join, ISO received_at, '' for null/undefined).
+function canonicalString(entry) {
+  let receivedAt = entry.received_at;
+  if (receivedAt instanceof Date) receivedAt = receivedAt.toISOString();
+  else if (receivedAt == null)    receivedAt = '';
+  else                            receivedAt = String(receivedAt);
+  const fields = [
+    receivedAt,
+    entry.source_ip,
+    entry.severity,
+    entry.vendor,
+    entry.message,
+    entry.raw_message,
+  ];
+  return fields.map(f => (f == null ? '' : String(f))).join('|');
+}
+
+// Compute entry_hash (Buffer) from prevHash (Buffer|null) + canonical fields.
+function computeEntryHash(prevHash, entry) {
+  const prevHex = prevHash ? prevHash.toString('hex') : '';
+  return crypto.createHmac('sha256', INTEGRITY_KEY)
+    .update(prevHex + '|' + canonicalString(entry))
+    .digest();
+}
+
+// Stamp prev_hash + entry_hash onto an entry and advance the chain.
+// No-op (NULL hashes) when integrity is disabled.
+function applyHashChain(entry) {
+  if (!INTEGRITY_ENABLED) {
+    entry.prev_hash  = null;
+    entry.entry_hash = null;
+    return;
+  }
+  const h = computeEntryHash(lastHash, entry);
+  entry.prev_hash  = lastHash;
+  entry.entry_hash = h;
+  lastHash = h;
+}
+
+// Resume the chain across restarts from the most recent persisted hash.
+async function initHashChain() {
+  if (!INTEGRITY_ENABLED) {
+    console.warn('[Integrity] LOG_INTEGRITY_KEY not set — hash chain disabled');
+    return;
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT entry_hash FROM syslog_entries WHERE entry_hash IS NOT NULL ORDER BY id DESC LIMIT 1`
+    );
+    lastHash = rows.length ? rows[0].entry_hash : null;
+    console.log(`[Integrity] Hash chain enabled — ${lastHash ? 'resumed from existing chain' : 'starting fresh chain'}`);
+  } catch (err) {
+    console.error('[Integrity] Failed to load last hash, starting fresh:', err.message);
+    lastHash = null;
+  }
+}
+
+// ── Durable disk spool (write-ahead log) ──────────────────────
+// Every enqueued entry is appended (NDJSON) to the active spool segment
+// BEFORE it enters the in-memory buffer, so nothing is lost on crash/DB
+// outage across a restart. Segments are unlinked once all their entries
+// are confirmed flushed to the DB. fsync is periodic (via the flush timer),
+// so a hard kill may lose at most the last sub-second of un-fsynced lines.
+const SPOOL_DIR      = process.env.SPOOL_DIR || path.join(__dirname, '..', 'logs', 'spool');
+const SPOOL_MAX_BYTES = 16 * 1024 * 1024; // 16 MB per segment
+
+let spoolSegmentCounter = 0;          // monotonically increasing segment id
+let spoolFd             = null;       // fd of the active segment
+let spoolActivePath     = null;       // path of the active segment
+let spoolActiveBytes    = 0;          // bytes written to active segment
+let spoolDirty          = false;      // unsynced writes pending fsync
+// Per-segment outstanding-entry counts: path → number of entries enqueued
+// from that segment not yet confirmed flushed. A segment is unlinked when
+// it is no longer active and its count reaches 0.
+const spoolSegments = new Map();
+
+function ensureSpoolDir() {
+  try { fs.mkdirSync(SPOOL_DIR, { recursive: true }); }
+  catch (err) { console.error('[Spool] Failed to create spool dir:', err.message); }
+}
+
+// Serialize an entry to a single NDJSON line. Buffers → hex; Date → ISO.
+function serializeEntry(entry) {
+  const o = {
+    received_at:     entry.received_at instanceof Date ? entry.received_at.toISOString() : entry.received_at,
+    log_timestamp:   entry.log_timestamp instanceof Date ? entry.log_timestamp.toISOString() : entry.log_timestamp,
+    source_ip:       entry.source_ip,
+    source_host:     entry.source_host,
+    facility:        entry.facility,
+    severity:        entry.severity,
+    severity_label:  entry.severity_label,
+    facility_label:  entry.facility_label,
+    vendor:          entry.vendor,
+    program:         entry.program,
+    message:         entry.message,
+    raw_message:     entry.raw_message,
+    structured_data: entry.structured_data || {},
+    is_parsed:       entry.is_parsed,
+    category:        entry.category || null,
+    risk_score:      entry.risk_score || 0,
+    prev_hash:       entry.prev_hash  ? entry.prev_hash.toString('hex')  : null,
+    entry_hash:      entry.entry_hash ? entry.entry_hash.toString('hex') : null,
+  };
+  return JSON.stringify(o) + '\n';
+}
+
+// Rebuild an entry from a spooled NDJSON object (hex → Buffer).
+function deserializeEntry(o) {
+  const e = {
+    received_at:     o.received_at,
+    log_timestamp:   o.log_timestamp,
+    source_ip:       o.source_ip,
+    source_host:     o.source_host,
+    facility:        o.facility,
+    severity:        o.severity,
+    severity_label:  o.severity_label,
+    facility_label:  o.facility_label,
+    vendor:          o.vendor,
+    program:         o.program,
+    message:         o.message,
+    raw_message:     o.raw_message,
+    structured_data: o.structured_data || {},
+    is_parsed:       o.is_parsed,
+    category:        o.category || null,
+    risk_score:      o.risk_score || 0,
+    prev_hash:       o.prev_hash  ? Buffer.from(o.prev_hash,  'hex') : null,
+    entry_hash:      o.entry_hash ? Buffer.from(o.entry_hash, 'hex') : null,
+  };
+  return e;
+}
+
+// Open a fresh active segment file.
+function rollSpoolSegment() {
+  if (spoolFd !== null) {
+    try { fs.fsyncSync(spoolFd); } catch (_) {}
+    try { fs.closeSync(spoolFd); } catch (_) {}
+    spoolFd = null;
+  }
+  spoolSegmentCounter++;
+  spoolActivePath  = path.join(SPOOL_DIR, `spool-${String(spoolSegmentCounter).padStart(10, '0')}.ndjson`);
+  spoolActiveBytes = 0;
+  if (!spoolSegments.has(spoolActivePath)) spoolSegments.set(spoolActivePath, 0);
+  try {
+    spoolFd = fs.openSync(spoolActivePath, 'a');
+  } catch (err) {
+    console.error('[Spool] Failed to open segment:', err.message);
+    spoolFd = null;
+  }
+}
+
+// Append an entry to the active spool segment and tag it with its segment.
+function spoolAppend(entry) {
+  if (spoolFd === null || spoolActiveBytes >= SPOOL_MAX_BYTES) rollSpoolSegment();
+  if (spoolFd === null) return; // spool unavailable — fall through to in-memory only
+  const line = serializeEntry(entry);
+  const buf  = Buffer.from(line, 'utf8');
+  try {
+    fs.writeSync(spoolFd, buf);
+    spoolActiveBytes += buf.length;
+    spoolDirty = true;
+    entry._spoolSeg = spoolActivePath;
+    spoolSegments.set(spoolActivePath, (spoolSegments.get(spoolActivePath) || 0) + 1);
+  } catch (err) {
+    console.error('[Spool] Write error:', err.message);
+  }
+}
+
+// Periodically durable-sync the active segment (called from the flush timer).
+function spoolFsync() {
+  if (spoolFd !== null && spoolDirty) {
+    try { fs.fsyncSync(spoolFd); spoolDirty = false; } catch (_) {}
+  }
+}
+
+// Called after a batch of entries is confirmed flushed to the DB: decrement
+// per-segment outstanding counts and unlink any fully-flushed inactive segment.
+function spoolConfirmFlushed(flushedEntries) {
+  for (const e of flushedEntries) {
+    const seg = e._spoolSeg;
+    if (!seg) continue;
+    const remaining = (spoolSegments.get(seg) || 0) - 1;
+    if (remaining > 0) {
+      spoolSegments.set(seg, remaining);
+    } else {
+      spoolSegments.set(seg, 0);
+      // Only delete if this is not the active (still-being-written) segment.
+      if (seg !== spoolActivePath) {
+        spoolSegments.delete(seg);
+        try { fs.unlinkSync(seg); } catch (_) {}
+      }
+    }
+  }
+}
+
+// Replay any existing spool segments into the in-memory buffer on boot.
+// Preserves order and stored hashes — does NOT recompute hashes.
+function replaySpool() {
+  ensureSpoolDir();
+  let files = [];
+  try {
+    files = fs.readdirSync(SPOOL_DIR)
+      .filter(f => /^spool-\d+\.ndjson$/.test(f))
+      .sort(); // zero-padded names sort lexicographically == numerically
+  } catch (_) { files = []; }
+
+  let replayed = 0;
+  for (const f of files) {
+    const full = path.join(SPOOL_DIR, f);
+    let content = '';
+    try { content = fs.readFileSync(full, 'utf8'); }
+    catch (_) { continue; }
+    const lines = content.split('\n');
+    let segCount = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line) continue; // skip blank (incl. trailing newline split)
+      let o;
+      try { o = JSON.parse(line); }
+      catch (_) {
+        // Torn/partial last line after a crash — skip it rather than throw.
+        if (i === lines.length - 1) continue;
+        continue;
+      }
+      const e = deserializeEntry(o);
+      e._spoolSeg = full;
+      buffer.push(e);
+      segCount++;
+      replayed++;
+    }
+    if (segCount > 0) {
+      spoolSegments.set(full, segCount);
+    } else {
+      // Empty/garbage segment — remove it.
+      try { fs.unlinkSync(full); } catch (_) {}
+    }
+    // Track the highest counter so new segments don't collide.
+    const m = f.match(/^spool-(\d+)\.ndjson$/);
+    if (m) spoolSegmentCounter = Math.max(spoolSegmentCounter, parseInt(m[1], 10));
+  }
+  console.log(`[Spool] replayed ${replayed} entries from ${spoolSegments.size} segments`);
+}
+
 // ── Write buffer ──────────────────────────────────────────────
 const BATCH_SIZE     = 100;
 const BATCH_INTERVAL = 2000;
@@ -204,13 +461,14 @@ async function flushBuffer() {
   let p = 1;
 
   for (const row of toFlush) {
-    values.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
+    values.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
     params.push(
       row.received_at, row.log_timestamp, row.source_ip, row.source_host,
       row.facility, row.severity, row.severity_label, row.facility_label,
       row.vendor, row.program, row.message, row.raw_message,
       JSON.stringify(row.structured_data || {}), row.is_parsed,
-      row.category || null, row.risk_score || 0
+      row.category || null, row.risk_score || 0,
+      row.prev_hash || null, row.entry_hash || null
     );
   }
 
@@ -219,9 +477,12 @@ async function flushBuffer() {
       INSERT INTO syslog_entries
         (received_at, log_timestamp, source_ip, source_host, facility, severity,
          severity_label, facility_label, vendor, program, message, raw_message,
-         structured_data, is_parsed, category, risk_score)
+         structured_data, is_parsed, category, risk_score, prev_hash, entry_hash)
       VALUES ${values.join(',')}
     `, params);
+    // Confirm these entries are durably in the DB so their spool segments
+    // can be reclaimed once fully flushed.
+    spoolConfirmFlushed(toFlush);
   } catch (err) {
     console.error(`[DB] Flush error (${toFlush.length} rows): ${err.message}`);
     // Move failed batch to retry buffer — will retry on next flush
@@ -232,6 +493,11 @@ async function flushBuffer() {
 }
 
 function enqueue(entry) {
+  // Compute the hash at enqueue time (single-threaded, sequential) so the
+  // chain order is deterministic, THEN spool with the same hash bytes, THEN
+  // buffer. The identical hash bytes are used for spool + DB insert.
+  applyHashChain(entry);
+  spoolAppend(entry);
   buffer.push(entry);
   if (buffer.length >= BATCH_SIZE) flushBuffer();
 }
@@ -576,10 +842,21 @@ async function main() {
     process.exit(1);
   }
 
+  // Resume the integrity hash chain from the last persisted hash (or warn if
+  // disabled) BEFORE any new entry is hashed.
+  await initHashChain();
+
+  // Replay any durable spool segments left over from a crash/restart into the
+  // in-memory buffer BEFORE opening sockets, so they drain ahead of new traffic
+  // (and so a fresh active segment is opened after the highest existing counter).
+  replaySpool();
+  rollSpoolSegment();
+
   startUDP(514); startUDP(1514);
   startTCP(514); startTCP(1514);
 
-  flushTimer = setInterval(flushBuffer, BATCH_INTERVAL);
+  // Flush the DB buffer and durable-sync the spool on the same cadence.
+  flushTimer = setInterval(() => { spoolFsync(); flushBuffer(); }, BATCH_INTERVAL);
   await getAlertRules();
 
   // Prime ingestion-guard settings + keep the cache warm (5-min TTL).
@@ -611,7 +888,9 @@ async function main() {
   const shutdown = async () => {
     console.log('[Collector] Shutting down gracefully...');
     clearInterval(flushTimer);
+    spoolFsync();
     await flushBuffer();
+    if (spoolFd !== null) { try { fs.fsyncSync(spoolFd); fs.closeSync(spoolFd); } catch (_) {} spoolFd = null; }
     await pool.end();
     process.exit(0);
   };

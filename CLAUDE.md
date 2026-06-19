@@ -214,12 +214,14 @@ $env:PGPASSWORD = "<set-in-NSSM-env>"
 
 ### Tables
 ```sql
-syslog_entries    -- All log entries (main table, grows large)
-                  --   includes category TEXT + risk_score SMALLINT columns
+syslog_entries    -- All log entries (main table) — PARTITIONED BY RANGE (received_at), daily
+                  --   composite PK (id, received_at); category TEXT + risk_score SMALLINT;
+                  --   prev_hash/entry_hash BYTEA (tamper-evident chain). APPEND-ONLY for app role.
 alert_rules       -- Alert rule definitions
 alert_events      -- Fired alert instances
 known_hosts       -- IP → hostname/vendor/site mapping
 app_settings      -- Key/value app configuration
+audit_log         -- Immutable trail of privileged actions (append-only). Written by api/auditLog.js
 ```
 
 `syslog_entries.category` holds the universal taxonomy value (authentication, vpn,
@@ -227,10 +229,47 @@ firewall, interface, routing, configuration, security, wireless, system, dns, we
 email, dlp, network). `syslog_entries.risk_score` is a 0-100 score from
 `collector/riskScorer.js`. Both are written by the collector and indexed.
 
+### Partitioning & retention (Phase 3)
+- `syslog_entries` is `PARTITION BY RANGE (received_at)` with **daily** partitions
+  (`syslog_entries_pYYYYMMDD`) plus a `syslog_entries_default` safety partition so an
+  INSERT never fails if a daily partition is missing. PK is composite `(id, received_at)`
+  (partition key must be in the PK); `id` stays globally unique via `syslog_entries_id_seq`.
+  An `idx_syslog_id` keeps `WHERE id = $1` fast across partitions.
+- Two `SECURITY DEFINER` functions (owned by `postgres`, EXECUTE granted to `logvault_user`)
+  manage partitions: `ensure_syslog_partitions(days_ahead)` pre-creates future days,
+  `drop_old_syslog_partitions(retention_days)` drops aged daily partitions (never the default).
+- **Retention is now partition DROP, not bulk DELETE.** `scripts/cleanup.js` calls
+  `ensure_syslog_partitions(7)` then `drop_old_syslog_partitions(RETENTION_DAYS)`.
+- **Fresh installs** get the partitioned table straight from `schema.sql`. **Existing live
+  DBs** must be converted with `scripts/migration-phase3-partitioning.sql` — MANUAL run as
+  `postgres`, in a maintenance window, with a `pg_dump` backup first (ATTACHes the existing
+  table as one legacy partition, no row copy). The update script does NOT run SQL.
+
+### Tamper prevention & log integrity (Phase 3)
+- `syslog_entries` and `audit_log` are **append-only for `logvault_user`**:
+  `REVOKE UPDATE, DELETE` (applied after the GRANT ALL block). The collector only INSERTs,
+  the API only SELECTs. NEVER add `UPDATE`/`DELETE FROM syslog_entries` in app code — it will
+  fail. (One-off `scripts/backfill-categories.js` must run as `postgres` if ever re-run.)
+- The collector writes a **tamper-evident HMAC-SHA256 hash chain** (`prev_hash`, `entry_hash`)
+  per row, keyed by `LOG_INTEGRITY_KEY`. If the key is unset, the chain is disabled (columns
+  NULL) and a single startup warning is logged — non-breaking. Canonical input per row:
+  `received_at(ISO)|source_ip|severity|vendor|message|raw_message`, prefixed with the prior
+  row's hash. `scripts/verify-integrity.js` walks the chain and reports the first break.
+  Legacy (pre-migration) rows keep NULL hashes — the chain starts fresh post-migration.
+
+### Durable ingest spool (Phase 3)
+- The collector mirrors every entry to a disk write-ahead spool (`SPOOL_DIR` or
+  `logs/spool/`, rotating NDJSON segments, fsync'd) before/alongside the in-memory buffer, and
+  **replays un-flushed segments on boot** before opening sockets — so a crash/restart/DB-outage
+  no longer loses logs. Segments are unlinked once all their entries are confirmed flushed.
+
 ### Permissions — fresh install requirement
 ```sql
 GRANT ALL ON ALL TABLES IN SCHEMA public TO logvault_user;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO logvault_user;
+-- then (append-only tamper prevention — order matters, runs AFTER the GRANTs):
+REVOKE UPDATE, DELETE ON syslog_entries FROM logvault_user;
+REVOKE UPDATE, DELETE ON audit_log      FROM logvault_user;
 ```
 
 ---
@@ -261,7 +300,14 @@ NETVAULT_DB_PORT=5432
 NETVAULT_DB_NAME=netvault
 NETVAULT_DB_USER=netvault
 NETVAULT_DB_PASS=<set-in-NSSM-env>
+LOG_INTEGRITY_KEY=<set-in-NSSM-env>   # HMAC key for the tamper-evident hash chain; unset = chain disabled
+SPOOL_DIR=                            # optional; defaults to <repo>/logs/spool for the durable ingest spool
 ```
+
+> `LOG_INTEGRITY_KEY` must be the SAME value when running `scripts/verify-integrity.js`,
+> otherwise verification will report false breaks. Treat it like any other secret (NSSM env,
+> never committed). Rotating it starts a new chain segment — old rows verify only with the
+> old key.
 
 **LogVault-API:**
 ```
@@ -831,6 +877,11 @@ $env:PGPASSWORD = "<set-in-NSSM-env>"
 | Storage & capacity widget | Real disk usage via PowerShell Get-PSDrive |
 | Known hosts | NetVault sync + manual, collapsible list |
 | NocVault rebrand | Throughout UI (cookie name unchanged) |
+| Time-partitioned storage | `syslog_entries` daily RANGE partitions + DROP-partition retention via `cleanup.js` |
+| Tamper-evident log integrity | HMAC-SHA256 hash chain (`prev_hash`/`entry_hash`); `verify-integrity.js`; append-only app role |
+| Durable ingest spool | Disk write-ahead spool, replay on boot — no log loss on crash/restart/DB outage |
+| Audit trail | `audit_log` append-only table + `api/auditLog.js`; settings/export/ack/sync/update actions; `GET /api/audit` (super-admin) |
+| Collector ingestion hardening | Opt-in source allow-list + per-source rate limit (default off) |
 
 ## Pending / Planned
 
