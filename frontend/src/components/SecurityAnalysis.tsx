@@ -163,7 +163,7 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 16 }}>
                 <StatCard value={summary.auth_failures}      label="Auth Failures"       color={summary.auth_failures > 0 ? 'var(--tint-danger-fg)' : 'var(--tint-success-fg)'}  bg={summary.auth_failures > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'} border={summary.auth_failures > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'} warn />
-                <StatCard value={summary.brute_force_success} label="Brute Force Success" color={summary.brute_force_success > 0 ? '#7c3aed' : 'var(--tint-success-fg)'} bg={summary.brute_force_success > 0 ? '#f5f3ff' : 'var(--tint-success)'} border={summary.brute_force_success > 0 ? '#ddd6fe' : 'var(--tint-success)'} warn />
+                <StatCard value={summary.brute_force_success} label="Brute Force Success" color={summary.brute_force_success > 0 ? 'var(--tint-purple-fg)' : 'var(--tint-success-fg)'} bg={summary.brute_force_success > 0 ? 'var(--tint-purple)' : 'var(--tint-success)'} border={summary.brute_force_success > 0 ? 'var(--tint-purple)' : 'var(--tint-success)'} warn />
                 <StatCard value={summary.firewall_denies}    label="Firewall Denies"     color='var(--tint-warn-fg)' bg='var(--tint-warn)' border='var(--tint-warn)' />
                 <StatCard value={summary.vpn_events}         label="VPN Events"          color='var(--tint-info-fg)' bg='var(--tint-info)' border='var(--tint-info)' />
                 <StatCard value={summary.ips_events}         label="IPS / Threat Events" color={summary.ips_events > 0 ? 'var(--tint-danger-fg)' : 'var(--tint-success-fg)'} bg={summary.ips_events > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'} border={summary.ips_events > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'} warn />
@@ -172,18 +172,18 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
 
               {/* Critical banners */}
               {summary.brute_force_success > 0 && (
-                <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 8,
+                <div style={{ background: 'var(--tint-purple)', border: '1px solid var(--tint-purple)', borderRadius: 8,
                   padding: '14px 20px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontSize: 'var(--text-xl)' }}>🚨</span>
                   <div>
-                    <div style={{ fontSize: 'var(--text-md)', fontWeight: 700, color: '#7c3aed' }}>Possible Brute Force Success</div>
-                    <div style={{ fontSize: 'var(--text-sm)', color: '#5b21b6', marginTop: 2 }}>
+                    <div style={{ fontSize: 'var(--text-md)', fontWeight: 700, color: 'var(--tint-purple-fg)' }}>Possible Brute Force Success</div>
+                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--tint-purple-fg)', marginTop: 2 }}>
                       {summary.brute_force_success} source IP(s) had multiple failures followed by a successful login. Investigate immediately.
                     </div>
                   </div>
                   <button onClick={() => setActiveSection('brute')}
-                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 6, border: '1px solid #ddd6fe',
-                      cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: '#fff', color: '#7c3aed' }}>
+                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 6, border: '1px solid var(--tint-purple)',
+                      cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--bg-card)', color: 'var(--tint-purple-fg)' }}>
                     Investigate →
                   </button>
                 </div>
@@ -309,18 +309,18 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
                   <tbody>
                     {bruteForce.map((r, i) => (
                       <tr key={i} style={{ borderBottom: '1px solid var(--border-light)',
-                        background: r.success_after_failure ? '#fdf4ff' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
-                        <td style={{ ...TD, ...MONO, color: r.success_after_failure ? '#7c3aed' : '#dc2626', fontWeight: 600 }}>{r.source_ip}</td>
+                        background: r.success_after_failure ? 'var(--tint-purple)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
+                        <td style={{ ...TD, ...MONO, color: r.success_after_failure ? 'var(--tint-purple-fg)' : '#dc2626', fontWeight: 600 }}>{r.source_ip}</td>
                         <td style={{ ...TD, ...MONO, color: 'var(--text-primary)' }}>{r.host}</td>
                         <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 10 }}>{r.fail_count}</span></td>
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.first_fail).toLocaleString()}</td>
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.last_fail).toLocaleString()}</td>
                         <td style={TD}>
                           {r.success_after_failure
-                            ? <span style={{ color: '#7c3aed', fontWeight: 700, background: '#f5f3ff', padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)' }}>🚨 YES</span>
+                            ? <span style={{ color: 'var(--tint-purple-fg)', fontWeight: 700, background: 'var(--tint-purple)', padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)' }}>🚨 YES</span>
                             : <span style={{ color: '#16a34a', fontSize: 'var(--text-xs)' }}>✓ No</span>}
                         </td>
-                        <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: r.success_after_failure ? '#7c3aed' : 'var(--text-muted)' }}>
+                        <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: r.success_after_failure ? 'var(--tint-purple-fg)' : 'var(--text-muted)' }}>
                           {r.success_time ? new Date(r.success_time).toLocaleString() : '—'}
                         </td>
                       </tr>

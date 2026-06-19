@@ -1212,6 +1212,10 @@ const releaseNotes = {
     'Fixed unreadable amber/red alert banners, VPN/security stat tiles, and tinted table rows in dark mode',
     'Added a dark override for --primary-light to match the rest of the suite',
   ],
+  '1.3.8': [
+    'Completed the dark-mode polish: added an adaptive --tint-purple / --tint-purple-fg token to the suite-standard set',
+    'Tinted the remaining purple surfaces (brute-force-success tile/banner, OSPF/BGP/EIGRP/storm-shutdown chips) so they stay readable in dark mode',
+  ],
   'default': [
     'Bug fixes and performance improvements',
   ],

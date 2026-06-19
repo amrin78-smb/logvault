@@ -544,6 +544,7 @@ not change per theme, so they live in `:root` only):
 | `--tint-success` / `--tint-success-fg` | `#f0fdf4` / `#15803d` | `rgba(34,197,94,0.13)` / `#86efac` | green success chips/tiles |
 | `--tint-warn` / `--tint-warn-fg` | `#fffbeb` / `#b45309` | `rgba(217,119,6,0.15)` / `#fcd34d` | amber/orange warn chips/banners |
 | `--tint-danger` / `--tint-danger-fg` | `#fef2f2` / `#b91c1c` | `rgba(220,38,38,0.13)` / `#fca5a5` | red danger chips/banners/rows |
+| `--tint-purple` / `--tint-purple-fg` | `#f5f3ff` / `#6d28d9` | `rgba(139,92,246,0.15)` / `#c4b5fd` | purple chips/banners/rows (brute-force, routing subcats) |
 
 **Rule:** any tinted or neutral **surface that sits behind text** (tiles, table
 rows/headers, badge/chip backgrounds, banners, dropdowns) MUST use these tokens — never a
@@ -552,7 +553,7 @@ dark mode near-white text becomes unreadable and light chips float on dark cards
 **self-contained badge pair** (a hardcoded bg AND a matching dark text defined together, e.g.
 `{ bg:'#fef2f2', color:'#dc2626' }`) swap **both** — bg→`--tint-*`, text→`--tint-*-fg`. For a
 surface holding already-tokenized text, just swap the bg. Chart series/dot/line colors and the
-purple severity palettes (no purple token) are left as-is — those are data signals.
+severity/vendor palettes are left as-is — those are data signals (the raw color IS the signal).
 `--primary-light` also has a dark override (`rgba(200,16,46,0.18)`).
 This is the **suite-wide standard** — the same tokens exist in **ddivault** and **spanvault**.
 

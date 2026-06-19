@@ -60,16 +60,16 @@ function SubcatBadge({ sub }: { sub: string }) {
   const map: Record<string, { color: string; bg: string; label: string }> = {
     mac_flap:        { color: 'var(--tint-danger-fg)', bg: 'var(--tint-danger)', label: '⚠ MAC Flap' },
     storm_control:   { color: 'var(--tint-danger-fg)', bg: 'var(--tint-danger)', label: '⚡ Storm' },
-    storm_shutdown:  { color: '#7c3aed', bg: '#f5f3ff', label: '🛑 Shutdown' },
+    storm_shutdown:  { color: 'var(--tint-purple-fg)', bg: 'var(--tint-purple)', label: '🛑 Shutdown' },
     topology_change: { color: 'var(--tint-warn-fg)', bg: 'var(--tint-warn)', label: '🔄 Topology' },
     root_change:     { color: 'var(--tint-warn-fg)', bg: 'var(--tint-warn)', label: '👑 Root Change' },
     loop_detected:   { color: 'var(--tint-danger-fg)', bg: 'var(--tint-danger)', label: '🔁 Loop' },
     port_removed:    { color: 'var(--tint-warn-fg)', bg: 'var(--tint-warn)', label: 'Port Removed' },
     role_change:     { color: 'var(--tint-info-fg)', bg: 'var(--tint-info)', label: 'Role Change' },
     port_blocked:    { color: 'var(--tint-warn-fg)', bg: 'var(--tint-warn)', label: 'Port Blocked' },
-    ospf_neighbor:   { color: '#7c3aed', bg: '#f5f3ff', label: 'OSPF' },
-    bgp_neighbor:    { color: '#7c3aed', bg: '#f5f3ff', label: 'BGP' },
-    eigrp_neighbor:  { color: '#7c3aed', bg: '#f5f3ff', label: 'EIGRP' },
+    ospf_neighbor:   { color: 'var(--tint-purple-fg)', bg: 'var(--tint-purple)', label: 'OSPF' },
+    bgp_neighbor:    { color: 'var(--tint-purple-fg)', bg: 'var(--tint-purple)', label: 'BGP' },
+    eigrp_neighbor:  { color: 'var(--tint-purple-fg)', bg: 'var(--tint-purple)', label: 'EIGRP' },
   };
   const s = map[sub] || { color: 'var(--text-muted)', bg: 'var(--surface-subtle)', label: sub };
   return (
