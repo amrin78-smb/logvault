@@ -519,6 +519,13 @@ not change per theme, so they live in `:root` only):
   (`var(--text-muted)`, `var(--bg-card)`, `var(--primary)`, etc.) so dark mode works.
 - Display / hero numbers **>= 34px** (e.g. update-overlay spinner, lock-screen glyph) may
   stay literal — they are intentional one-off display sizes.
+- **Stat-tile numbers / panel-row labels must use `var(--text-*)` tokens, never dark/grey
+  literals** (e.g. `#1a202c`, `#374151`, `var(--text-secondary)` on a fixed light tint),
+  so they survive dark mode. Likewise, a tile/row **background** that sits behind tokenized
+  text must adapt: use `var(--bg-primary)`/`var(--bg-card)` for neutral surfaces, or a
+  **semi-transparent** `rgba(r,g,b,0.12)` status tint (not a hardcoded light hex like
+  `#fef2f2`/`#f0fdf4`) so the surface layers correctly over the dark card and the text stays
+  legible in both themes.
 - **Exception:** the severity (`SEV_COLORS`) and vendor (`VENDOR_COLORS`) palettes in
   `LogExplorer.tsx` / `LogDetailPanel.tsx` (and chart series color arrays / status-badge
   color pairs) are intentional semantic palettes with no matching token — leave them.

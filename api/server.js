@@ -1202,6 +1202,10 @@ const releaseNotes = {
     'Made the dashboard Log Volume / Top Blocked / Top Talkers / Vendor row four equal-width columns',
     'Fixed the Top Blocked Destinations scrollbar overlapping the count — added clearance so numbers stay readable',
   ],
+  '1.3.6': [
+    'Fixed Network Health panel text being unreadable in dark mode',
+    'Improved contrast of the Active Alerts "fired" tile in dark mode',
+  ],
   'default': [
     'Bug fixes and performance improvements',
   ],

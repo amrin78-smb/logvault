@@ -261,8 +261,8 @@ export function ActiveAlertsSummary({ onNavigate }: { onNavigate: () => void }) 
               <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 600 }}>UNACKED</div>
             </div>
             <div title="Alerts fired in last 24 hours"
-              style={{ background: '#f8f9fb', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 8px', textAlign: 'center' }}>
-              <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--text-secondary)' }}>{data.total_24h}</div>
+              style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 8px', textAlign: 'center' }}>
+              <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--text-primary)' }}>{data.total_24h}</div>
               <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 600 }}>FIRED 24H</div>
             </div>
           </div>
@@ -371,7 +371,12 @@ export function InterfaceEventsSummary({ hours, onNavigate }: { hours: number; o
           {ITEMS.map(item => {
             const value = data[item.key] || 0;
             const color = value >= item.danger ? '#dc2626' : value >= item.warn ? '#ca8a04' : '#16a34a';
-            const bg    = value >= item.danger ? '#fef2f2' : value >= item.warn ? '#fefce8' : '#f0fdf4';
+            // Semi-transparent status tints layer correctly over both the light
+            // (#fff) and dark (#1a2235) card surfaces, so the row stays readable
+            // in dark mode. Healthy (0) rows use a neutral adaptive surface.
+            const bg    = value >= item.danger ? 'rgba(220,38,38,0.12)'
+                        : value >= item.warn  ? 'rgba(202,138,4,0.12)'
+                        : 'var(--bg-primary)';
             return (
               <div key={item.key} title={item.tip}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
