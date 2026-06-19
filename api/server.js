@@ -442,7 +442,12 @@ function formatBytes(bytes) {
 
 app.get('/api/stats/storage', asyncHandler(async (req, res) => {
   const [sizes, growth, oldest, retention] = await Promise.all([
-    pool.query(`SELECT pg_size_pretty(pg_database_size('logvault')) AS db_size, pg_database_size('logvault') AS db_size_bytes, pg_size_pretty(pg_total_relation_size('syslog_entries')) AS table_size, pg_total_relation_size('syslog_entries') AS table_size_bytes, (SELECT COUNT(*) FROM syslog_entries) AS total_rows, (SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => 24)) AS rows_24h, (SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - make_interval(days => 7)) AS rows_7d`),
+    // table_size must SUM the partition tree: syslog_entries is a PARTITIONED parent
+    // (Phase 3), so pg_total_relation_size() on the parent alone returns 0 bytes — the
+    // rows live in the daily child partitions (+ syslog_entries_legacy). pg_partition_tree
+    // includes the parent and every partition; GREATEST falls back to the plain size if
+    // the table is somehow not partitioned (returns no tree rows -> NULL -> 0).
+    pool.query(`SELECT pg_size_pretty(pg_database_size('logvault')) AS db_size, pg_database_size('logvault') AS db_size_bytes, pg_size_pretty(GREATEST(pg_total_relation_size('syslog_entries'), COALESCE((SELECT SUM(pg_total_relation_size(relid)) FROM pg_partition_tree('syslog_entries')), 0))) AS table_size, GREATEST(pg_total_relation_size('syslog_entries'), COALESCE((SELECT SUM(pg_total_relation_size(relid)) FROM pg_partition_tree('syslog_entries')), 0)) AS table_size_bytes, (SELECT COUNT(*) FROM syslog_entries) AS total_rows, (SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => 24)) AS rows_24h, (SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - make_interval(days => 7)) AS rows_7d`),
     pool.query(`SELECT DATE_TRUNC('day', received_at) AS day, COUNT(*) AS log_count FROM syslog_entries WHERE received_at > NOW() - make_interval(days => 7) GROUP BY day ORDER BY day`),
     pool.query(`SELECT MIN(received_at) AS oldest_log FROM syslog_entries`),
     pool.query(`SELECT EXTRACT(DAY FROM (NOW() - MIN(received_at))) AS days_stored FROM syslog_entries`),
@@ -1232,6 +1237,9 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.1.3': [
+    'Fixed the Storage & Capacity widget showing "LOG TABLE: 0 bytes" (and "AVG GROWTH/DAY: N/A") after the Phase 3 partitioning migration — the size now sums all daily partitions instead of measuring the empty partitioned parent table',
+  ],
   '2.1.2': [
     'GeoIP/threat enrichment now also covers destination IPs — in firewall logs (e.g. Fortinet) the external IP is the destination (dstip), while source_ip is the internal device',
     'The collector now enriches and stores external destination IPs in known_hosts at ingest, alongside source IPs (private IPs still never leave the box)',
