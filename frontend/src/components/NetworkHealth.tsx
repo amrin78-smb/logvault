@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { PageHeader, TableSkeleton, CardSkeleton, EmptyState } from './ui';
+import TimeRangePicker from './TimeRangePicker';
 
 // ── Shared styles ─────────────────────────────────────────────
 const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 };
@@ -81,7 +82,12 @@ function SubcatBadge({ sub }: { sub: string }) {
 }
 
 // ── Main Component ────────────────────────────────────────────
-export default function NetworkHealth({ hours }: { hours: number }) {
+export default function NetworkHealth({ hours, onHoursChange, refreshInterval, onRefreshChange }: {
+  hours: number;
+  onHoursChange: (hours: number) => void;
+  refreshInterval: number;
+  onRefreshChange: (seconds: number) => void;
+}) {
   const [summary,       setSummary]       = useState<any>(null);
   const [deviceStatus,  setDeviceStatus]  = useState<any[]>([]);
   const [flaps,         setFlaps]         = useState<any[]>([]);
@@ -98,7 +104,7 @@ export default function NetworkHealth({ hours }: { hours: number }) {
     try {
       const [s, d, f, stp, mac, cfg, rt, iface] = await Promise.all([
         fetch(`/api/health/summary?hours=${hours}`).then(r => r.json()),
-        fetch(`/api/health/device-status`).then(r => r.json()),
+        fetch(`/api/health/device-status?hours=${hours}`).then(r => r.json()),
         fetch(`/api/health/flaps?hours=${hours}`).then(r => r.json()),
         fetch(`/api/health/stp?hours=${hours}`).then(r => r.json()),
         fetch(`/api/health/macflaps?hours=${hours}`).then(r => r.json()),
@@ -130,9 +136,23 @@ export default function NetworkHealth({ hours }: { hours: number }) {
     { id: 'config',     label: 'Config Changes',     alert: (summary?.config_changes || 0) > 0 },
   ];
 
+  // Human-readable label for the selected range (used in captions)
+  const rangeLabel =
+    hours < 1 ? `${Math.round(hours * 60)} minutes`
+    : hours < 48 ? `${Math.round(hours)} hours`
+    : `${Math.round(hours / 24)} days`;
+
   return (
     <div>
-      <PageHeader title="Network Health" subtitle="Interface events, link state and device connectivity" />
+      <PageHeader title="Network Health" subtitle="Interface events, link state and device connectivity">
+        <TimeRangePicker
+          hours={hours}
+          onHoursChange={onHoursChange}
+          refreshInterval={refreshInterval}
+          onRefreshChange={onRefreshChange}
+          onRefreshNow={fetchAll}
+        />
+      </PageHeader>
 
       {/* Section nav */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--bg-card)',
@@ -226,7 +246,7 @@ export default function NetworkHealth({ hours }: { hours: number }) {
               {/* Quick device status */}
               <div style={CARD}>
                 <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Device Status at a Glance</div>
-                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>Devices that have sent logs in the last 24 hours</div>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>Devices that have sent logs in the last {rangeLabel}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
                   {deviceStatus.slice(0, 12).map((d, i) => {
                     const mins    = parseFloat(d.minutes_since_last_log);

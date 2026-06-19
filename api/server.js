@@ -854,10 +854,13 @@ app.get('/api/health/routing', asyncHandler(async (req, res) => {
 app.get('/api/health/device-status', asyncHandler(async (req, res) => {
   // Heavy aggregation over the syslog table — cache for 60s (device status
   // changes slowly) so dashboard refreshes don't re-run it on every load.
-  // 24h window (was 7 days): scans ~100K rows instead of ~750K. The only
-  // cache-key variation is the RBAC scope.
-  const hours = 24; // fixed 24h window for this endpoint
-  const sf = getSiteFilter(req.rbac, 1, 'se');
+  // The window is driven by the ?hours param (defaults to 24h for backward
+  // compatibility) so it tracks the Network Health time-range picker like the
+  // sibling /api/health/* endpoints. The logs_1h / logs_24h / critical_24h /
+  // error_24h columns stay on their fixed (1h / 24h) windows because the UI
+  // labels them as such.
+  const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'se');
   const cacheKey = `device-status:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 60000, async () => {
     const { rows } = await pool.query(`
@@ -873,11 +876,11 @@ app.get('/api/health/device-status', asyncHandler(async (req, res) => {
         EXTRACT(EPOCH FROM (NOW() - MAX(se.received_at)))/60 AS minutes_since_last_log
       FROM syslog_entries se
       LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
-      WHERE se.received_at > NOW() - make_interval(hours => 24)
+      WHERE se.received_at > NOW() - make_interval(hours => $1)
       ${sf.clause}
       GROUP BY se.source_host, se.source_ip, kh.hostname, kh.vendor, kh.description, se.vendor
       ORDER BY last_seen DESC
-    `, sf.params);
+    `, [hours, ...sf.params]);
     return { data: rows };
   });
   res.json(data);
@@ -1117,6 +1120,11 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '1.4.0': [
+    'Network Health now has a time-range picker in its header, matching the other pages',
+    'Switch between 15m / 1h / 6h / 24h / 48h / 7d / 30d (and custom ranges) without leaving the page — defaults to 24h',
+    'Changing the range refetches all counts, events and the device-status window',
+  ],
   '1.3.12': [
     'Fixed the Log Explorer results table header bleeding through and looking garbled when scrolling in dark mode',
     'Sticky table header now uses an opaque background so rows no longer show through it',

@@ -384,7 +384,7 @@ export default function Home() {
           {tab === 'explorer'  && <ErrorBoundary name="Log Explorer"><LogExplorer initialFilter={explorerFilter} onFilterUsed={() => setExplorerFilter({})} /></ErrorBoundary>}
           {tab === 'livetail'  && <ErrorBoundary name="Live Tail"><LiveTail /></ErrorBoundary>}
           {tab === 'alerts'    && <ErrorBoundary name="Alerts"><AlertEvents /></ErrorBoundary>}
-          {tab === 'health'    && <ErrorBoundary name="Network Health"><NetworkHealth hours={hours} /></ErrorBoundary>}
+          {tab === 'health'    && <ErrorBoundary name="Network Health"><NetworkHealth hours={hours} onHoursChange={setHours} refreshInterval={refreshInterval} onRefreshChange={setRefreshInterval} /></ErrorBoundary>}
           {tab === 'security'  && <ErrorBoundary name="Security"><SecurityAnalysis hours={hours} /></ErrorBoundary>}
           {tab === 'hosts'     && <ErrorBoundary name="Known Hosts"><KnownHosts /></ErrorBoundary>}
           {tab === 'settings'  && isAdmin && <ErrorBoundary name="Settings"><Settings /></ErrorBoundary>}
