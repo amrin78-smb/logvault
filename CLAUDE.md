@@ -920,14 +920,14 @@ $env:PGPASSWORD = "<set-in-NSSM-env>"
 | Durable ingest spool | Disk write-ahead spool, replay on boot — no log loss on crash/restart/DB outage |
 | Audit trail | `audit_log` append-only table + `api/auditLog.js`; settings/export/ack/sync/update actions; `GET /api/audit` (super-admin) |
 | Collector ingestion hardening | Opt-in source allow-list + per-source rate limit (default off) |
+| MITRE ATT&CK mapping | Technique tags on alerts (`alert_rules.mitre_techniques` + 8 correlation rules via `MITRE_BY_RULE`) and on events at ingest (`collector/mitreMapper.js` → `structured_data.mitre`, technique-level); `/api/logs?technique=` filter; ATT&CK Coverage tactic-matrix in the Security tab; `GET /api/stats/mitre-coverage` (RBAC-filtered); shared catalog `frontend/src/components/mitre.tsx`; `scripts/backfill-mitre-tags.js`. Tuned for Fortinet/Cisco; Windows/Palo Alto/other vendor structured signals deferred until those logs arrive |
 
 ## Pending / Planned
 
 | Feature | Priority |
 |---|---|
-| MITRE ATT&CK mapping on alerts | Medium |
-| Compliance reports (PCI-DSS, ISO 27001) | Medium |
 | Top talkers showing device names from NetVault | Next up |
+| Compliance reports (PCI-DSS, ISO 27001) | Medium |
 | Dashboard customization | Low |
 
 ---
