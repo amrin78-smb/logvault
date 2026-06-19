@@ -1234,6 +1234,10 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.1.7': [
+    'Dashboard layout: Top Blocked Destinations and Top Connection Failures now share a wider 2-column row so the destination IP, country flag, ASN and known-bad badge have room to read clearly',
+    'The remaining dashboard widgets reflow into clean 3-per-row rows (Top Security Events / VPN Status / Firewall Actions, and Timeline / Top Talkers / Vendor Breakdown)',
+  ],
   '2.1.6': [
     'Fixed country flag / GeoIP context never appearing on Top Blocked Destinations and Top Connection Failures — the destination-IP join compared known_hosts.ip_address::text (which keeps the /32 mask, e.g. "17.248.154.174/32") against the unmasked dstip and never matched. It now joins on host(ip_address), so country/ASN/flag show for enriched destinations',
     'Top Talkers now displays source IPs without the trailing /32 mask',

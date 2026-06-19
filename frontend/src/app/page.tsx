@@ -340,13 +340,10 @@ export default function Home() {
                 ))}
               </div>
 
-              {/* Row 3: Traffic analysis — 4 equal columns */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+              {/* Row 3: Top Security Events + VPN Status + Firewall Actions — 3 equal columns */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                 <ErrorBoundary name="Top Security Events">
                   <TopSecurityEvents hours={hours} onNavigate={() => setTab('security')} />
-                </ErrorBoundary>
-                <ErrorBoundary name="Top Connection Failures">
-                  <TopConnectionFailures hours={hours} />
                 </ErrorBoundary>
                 <ErrorBoundary name="VPN Status">
                   <VPNStatus hours={hours} onNavigate={() => setTab('security')} />
@@ -356,14 +353,28 @@ export default function Home() {
                 </ErrorBoundary>
               </div>
 
-              {/* Row 4: Timeline + Top Blocked + Top Talkers + Vendor — 4 equal columns */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+              {/* Row 4: Top Blocked + Top Connection Failures — 2 wide containers so the
+                  destination IP + flag/country/ASN/known-bad badge have room to breathe */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                {[
+                  <ErrorBoundary name="Top Blocked">
+                    <TopBlockedDestinations hours={hours} onNavigate={() => setTab('security')} />
+                  </ErrorBoundary>,
+                  <ErrorBoundary name="Top Connection Failures">
+                    <TopConnectionFailures hours={hours} />
+                  </ErrorBoundary>,
+                ].map((widget, i) => (
+                  <div key={i} style={{ height: 220, overflow: 'hidden' }}>
+                    {widget}
+                  </div>
+                ))}
+              </div>
+
+              {/* Row 5: Timeline + Top Talkers + Vendor Breakdown — 3 equal columns */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
                 {[
                   <ErrorBoundary name="Timeline Chart">
                     <TimelineChart hours={hours} compact />
-                  </ErrorBoundary>,
-                  <ErrorBoundary name="Top Blocked">
-                    <TopBlockedDestinations hours={hours} onNavigate={() => setTab('security')} />
                   </ErrorBoundary>,
                   <ErrorBoundary name="Top Talkers">
                     <TopTalkers hours={hours} onHostClick={(host) => openExplorer({ host })} compact />
@@ -378,7 +389,7 @@ export default function Home() {
                 ))}
               </div>
 
-              {/* Row 5: Threat Intelligence — known-bad external sources */}
+              {/* Row 6: Threat Intelligence — known-bad external sources */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginBottom: 12 }}>
                 <div style={{ height: 320, overflow: 'hidden' }}>
                   <ErrorBoundary name="Known-Bad Sources">
