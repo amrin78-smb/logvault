@@ -199,6 +199,28 @@ User:     netvault
 Password: <set-in-NSSM-env>
 ```
 
+### Read-only access for Claude Code / development
+A dedicated read-only role is available for ad-hoc querying during development
+(SELECT only — never use it in app code, which uses `logvault_user`). The password
+is **never committed**: it lives in `.db-readonly.env` (gitignored) on Amrin's local
+machine. `.db-readonly.env.example` (committed) shows the variable layout; copy it to
+`.db-readonly.env` and fill in the real password.
+```
+Host:      192.168.6.111
+Port:      5432
+User:      claude_readonly
+Password:  see .db-readonly.env (gitignored)
+Databases: logvault, netvault, ddivault, spanvault
+```
+Read the password at runtime from `.db-readonly.env` (do not hardcode or echo it),
+then connect, e.g.:
+```bash
+set -a; . ./.db-readonly.env; set +a
+PGPASSWORD="$DB_READONLY_PASS" psql -h "$DB_READONLY_HOST" -p "$DB_READONLY_PORT" \
+  -U "$DB_READONLY_USER" -d logvault -c "SELECT 1;"
+```
+> Requires the server's `pg_hba.conf` to permit `claude_readonly` from the dev host.
+
 ### Run psql commands
 ```powershell
 $env:PGPASSWORD = "<set-in-NSSM-env>"

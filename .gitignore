@@ -4,6 +4,9 @@ node_modules/
 logs/
 *.log
 .env
+
+# Read-only DB credentials for local dev (real password lives here, never committed)
+.db-readonly.env
 temp/
 frontend/tsconfig.tsbuildinfo
 
