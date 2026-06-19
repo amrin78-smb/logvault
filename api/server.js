@@ -1234,6 +1234,11 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.1.8': [
+    'Top Blocked Destinations & Top Connection Failures: the country flag · country · ASN now sits inline on the same row as the destination IP (was a separate line) — more compact and readable',
+    'Top Connection Failures now shows GeoIP context too (flag/country/ASN for external destinations like 8.8.8.8), matching Top Blocked Destinations',
+    'Fixed the last row touching the bottom edge of the Top Connection Failures card — it now scrolls inside the card like the other widgets',
+  ],
   '2.1.7': [
     'Dashboard layout: Top Blocked Destinations and Top Connection Failures now share a wider 2-column row so the destination IP, country flag, ASN and known-bad badge have room to read clearly',
     'The remaining dashboard widgets reflow into clean 3-per-row rows (Top Security Events / VPN Status / Firewall Actions, and Timeline / Top Talkers / Vendor Breakdown)',

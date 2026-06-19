@@ -93,12 +93,14 @@ export function TopBlockedDestinations({ hours, onNavigate }: { hours: number; o
                 title={`${row.dst_ip}${row.service ? ` (${row.service})` : ''} — ${parseInt(row.deny_count).toLocaleString()} blocks`}
                 style={{ cursor: onNavigate ? 'pointer' : 'default' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', minWidth: 0 }}>
                     <span style={{ fontSize: 'var(--text-xs)', color: '#dc2626', fontFamily: 'var(--font-mono)',
-                      fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
+                      fontWeight: 500, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
                       {row.dst_ip || '—'}
                     </span>
                     {row.is_known_bad && <KnownBadBadge score={row.abuse_score} compact />}
+                    {/* Geo (flag · country · ASN) inline on the same row as the IP to save vertical space */}
+                    <GeoInline row={row} />
                     {row.vendor && (
                       <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', background: 'var(--border-light)',
                         padding: '1px 4px', borderRadius: 4, flexShrink: 0, textTransform: 'capitalize' }}>
@@ -110,11 +112,6 @@ export function TopBlockedDestinations({ hours, onNavigate }: { hours: number; o
                     {parseInt(row.deny_count).toLocaleString()}
                   </span>
                 </div>
-                {(row.is_external || row.country_code || row.asn_org) && (
-                  <div style={{ marginBottom: 3 }}>
-                    <GeoInline row={row} />
-                  </div>
-                )}
                 <div style={{ height: 5, background: 'var(--border-light)', borderRadius: 2, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: '#dc2626', borderRadius: 2, transition: 'width 0.5s' }} />
                 </div>
@@ -136,23 +133,25 @@ export function TopConnectionFailures({ hours, onNavigate }: { hours: number; on
   }, [hours]);
   const max = data[0] ? parseInt(data[0].fail_count) : 1;
   return (
-    <div style={{ ...CARD, height: '100%', boxSizing: 'border-box' }}>
-      <div style={TITLE}>Top Connection Failures</div>
-      <div style={SUB}>Network unreachable destinations — {hours}h · Hover for details</div>
+    <div style={{ ...CARD, height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ ...TITLE, flexShrink: 0 }}>Top Connection Failures</div>
+      <div style={{ ...SUB, flexShrink: 0 }}>Network unreachable destinations — {hours}h · Hover for details</div>
       {data.length === 0 ? (
-        <div style={{ height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a', fontSize: 'var(--text-sm)', fontWeight: 500 }}>✓ No failures</div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a', fontSize: 'var(--text-sm)', fontWeight: 500 }}>✓ No failures</div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
           {data.slice(0, 5).map((row, i) => {
             const pct = Math.round((parseInt(row.fail_count) / max) * 100);
             return (
               <div key={i} title={`${row.dst_ip}${row.service ? ` (${row.service})` : ''} — ${parseInt(row.fail_count).toLocaleString()} failures`}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', minWidth: 0 }}>
                     <span style={{ fontSize: 'var(--text-xs)', color: '#ea580c', fontFamily: 'var(--font-mono)',
-                      fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
+                      fontWeight: 500, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
                       {row.dst_ip || '—'}
                     </span>
+                    {/* Geo (flag · country · ASN) inline — shows for external destinations like 8.8.8.8 */}
+                    <GeoInline row={row} />
                     {row.service && (
                       <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', background: 'var(--border-light)',
                         padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>
