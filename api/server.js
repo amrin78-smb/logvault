@@ -379,9 +379,14 @@ app.get('/api/stats/mitre-coverage', asyncHandler(async (req, res) => {
     const { rows } = await pool.query(`
       SELECT t.technique AS technique, COUNT(*)::bigint AS count
       FROM syslog_entries se,
-           LATERAL jsonb_array_elements_text(se.structured_data->'mitre') AS t(technique)
+           -- Guard the type check INSIDE the SRF argument: a WHERE qual cannot stop
+           -- jsonb_array_elements_text from being invoked per row, so a non-array
+           -- 'mitre' value would error mid-scan. CASE feeds it '[]' instead.
+           LATERAL jsonb_array_elements_text(
+             CASE WHEN jsonb_typeof(se.structured_data->'mitre') = 'array'
+                  THEN se.structured_data->'mitre' ELSE '[]'::jsonb END
+           ) AS t(technique)
       WHERE se.received_at > NOW() - make_interval(hours => $1)
-        AND jsonb_typeof(se.structured_data->'mitre') = 'array'
       ${sf.clause}
       GROUP BY t.technique
       ORDER BY count DESC
@@ -1272,6 +1277,11 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.2.1': [
+    'MITRE mapping coverage: event tagging now reads the structured subtype/type fields (e.g. Fortinet IPS/VPN events) and a broader set of auth-failure phrasings, so more events map to techniques like T1190/T1133/T1110',
+    'Hardened the ATT&CK coverage query so an unexpected non-array value under structured_data.mitre can never error the endpoint',
+    'Log Explorer: applying a preset now clears an active ATT&CK technique deep-link filter',
+  ],
   '2.2.0': [
     'MITRE ATT&CK mapping: alerts now carry ATT&CK technique tags — the 8 correlation rules map to techniques (Brute Force T1110, External Remote Services T1133, Network Service Discovery T1046, Exploit Public-Facing App T1190, Impair Defenses T1562), and user threshold rules can declare their own',
     'Log events are tagged with ATT&CK techniques at ingest (shown in the log detail panel); filter the Log Explorer by technique',

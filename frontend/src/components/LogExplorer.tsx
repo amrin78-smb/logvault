@@ -137,8 +137,10 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
     setVendor(preset.vendor);
     setSev(preset.severity);
     setCategory(preset.category);
+    setTechnique('');
     setShowPresets(false);
-    setTimeout(() => triggerSearch({ q: preset.q, vendor: preset.vendor, severity: preset.severity, category: preset.category } as any), 50);
+    // A preset is a fresh scoped search — clear any active technique deep-link too.
+    setTimeout(() => triggerSearch({ q: preset.q, vendor: preset.vendor, severity: preset.severity, category: preset.category, technique: '' } as any), 50);
   };
 
   const removeFilter = (type: string) => {

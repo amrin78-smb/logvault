@@ -6,8 +6,8 @@
  * Pure synchronous classifier — mirrors collector/taxonomy.js and
  * collector/riskScorer.js. Runs once per ingested entry on the hot path, so it
  * MUST stay pure CPU: no DB, no network, no async. Reuses the same signals the
- * other enrichers already parsed (category, structured_data.subcategory /
- * subtype / action, vendor, message keywords).
+ * other enrichers already parse (category, structured_data.subcategory /
+ * subtype / type — e.g. Fortinet sets subtype='ips'|'vpn' — and message keywords).
  *
  * Returns an array of ATT&CK technique IDs (e.g. ['T1110','T1133']) or [] when
  * nothing applies. Keep the ID set in sync with the catalog in
@@ -16,27 +16,35 @@
  */
 
 function mapTechniques(entry) {
-  const s   = (entry && entry.structured_data) || {};
-  const cat = s.category || (entry && entry.category) || '';
-  const sub = String(s.subcategory || '').toLowerCase();
-  const msg = (entry && entry.message) || '';
-  const ids = new Set();
+  const s    = (entry && entry.structured_data) || {};
+  const cat  = s.category || (entry && entry.category) || '';
+  const sub  = String(s.subcategory || '').toLowerCase();
+  const subt = String(s.subtype || '').toLowerCase();
+  const typ  = String(s.type || '').toLowerCase();
+  const msg  = (entry && entry.message) || '';
+  const ids  = new Set();
 
-  // T1110 Brute Force (Credential Access) — repeated/failed auth, lockouts
+  // T1110 Brute Force (Credential Access) — failed/repeated auth, lockouts.
+  // Message regex covers the dominant phrasings ("login failed", "authentication
+  // failure", "failed login/logon/auth"), not just the Cisco-only subcategory enum.
   if (sub === 'brute_force' || sub === 'login_failed' || sub === 'auth_failed' ||
-      /brute.?force|password\s*spray|account.?lock|repeated login fail/i.test(msg)) {
+      /brute.?force|password\s*spray|account.?lock|login.{0,12}fail|authentication fail(?:ed|ure)?|failed (?:login|logon|auth)/i.test(msg)) {
     ids.add('T1110');
   }
-  // T1133 External Remote Services (Initial Access) — VPN / remote access
-  if (cat === 'vpn' || /\bvpn\b|globalprotect|ssl-?vpn|ipsec|anyconnect/i.test(msg)) {
+  // T1133 External Remote Services (Initial Access) — VPN / remote access.
+  // Fortinet & co. set structured subtype='vpn' even when the message lacks a keyword.
+  if (cat === 'vpn' || subt === 'vpn' ||
+      /\bvpn\b|globalprotect|ssl-?vpn|ipsec|anyconnect/i.test(msg)) {
     ids.add('T1133');
   }
   // T1046 Network Service Discovery (Discovery) — scanning
   if (/port\s*scan|host\s*sweep|\bnmap\b|network scan/i.test(msg)) {
     ids.add('T1046');
   }
-  // T1190 Exploit Public-Facing Application (Initial Access) — IPS/UTM threats
-  if (/utm\/ips|\bips\b|intrusion|exploit|signature matched|attack detected/i.test(msg)) {
+  // T1190 Exploit Public-Facing Application (Initial Access) — IPS/UTM threats.
+  // Fortinet/Palo Alto carry the structured discriminator subtype/type='ips'.
+  if (subt === 'ips' || typ === 'ips' ||
+      /utm\/ips|\bips\b|intrusion|exploit|signature matched|attack detected/i.test(msg)) {
     ids.add('T1190');
   }
   // T1486 Data Encrypted for Impact — ransomware
