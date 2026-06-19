@@ -51,14 +51,20 @@
 BEGIN;
 
 -- ---------------------------------------------------------------------------
--- 0. Pick the cutover boundary = start of "today" (server date). Everything
---    already in the table is < cutover; new daily partitions cover >= cutover.
+-- 0. Compute the legacy partition bounds DYNAMICALLY from the actual data, so
+--    this works no matter when it is run:
+--      lower bound = date_trunc('day', MIN(received_at))   (start of earliest day)
+--      upper bound = date_trunc('day', now()) + 1 day      (start of TOMORROW)
+--    Using TOMORROW as the upper bound is critical: today's rows run right up to
+--    now(), so a "today 00:00" cutover would leave them OUTSIDE the legacy range
+--    and the ATTACH CHECK would fail. Tomorrow's midnight guarantees every
+--    existing row (including today's) fits inside the legacy partition.
 -- ---------------------------------------------------------------------------
 -- We use a temp table to stash the computed bounds so later steps can read them.
 CREATE TEMP TABLE _phase3_bounds ON COMMIT DROP AS
 SELECT
-    COALESCE(MIN(received_at), now()) AS min_received,
-    date_trunc('day', now())          AS cutover
+    MIN(received_at)                             AS min_raw,
+    date_trunc('day', now()) + INTERVAL '1 day'  AS cutover
 FROM syslog_entries;
 
 -- ---------------------------------------------------------------------------
@@ -179,18 +185,23 @@ CREATE TABLE IF NOT EXISTS syslog_entries_default
 -- ---------------------------------------------------------------------------
 DO $mig$
 DECLARE
+    v_min_raw timestamptz;
     v_min     timestamptz;
     v_cutover timestamptz;
 BEGIN
-    SELECT min_received, cutover INTO v_min, v_cutover FROM _phase3_bounds;
+    SELECT min_raw, cutover INTO v_min_raw, v_cutover FROM _phase3_bounds;
 
     -- Guard: if the table was empty, there is nothing to attach — just drop
     -- the empty legacy table and let daily partitions handle everything.
-    IF v_min IS NULL OR v_min >= v_cutover THEN
+    IF v_min_raw IS NULL THEN
         EXECUTE 'DROP TABLE IF EXISTS syslog_entries_legacy';
-        RAISE NOTICE 'No legacy rows before cutover; dropped empty legacy table.';
+        RAISE NOTICE 'No legacy rows; dropped empty legacy table.';
         RETURN;
     END IF;
+
+    -- Lower bound = start of the earliest data day; upper bound = tomorrow 00:00
+    -- (computed in step 0) so every existing row, including today's, fits.
+    v_min := date_trunc('day', v_min_raw);
 
     -- Add a CHECK matching the intended partition bound so ATTACH is fast.
     EXECUTE format(
@@ -210,8 +221,9 @@ END;
 $mig$;
 
 -- ---------------------------------------------------------------------------
--- 7. Create daily partitions from the cutover date forward (today .. +7d),
---    using the management function (created next).
+-- 7. Create daily partitions going forward (+7d), using the management function
+--    (created next). Today is already covered by the legacy partition, so the
+--    function skips today (overlap) and creates tomorrow .. +7d.
 -- ---------------------------------------------------------------------------
 
 -- Partition-management functions (identical to scripts/schema.sql — created
@@ -236,11 +248,18 @@ BEGIN
     LOOP
         part_name := 'syslog_entries_p' || to_char(d, 'YYYYMMDD');
         IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = part_name) THEN
-            EXECUTE format(
-                'CREATE TABLE %I PARTITION OF syslog_entries FOR VALUES FROM (%L) TO (%L)',
-                part_name, d::text, (d + 1)::text
-            );
-            created_cnt := created_cnt + 1;
+            BEGIN
+                EXECUTE format(
+                    'CREATE TABLE %I PARTITION OF syslog_entries FOR VALUES FROM (%L) TO (%L)',
+                    part_name, d::text, (d + 1)::text
+                );
+                created_cnt := created_cnt + 1;
+            EXCEPTION WHEN others THEN
+                -- A daily partition can overlap the legacy partition right after
+                -- migration (the migration day is inside the legacy range). Skip
+                -- it instead of aborting the whole call.
+                RAISE NOTICE 'Skipped partition % (%)', part_name, SQLERRM;
+            END;
         END IF;
     END LOOP;
     RETURN created_cnt;

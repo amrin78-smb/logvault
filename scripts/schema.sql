@@ -155,11 +155,18 @@ BEGIN
         IF NOT EXISTS (
             SELECT 1 FROM pg_class WHERE relname = part_name
         ) THEN
-            EXECUTE format(
-                'CREATE TABLE %I PARTITION OF syslog_entries FOR VALUES FROM (%L) TO (%L)',
-                part_name, d::text, (d + 1)::text
-            );
-            created_cnt := created_cnt + 1;
+            BEGIN
+                EXECUTE format(
+                    'CREATE TABLE %I PARTITION OF syslog_entries FOR VALUES FROM (%L) TO (%L)',
+                    part_name, d::text, (d + 1)::text
+                );
+                created_cnt := created_cnt + 1;
+            EXCEPTION WHEN others THEN
+                -- A daily partition can overlap a legacy partition (e.g. right
+                -- after the Phase 3 migration, when the legacy partition still
+                -- covers the migration day). Skip rather than abort the call.
+                RAISE NOTICE 'Skipped partition % (%)', part_name, SQLERRM;
+            END;
         END IF;
     END LOOP;
 
