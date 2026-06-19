@@ -1277,6 +1277,9 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.3.0': [
+    'The Security tab now has its own time-range picker (and auto-refresh control), matching the Dashboard and Network Health — you can change the window without leaving the page',
+  ],
   '2.2.2': [
     'MITRE precision: routine VPN traffic (IPsec negotiate, SSL alerts) is no longer tagged T1133 at the event level — it was drowning the ATT&CK Coverage view in benign VPN volume. T1133 now maps only on the VPN brute-force correlation alert, where it is security-relevant',
     'Added scripts/fix-mitre-vpn-t1133.js to strip the over-broad T1133 tag from already-tagged events (run once as postgres)',

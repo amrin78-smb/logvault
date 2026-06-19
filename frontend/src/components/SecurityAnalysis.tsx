@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { PageHeader, TableSkeleton, CardSkeleton, EmptyState } from './ui';
 import { MITRE_TECHNIQUES, MITRE_TACTIC_ORDER } from './mitre';
+import TimeRangePicker from './TimeRangePicker';
 
 const CARD = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 };
 const TH   = { padding: '8px 12px', textAlign: 'left' as const, color: 'var(--text-muted)', fontWeight: 600, fontSize: 'var(--text-xs)' };
@@ -58,7 +59,13 @@ function StatCard({ value, label, color, bg, border, warn = false }: {
   );
 }
 
-export default function SecurityAnalysis({ hours, onTechnique }: { hours: number; onTechnique?: (technique: string) => void }) {
+export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval, onRefreshChange, onTechnique }: {
+  hours: number;
+  onHoursChange: (hours: number) => void;
+  refreshInterval: number;
+  onRefreshChange: (seconds: number) => void;
+  onTechnique?: (technique: string) => void;
+}) {
   const [summary,      setSummary]      = useState<any>(null);
   const [authFails,    setAuthFails]    = useState<any[]>([]);
   const [bruteForce,   setBruteForce]   = useState<any[]>([]);
@@ -134,7 +141,15 @@ export default function SecurityAnalysis({ hours, onTechnique }: { hours: number
 
   return (
     <div>
-      <PageHeader title="Security" subtitle="Threat events, blocked traffic and VPN activity" />
+      <PageHeader title="Security" subtitle="Threat events, blocked traffic and VPN activity">
+        <TimeRangePicker
+          hours={hours}
+          onHoursChange={onHoursChange}
+          refreshInterval={refreshInterval}
+          onRefreshChange={onRefreshChange}
+          onRefreshNow={fetchAll}
+        />
+      </PageHeader>
 
       {/* Section nav */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--bg-card)',
