@@ -1226,6 +1226,9 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.1.1': [
+    'Top Talkers widget now shows country flag, country/ASN and an AbuseIPDB known-bad badge per source, with a red highlight on flagged rows — matching the other dashboard widgets',
+  ],
   '2.1.0': [
     'GeoIP enrichment: external source IPs are now tagged with country, city and ASN/owner (free ip-api.com, no key required)',
     'Threat intelligence: optional AbuseIPDB scoring flags known-bad IPs (set a free API key in Settings → Threat Intelligence)',

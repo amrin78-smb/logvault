@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { countryFlag, KnownBadBadge } from './ThreatIntel';
 
 const VENDOR_COLORS: Record<string, string> = {
   cisco: '#2563eb', paloalto: '#ea580c', fortinet: '#dc2626',
@@ -26,19 +27,33 @@ export default function TopTalkers({ hours, onHostClick, compact }: {
         {data.slice(0, 5).map((row, i) => {
           const pct = Math.round((parseInt(row.log_count) / max) * 100);
           const color = VENDOR_COLORS[row.vendor] || '#9ca3af';
+          const flag = countryFlag(row.country_code);
+          const geoText = [row.country_name, row.asn_org].filter(Boolean).join(' · ');
+          const knownBad = !!row.is_known_bad;
           return (
             <div key={i} onClick={() => onHostClick && onHostClick(row.host)}
-              style={{ cursor: onHostClick ? 'pointer' : 'default' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 500, maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.host}</span>
+              style={{ cursor: onHostClick ? 'pointer' : 'default',
+                borderLeft: `3px solid ${knownBad ? 'var(--primary)' : 'transparent'}`,
+                paddingLeft: 7 }}>
+              {/* Row 1: vendor dot + flag + host, count on the right */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                  {flag && <span style={{ flexShrink: 0, fontSize: 'var(--text-xs)' }}>{flag}</span>}
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.host}</span>
                 </div>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 600 }}>{parseInt(row.log_count).toLocaleString()}</span>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 600, flexShrink: 0 }}>{parseInt(row.log_count).toLocaleString()}</span>
               </div>
               <div style={{ height: 4, background: 'var(--border-light)', borderRadius: 2, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2 }} />
               </div>
+              {/* Row 2: country · ASN org, with known-bad badge */}
+              {(geoText || knownBad) && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginTop: 3 }}>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{geoText}</span>
+                  {knownBad && <KnownBadBadge score={row.abuse_score} compact />}
+                </div>
+              )}
             </div>
           );
         })}
