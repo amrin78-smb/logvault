@@ -884,7 +884,7 @@ $env:PGPASSWORD = "<set-in-NSSM-env>"
 | Storage & capacity widget | Real disk usage via PowerShell Get-PSDrive |
 | Known hosts | NetVault sync + manual, collapsible list |
 | NocVault rebrand | Throughout UI (cookie name unchanged) |
-| GeoIP + threat intel enrichment | `collector/geoEnrich.js` enriches external IPs at ingest (ip-api.com geo + optional AbuseIPDB scoring) into `known_hosts`; country/ASN on dashboard widgets, "Known-Bad Sources" widget, `GET /api/threats/known-bad`. Private IPs never sent externally; never blocks ingestion |
+| GeoIP + threat intel enrichment | `collector/geoEnrich.js` enriches external IPs at ingest (ip-api.com geo + optional AbuseIPDB scoring) into `known_hosts`; country/ASN on dashboard widgets, "Known-Bad Sources" widget, `GET /api/threats/known-bad`. Private IPs never sent externally; never blocks ingestion. **Enriches BOTH source_ip AND the destination IP** (`structured_data.dstip`/`dst_ip`/`destination_ip`) — in firewall logs (Fortinet etc.) the external IP is the destination while source_ip is the internal device. Because dst external IPs are stored in `known_hosts`, the `top-blocked` / `top-failures` widgets join geo/threat on `host(known_hosts.ip_address) = structured_data->>'dstip'` (they display the destination IP); `top-talkers` still joins on `source_ip` |
 | Time-partitioned storage | `syslog_entries` daily RANGE partitions + DROP-partition retention; cleanup runs in-process in the collector every 24h (no scheduled task) |
 | Tamper-evident log integrity | HMAC-SHA256 hash chain (`prev_hash`/`entry_hash`); `verify-integrity.js`; append-only app role |
 | Durable ingest spool | Disk write-ahead spool, replay on boot — no log loss on crash/restart/DB outage |

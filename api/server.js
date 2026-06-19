@@ -268,7 +268,10 @@ app.get('/api/stats/top-failures', asyncHandler(async (req, res) => {
         kh.abuse_score, kh.is_known_bad, kh.is_external,
         COUNT(*) AS fail_count
       FROM syslog_entries
-      LEFT JOIN known_hosts kh ON kh.ip_address = syslog_entries.source_ip
+      -- These widgets display the DESTINATION IP, so join geo/threat on dstip
+      -- (the external IP in firewall logs), not source_ip (the internal device).
+      -- host() compares as text so a non-IP dstip like 'unknown' never errors.
+      LEFT JOIN known_hosts kh ON host(kh.ip_address) = structured_data->>'dstip'
       WHERE received_at > NOW() - make_interval(hours => $1)
         AND (
           -- Fortinet connection failures
@@ -318,7 +321,10 @@ app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
         kh.abuse_score, kh.is_known_bad, kh.is_external,
         COUNT(*) AS deny_count
       FROM syslog_entries
-      LEFT JOIN known_hosts kh ON kh.ip_address = syslog_entries.source_ip
+      -- These widgets display the DESTINATION IP, so join geo/threat on dstip
+      -- (the external IP in firewall logs), not source_ip (the internal device).
+      -- host() compares as text so a non-IP dstip like 'unknown' never errors.
+      LEFT JOIN known_hosts kh ON host(kh.ip_address) = structured_data->>'dstip'
       WHERE received_at > NOW() - make_interval(hours => $1)
         AND (
           -- Fortinet: policy deny or UTM block
@@ -1226,6 +1232,11 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.1.2': [
+    'GeoIP/threat enrichment now also covers destination IPs — in firewall logs (e.g. Fortinet) the external IP is the destination (dstip), while source_ip is the internal device',
+    'The collector now enriches and stores external destination IPs in known_hosts at ingest, alongside source IPs (private IPs still never leave the box)',
+    'Top Blocked Destinations and Top Connection Failures widgets now show country/ASN and known-bad badges for the destination IP they display (previously they showed geo for the source device)',
+  ],
   '2.1.1': [
     'Top Talkers widget now shows country flag, country/ASN and an AbuseIPDB known-bad badge per source, with a red highlight on flagged rows — matching the other dashboard widgets',
   ],

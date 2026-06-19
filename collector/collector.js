@@ -734,6 +734,22 @@ function processMessage(rawMsg, sourceIp) {
     }).catch(() => {});
   }
 
+  // In Fortinet (and similar) firewall logs the source_ip is the internal device;
+  // the EXTERNAL IP appears as the destination (dstip). Enrich it too and upsert
+  // it into known_hosts so the existing geo joins (source_ip → known_hosts) surface
+  // country/ASN/threat data for destination IPs as well. Same fire-and-forget path.
+  const sd = entry.structured_data || {};
+  const dstIP = sd.dstip || sd.dst_ip || sd.destination_ip;
+  if (dstIP && !isPrivateIP(dstIP) && !seenIPs.has(dstIP)) {
+    seenIPs.add(dstIP);
+    if (seenIPs.size > 10000) seenIPs.clear();
+    getDNSSettings().then(s => {
+      enrichExternalIP(dstIP, s.abuseKey)
+        .then(data => { if (data) return upsertGeoEnrichment(dstIP, data); })
+        .catch(() => {});
+    }).catch(() => {});
+  }
+
   // Run alert rules for medium+ severity
   if (entry.severity <= 4) {
     checkAlertRules(entry).catch(err => console.error('[Alert] Rule check error:', err.message));
