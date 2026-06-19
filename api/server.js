@@ -268,10 +268,15 @@ app.get('/api/stats/top-failures', asyncHandler(async (req, res) => {
         kh.abuse_score, kh.is_known_bad, kh.is_external,
         COUNT(*) AS fail_count
       FROM syslog_entries
-      -- These widgets display the DESTINATION IP, so join geo/threat on dstip
-      -- (the external IP in firewall logs), not source_ip (the internal device).
-      -- host() compares as text so a non-IP dstip like 'unknown' never errors.
-      LEFT JOIN known_hosts kh ON host(kh.ip_address) = structured_data->>'dstip'
+      -- This widget displays the DESTINATION IP, so join geo/threat on dstip (the
+      -- external IP in firewall logs), not source_ip (the internal device). Compare
+      -- ip_address CAST TO TEXT (not host(), which only exists for inet) so the join
+      -- works whether ip_address is inet or text and NEVER errors on a non-IP dstip.
+      -- The IPv4-shape guard limits the join to address-shaped values. This is a
+      -- LEFT JOIN, so rows are kept even when no known_hosts match (geo cols NULL).
+      LEFT JOIN known_hosts kh
+        ON structured_data->>'dstip' ~ '^[0-9.]+$'
+       AND kh.ip_address::text = structured_data->>'dstip'
       WHERE received_at > NOW() - make_interval(hours => $1)
         AND (
           -- Fortinet connection failures
@@ -321,41 +326,29 @@ app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
         kh.abuse_score, kh.is_known_bad, kh.is_external,
         COUNT(*) AS deny_count
       FROM syslog_entries
-      -- These widgets display the DESTINATION IP, so join geo/threat on dstip
-      -- (the external IP in firewall logs), not source_ip (the internal device).
-      -- host() compares as text so a non-IP dstip like 'unknown' never errors.
-      LEFT JOIN known_hosts kh ON host(kh.ip_address) = structured_data->>'dstip'
+      -- This widget displays the DESTINATION IP, so join geo/threat on dstip (the
+      -- external IP in firewall logs), not source_ip (the internal device). Compare
+      -- ip_address CAST TO TEXT (not host(), which only exists for inet) so the join
+      -- works whether ip_address is inet or text and NEVER errors on a non-IP dstip.
+      -- The IPv4-shape guard limits the join to address-shaped values. This is a
+      -- LEFT JOIN, so rows are kept even when no known_hosts match (geo cols NULL).
+      LEFT JOIN known_hosts kh
+        ON structured_data->>'dstip' ~ '^[0-9.]+$'
+       AND kh.ip_address::text = structured_data->>'dstip'
       WHERE received_at > NOW() - make_interval(hours => $1)
         AND (
-          -- Fortinet: policy deny or UTM block
-          (syslog_entries.vendor = 'fortinet' AND (
-            structured_data->>'action' = 'deny'
-            OR structured_data->>'action' = 'blocked'
-            OR message ILIKE '%action=deny%'
-            OR message ILIKE '%action=blocked%'
-          ))
-          OR
-          -- Palo Alto: deny or drop in traffic logs
-          (syslog_entries.vendor = 'paloalto' AND (
-            structured_data->>'action' = 'deny'
-            OR structured_data->>'action' = 'drop'
-            OR message ILIKE '%action=deny%'
-            OR message ILIKE '%action=drop%'
-          ))
-          OR
-          -- Cisco: ACL deny messages
-          (syslog_entries.vendor = 'cisco' AND (
-            message ILIKE '%denied%'
-            OR message ILIKE '%ACL%deny%'
-          ))
-          OR
-          -- Generic: any vendor with explicit deny/block action
-          (syslog_entries.vendor NOT IN ('fortinet','paloalto','cisco') AND (
-            structured_data->>'action' IN ('deny','block','drop','blocked')
-            OR message ILIKE '%action=deny%'
-            OR message ILIKE '%action=block%'
-            OR message ILIKE '%denied%'
-          ))
+          -- Vendor-AGNOSTIC block detection. The old per-vendor branches missed real
+          -- data (e.g. Fortinet logs the action 'blocked', Palo Alto 'deny'/'drop')
+          -- and silently returned nothing. Match the actual action values seen in the
+          -- data (case-insensitive), with message fallbacks for vendors (e.g. Cisco
+          -- ACLs) that don't set a structured action field.
+          LOWER(structured_data->>'action') IN ('deny','denied','block','blocked','drop','dropped')
+          OR message ILIKE '%action=deny%'
+          OR message ILIKE '%action=block%'
+          OR message ILIKE '%action=blocked%'
+          OR message ILIKE '%action=drop%'
+          OR message ILIKE '%denied%'
+          OR message ILIKE '%ACL%deny%'
         )
         AND structured_data->>'dstip' IS NOT NULL
       ${sf.clause}
@@ -1237,6 +1230,10 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.1.4': [
+    'Fixed Top Blocked Destinations and Top Connection Failures widgets returning empty — the destination-IP geo join now casts the address to text (works whether the column is inet or text and never errors on a non-IP destination)',
+    'Top Blocked Destinations now detects blocks vendor-agnostically (matches the actual action values in the data, e.g. Fortinet "blocked", Palo Alto "deny"/"drop") instead of narrow per-vendor rules that silently matched nothing',
+  ],
   '2.1.3': [
     'Fixed the Storage & Capacity widget showing "LOG TABLE: 0 bytes" (and "AVG GROWTH/DAY: N/A") after the Phase 3 partitioning migration — the size now sums all daily partitions instead of measuring the empty partitioned parent table',
   ],
