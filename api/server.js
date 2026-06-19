@@ -367,6 +367,30 @@ app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
   res.json(data);
 }));
 
+// MITRE ATT&CK coverage — counts of log events per technique over the window,
+// derived from the event-level technique tags in structured_data.mitre. RBAC
+// site-filtered on se.source_ip like every other stat endpoint. The frontend
+// groups techniques into tactics via the shared catalog.
+app.get('/api/stats/mitre-coverage', asyncHandler(async (req, res) => {
+  const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'se');
+  const cacheKey = `mitre-coverage:${hours}:${rbacCacheKey(req.rbac)}`;
+  const data = await getCached(cacheKey, 30000, async () => {
+    const { rows } = await pool.query(`
+      SELECT t.technique AS technique, COUNT(*)::bigint AS count
+      FROM syslog_entries se,
+           LATERAL jsonb_array_elements_text(se.structured_data->'mitre') AS t(technique)
+      WHERE se.received_at > NOW() - make_interval(hours => $1)
+        AND jsonb_typeof(se.structured_data->'mitre') = 'array'
+      ${sf.clause}
+      GROUP BY t.technique
+      ORDER BY count DESC
+    `, [hours, ...sf.params]);
+    return { hours, data: rows };
+  });
+  res.json(data);
+}));
+
 app.get('/api/stats/vpn-summary', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const { rows } = await pool.query(`
@@ -457,7 +481,7 @@ app.get('/api/stats/storage', asyncHandler(async (req, res) => {
 // ── LOG SEARCH ───────────────────────────────────────────────
 
 app.get('/api/logs', asyncHandler(async (req, res) => {
-  const { q, vendor, severity, host, ip, category } = req.query;
+  const { q, vendor, severity, host, ip, category, technique } = req.query;
   const hours  = safeHours(req.query.hours, 720);
   const page   = Math.max(parseInt(req.query.page || '1'), 1);
   const limit  = safeInt(req.query.limit, 100, 500);
@@ -470,6 +494,13 @@ app.get('/api/logs', asyncHandler(async (req, res) => {
   if (q)        { conditions.push(`to_tsvector('english', se.message) @@ plainto_tsquery('english', $${p++})`); params.push(q); }
   if (vendor)   { conditions.push(`se.vendor = $${p++}`);                        params.push(vendor); }
   if (category) { conditions.push(`se.category = $${p++}`);                      params.push(category); }
+  // MITRE ATT&CK technique filter — JSONB containment on structured_data.mitre,
+  // served by the existing GIN index on structured_data. Validate the ID shape so
+  // we never build a bad jsonb literal from arbitrary input.
+  if (technique && /^T\d{4}(\.\d{3})?$/.test(String(technique))) {
+    conditions.push(`se.structured_data @> jsonb_build_object('mitre', jsonb_build_array($${p++}::text))`);
+    params.push(technique);
+  }
   if (severity) {
     const sevs = String(severity).split(',').map(Number).filter(n => !isNaN(n) && n >= 0 && n <= 7);
     if (sevs.length) { conditions.push(`se.severity = ANY($${p++}::int[])`);     params.push(sevs); }
@@ -555,7 +586,7 @@ app.put('/api/alert-rules/:id/notify', requireAdmin, asyncHandler(async (req, re
 
 app.post('/api/alerts/rules', requireAdmin, asyncHandler(async (req, res) => {
   const { name, description, match_severity, match_vendor, match_host,
-          match_pattern, threshold_count, threshold_window, notify_email } = req.body;
+          match_pattern, threshold_count, threshold_window, notify_email, mitre_techniques } = req.body;
 
   // Input validation
   if (!name || typeof name !== 'string' || name.length > 200)
@@ -567,13 +598,20 @@ app.post('/api/alerts/rules', requireAdmin, asyncHandler(async (req, res) => {
   if (match_pattern) {
     try { new RegExp(match_pattern); } catch { return res.status(400).json({ error: 'Invalid match_pattern regex' }); }
   }
+  // MITRE technique IDs — technique-level (Txxxx) or sub-technique (Txxxx.yyy).
+  let techniques = null;
+  if (mitre_techniques !== undefined && mitre_techniques !== null) {
+    if (!Array.isArray(mitre_techniques) || mitre_techniques.some(t => typeof t !== 'string' || !/^T\d{4}(\.\d{3})?$/.test(t)))
+      return res.status(400).json({ error: 'mitre_techniques must be an array of ATT&CK IDs (e.g. T1110)' });
+    techniques = mitre_techniques;
+  }
 
   const { rows } = await pool.query(`
     INSERT INTO alert_rules (name, description, match_severity, match_vendor, match_host,
-      match_pattern, threshold_count, threshold_window, notify_email)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *
+      match_pattern, threshold_count, threshold_window, notify_email, mitre_techniques)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *
   `, [name, description, match_severity, match_vendor, match_host,
-      match_pattern, threshold_count || 1, threshold_window || '5 minutes', notify_email]);
+      match_pattern, threshold_count || 1, threshold_window || '5 minutes', notify_email, techniques]);
   res.status(201).json({ data: rows[0] });
 }));
 
@@ -589,7 +627,7 @@ app.patch('/api/alerts/rules/:id', requireAdmin, asyncHandler(async (req, res) =
 app.get('/api/alerts/events', asyncHandler(async (req, res) => {
   const sf = getSiteFilter(req.rbac, 1, 'ae');
   const { rows } = await pool.query(`
-    SELECT ae.*, ar.name AS rule_name
+    SELECT ae.*, ar.name AS rule_name, ar.mitre_techniques
     FROM alert_events ae
     LEFT JOIN alert_rules ar ON ar.id = ae.rule_id
     WHERE TRUE
@@ -636,7 +674,7 @@ app.get('/api/alerts/events/recent-unacked', asyncHandler(async (req, res) => {
   const sf = getSiteFilter(req.rbac, 1, 'ae');
   const { rows } = await pool.query(`
     SELECT ae.id, ae.fired_at, ae.source_host, ae.source_ip, ae.sample_message AS message,
-      ar.name AS rule_name
+      ar.name AS rule_name, ar.mitre_techniques
     FROM alert_events ae
     LEFT JOIN alert_rules ar ON ar.id = ae.rule_id
     WHERE ae.acknowledged = FALSE
@@ -1234,6 +1272,12 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.2.0': [
+    'MITRE ATT&CK mapping: alerts now carry ATT&CK technique tags — the 8 correlation rules map to techniques (Brute Force T1110, External Remote Services T1133, Network Service Discovery T1046, Exploit Public-Facing App T1190, Impair Defenses T1562), and user threshold rules can declare their own',
+    'Log events are tagged with ATT&CK techniques at ingest (shown in the log detail panel); filter the Log Explorer by technique',
+    'New ATT&CK Coverage view in the Security tab — a tactic-by-technique matrix of how much observed activity maps to each technique over the selected window',
+    'Technique badges link out to the technique definition on attack.mitre.org',
+  ],
   '2.1.8': [
     'Top Blocked Destinations & Top Connection Failures: the country flag · country · ASN now sits inline on the same row as the destination IP (was a separate line) — more compact and readable',
     'Top Connection Failures now shows GeoIP context too (flag/country/ASN for external destinations like 8.8.8.8), matching Top Blocked Destinations',

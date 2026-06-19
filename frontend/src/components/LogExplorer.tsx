@@ -55,7 +55,7 @@ const SEVERITIES = [
   { label: 'Info',      value: '6',     color: 'var(--tint-success-fg)', bg: 'var(--tint-success)', border: 'var(--tint-success)' },
 ];
 
-interface ActiveFilter { type: 'vendor' | 'severity' | 'category' | 'host' | 'q'; value: string; label: string; }
+interface ActiveFilter { type: 'vendor' | 'severity' | 'category' | 'host' | 'q' | 'technique'; value: string; label: string; }
 
 export default function LogExplorer({ initialFilter, onFilterUsed }: {
   initialFilter?: ExplorerFilter;
@@ -65,6 +65,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
   const [vendor,     setVendor]    = useState('');
   const [severity,   setSev]       = useState('');
   const [category,   setCategory]  = useState('');
+  const [technique,  setTechnique] = useState('');
   const [host,       setHost]      = useState('');
   const [hours,      setHours]     = useState('24');
   const [logs,       setLogs]      = useState<any[]>([]);
@@ -82,6 +83,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
       if (initialFilter.severity !== undefined) setSev(initialFilter.severity);
       if (initialFilter.vendor   !== undefined) setVendor(initialFilter.vendor);
       if (initialFilter.category !== undefined) setCategory(initialFilter.category);
+      if (initialFilter.technique!== undefined) setTechnique(initialFilter.technique);
       if (initialFilter.host     !== undefined) setHost(initialFilter.host);
       if (initialFilter.hours    !== undefined) setHours(initialFilter.hours);
       if (onFilterUsed) onFilterUsed();
@@ -105,6 +107,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
     const effVendor   = 'vendor'   in f ? (f.vendor   || '') : vendor;
     const effSeverity = 'severity' in f ? (f.severity || '') : severity;
     const effCategory = 'category' in f ? (f.category || '') : category;
+    const effTechnique= 'technique'in f ? (f.technique|| '') : technique;
     const effHost     = 'host'     in f ? (f.host     || '') : host;
     try {
       const params = new URLSearchParams({ hours: f.hours || hours, limit: '200' });
@@ -112,6 +115,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
       if (effVendor)   params.set('vendor', effVendor);
       if (effSeverity) params.set('severity', effSeverity);
       if (effCategory) params.set('category', effCategory);
+      if (effTechnique) params.set('technique', effTechnique);
       if (effHost)     params.set('host', effHost);
       const r = await fetch(`/api/logs?${params}`, { signal: ctrl.signal });
       if (!r.ok) throw new Error(`API error: ${r.status}`);
@@ -126,7 +130,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
     }
   };
 
-  const search = useCallback(() => triggerSearch(), [q, vendor, severity, category, host, hours]);
+  const search = useCallback(() => triggerSearch(), [q, vendor, severity, category, technique, host, hours]);
 
   const applyPreset = (preset: typeof PRESETS[0]) => {
     setQ(preset.q);
@@ -142,13 +146,14 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
     if (type === 'vendor')   { setVendor('');   override.vendor = '';   }
     if (type === 'severity') { setSev('');       override.severity = ''; }
     if (type === 'category') { setCategory('');  override.category = ''; }
+    if (type === 'technique'){ setTechnique(''); override.technique = ''; }
     if (type === 'host')     { setHost('');      override.host = '';     }
     if (type === 'q')        { setQ('');         override.q = '';        }
     setTimeout(() => triggerSearch(override), 50);
   };
 
   const clearAll = () => {
-    setVendor(''); setSev(''); setCategory(''); setHost(''); setQ(''); setHostInput('');
+    setVendor(''); setSev(''); setCategory(''); setTechnique(''); setHost(''); setQ(''); setHostInput('');
     setTimeout(() => triggerSearch({ hours } as any), 50);
   };
 
@@ -161,6 +166,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
     ...(vendor   ? [{ type: 'vendor'   as const, value: vendor,   label: `vendor: ${vendor}` }]   : []),
     ...(severity ? [{ type: 'severity' as const, value: severity, label: `severity: ${SEVERITIES.find(s => s.value === severity)?.label || severity}` }] : []),
     ...(category ? [{ type: 'category' as const, value: category, label: `category: ${CATEGORIES.find(c => c.value === category)?.label || category}` }] : []),
+    ...(technique? [{ type: 'technique'as const, value: technique, label: `technique: ${technique}` }] : []),
     ...(host     ? [{ type: 'host'     as const, value: host,     label: `host: ${host}` }]         : []),
     ...(q        ? [{ type: 'q'        as const, value: q,        label: `search: "${q}"` }]         : []),
   ];

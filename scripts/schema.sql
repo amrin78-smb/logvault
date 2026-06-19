@@ -248,6 +248,13 @@ CREATE TABLE IF NOT EXISTS alert_rules (
     updated_at      TIMESTAMPTZ     DEFAULT NOW()
 );
 
+-- MITRE ATT&CK techniques mapped to this rule (technique-level IDs, e.g. {T1110}).
+-- Additive + idempotent. Covers BOTH user threshold rules and the auto-created
+-- correlation rules — correlationEngine.js writes each rule's static technique
+-- array here on first fire (and keeps it in sync). Operational correlation rules
+-- (interface flap / loop / STP) intentionally store an empty array (no technique).
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS mitre_techniques TEXT[];
+
 -- ============================================================
 -- ALERT EVENTS TABLE (fired alerts)
 -- ============================================================

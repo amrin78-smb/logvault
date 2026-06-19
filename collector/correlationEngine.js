@@ -13,6 +13,21 @@
 // Structure: Map<ruleId, Map<groupKey, [{timestamp, entry}]>>
 const eventBuffers = new Map();
 
+// ── MITRE ATT&CK technique mapping per correlation rule (technique-level) ─────
+// Keyed by rule.id. Operational rules (interface flap / loop / STP) are NOT
+// adversary behaviour, so they map to [] (no technique). Keep in sync with the
+// catalog in frontend/src/components/mitre.tsx and collector/mitreMapper.js.
+const MITRE_BY_RULE = {
+  BRUTE_FORCE_SUCCESS: ['T1110'],
+  PORT_SCAN:           ['T1046'],
+  INTERFACE_FLAPPING:  [],
+  NETWORK_LOOP:        [],
+  AFTER_HOURS_CONFIG:  ['T1562'],
+  STP_INSTABILITY:     [],
+  IPS_REPEATED_ATTACK: ['T1190'],
+  VPN_BRUTE_FORCE:     ['T1110', 'T1133'],
+};
+
 // ── Correlation Rules ─────────────────────────────────────────
 const CORRELATION_RULES = [
 
@@ -346,15 +361,24 @@ async function evaluateCorrelation(entry, pool) {
           `SELECT id FROM alert_rules WHERE name = $1 LIMIT 1`, [rule.name]
         );
 
+        const mitre = MITRE_BY_RULE[rule.id] || [];
+
         let ruleId;
         if (ruleRow.rows.length === 0) {
           const inserted = await pool.query(`
-            INSERT INTO alert_rules (name, description, is_enabled, threshold_count, threshold_window)
-            VALUES ($1, $2, TRUE, $3, '10 minutes') RETURNING id
-          `, [rule.name, rule.description, rule.phases[0].minCount]);
+            INSERT INTO alert_rules (name, description, is_enabled, threshold_count, threshold_window, mitre_techniques)
+            VALUES ($1, $2, TRUE, $3, '10 minutes', $4) RETURNING id
+          `, [rule.name, rule.description, rule.phases[0].minCount, mitre]);
           ruleId = inserted.rows[0].id;
         } else {
           ruleId = ruleRow.rows[0].id;
+          // Keep the technique mapping fresh on already-seeded rule rows (idempotent;
+          // backfills rows created before this feature shipped).
+          await pool.query(
+            `UPDATE alert_rules SET mitre_techniques = $1
+             WHERE id = $2 AND mitre_techniques IS DISTINCT FROM $1`,
+            [mitre, ruleId]
+          );
         }
 
         // Check for existing open alert — update instead of inserting duplicate

@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useToast } from '@/components/Toast';
 import { PageHeader, TableSkeleton, EmptyState } from './ui';
+import { MitreBadges } from './mitre';
 
 function formatInterval(val: any): string {
   if (!val) return '-';
@@ -21,14 +22,14 @@ const TH   = { padding: '8px 12px', textAlign: 'left' as const, color: 'var(--te
 const TD   = { padding: '9px 12px' };
 
 const CORRELATION_RULES = [
-  { name: 'Brute Force Login Success',        description: '3+ failed logins from same IP followed by success within 10 min',   severity: 'critical', window: '10 min' },
-  { name: 'Port Scan Detected',               description: 'Same source IP hitting 8+ unique destinations denied within 3 min',  severity: 'warning',  window: '3 min'  },
-  { name: 'Interface Flapping Detected',      description: 'Same interface changed state 4+ times within 10 min',                severity: 'warning',  window: '10 min' },
-  { name: 'Network Loop Detected',            description: 'MAC address flapping 2+ times from same switch within 2 min',        severity: 'critical', window: '2 min'  },
-  { name: 'After-Hours Configuration Change', description: 'Any config change between 10PM and 6AM',                             severity: 'warning',  window: '1 min'  },
-  { name: 'STP Instability Detected',         description: '3+ STP topology changes from same device within 5 min',              severity: 'warning',  window: '5 min'  },
-  { name: 'Repeated IPS Triggers',            description: 'Same source IP triggering 5+ IPS events within 5 min',               severity: 'critical', window: '5 min'  },
-  { name: 'VPN Brute Force Attempt',          description: '5+ VPN login failures from same source within 5 min',                severity: 'error',    window: '5 min'  },
+  { name: 'Brute Force Login Success',        description: '3+ failed logins from same IP followed by success within 10 min',   severity: 'critical', window: '10 min', mitre: ['T1110'] },
+  { name: 'Port Scan Detected',               description: 'Same source IP hitting 8+ unique destinations denied within 3 min',  severity: 'warning',  window: '3 min',  mitre: ['T1046'] },
+  { name: 'Interface Flapping Detected',      description: 'Same interface changed state 4+ times within 10 min',                severity: 'warning',  window: '10 min', mitre: [] },
+  { name: 'Network Loop Detected',            description: 'MAC address flapping 2+ times from same switch within 2 min',        severity: 'critical', window: '2 min',  mitre: [] },
+  { name: 'After-Hours Configuration Change', description: 'Any config change between 10PM and 6AM',                             severity: 'warning',  window: '1 min',  mitre: ['T1562'] },
+  { name: 'STP Instability Detected',         description: '3+ STP topology changes from same device within 5 min',              severity: 'warning',  window: '5 min',  mitre: [] },
+  { name: 'Repeated IPS Triggers',            description: 'Same source IP triggering 5+ IPS events within 5 min',               severity: 'critical', window: '5 min',  mitre: ['T1190'] },
+  { name: 'VPN Brute Force Attempt',          description: '5+ VPN login failures from same source within 5 min',                severity: 'error',    window: '5 min',  mitre: ['T1110', 'T1133'] },
 ];
 
 const SEV_STYLE: Record<string, { bg: string; color: string }> = {
@@ -47,6 +48,7 @@ interface AlertEvent {
   sample_message: string;
   acknowledged: boolean;
   acknowledged_at?: string;
+  mitre_techniques?: string[] | null;
 }
 
 interface GroupedRule {
@@ -56,6 +58,7 @@ interface GroupedRule {
   total_count: number;
   latest: string;
   is_correlation: boolean;
+  mitre_techniques?: string[] | null;
 }
 
 export default function AlertEvents() {
@@ -96,6 +99,7 @@ export default function AlertEvents() {
       total_count:   evts.length,
       latest:        evts[0]?.fired_at,
       is_correlation: correlationNames.has(rule_name),
+      mitre_techniques: evts.find(e => e.mitre_techniques && e.mitre_techniques.length)?.mitre_techniques || null,
     });
   }
   grouped.sort((a, b) => b.unacked_count - a.unacked_count || new Date(b.latest).getTime() - new Date(a.latest).getTime());
@@ -227,7 +231,12 @@ export default function AlertEvents() {
               )}
 
               {/* Rule name */}
-              <span style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: sevColor, flex: 1 }}>{group.rule_name}</span>
+              <span style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: sevColor }}>{group.rule_name}</span>
+
+              {/* MITRE ATT&CK technique badges */}
+              <MitreBadges ids={group.mitre_techniques} />
+
+              <span style={{ flex: 1 }} />
 
               {/* Stats */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -454,6 +463,7 @@ export default function AlertEvents() {
                         background: 'var(--tint-info)', color: 'var(--tint-info-fg)' }}>
                         window: {rule.window}
                       </span>
+                      <MitreBadges ids={rule.mitre} />
                     </div>
                     <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>{rule.description}</div>
                   </div>

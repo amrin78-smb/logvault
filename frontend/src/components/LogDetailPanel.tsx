@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { MitreBadges } from './mitre';
 
 interface LogRow {
   id:              number;
@@ -180,6 +181,13 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
               <Field label="Hostname"     value={log.source_host}     mono />
               <Field label="Vendor"       value={log.vendor} />
               <Field label="Category"     value={log.category} />
+              {Array.isArray(log.structured_data?.mitre) && log.structured_data.mitre.length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '9px 0', borderBottom: '1px solid var(--border-light)', gap: 12 }}>
+                  <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', flexShrink: 0 }}>MITRE ATT&amp;CK</span>
+                  <MitreBadges ids={log.structured_data.mitre} />
+                </div>
+              )}
               <Field label="Program"      value={log.program} />
               <Field label="Severity"     value={log.severity_label} />
               <Field label="Facility"     value={log.facility_label} />

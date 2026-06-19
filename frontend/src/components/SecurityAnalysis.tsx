@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { PageHeader, TableSkeleton, CardSkeleton, EmptyState } from './ui';
+import { MITRE_TECHNIQUES, MITRE_TACTIC_ORDER } from './mitre';
 
 const CARD = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 };
 const TH   = { padding: '8px 12px', textAlign: 'left' as const, color: 'var(--text-muted)', fontWeight: 600, fontSize: 'var(--text-xs)' };
@@ -57,7 +58,7 @@ function StatCard({ value, label, color, bg, border, warn = false }: {
   );
 }
 
-export default function SecurityAnalysis({ hours }: { hours: number }) {
+export default function SecurityAnalysis({ hours, onTechnique }: { hours: number; onTechnique?: (technique: string) => void }) {
   const [summary,      setSummary]      = useState<any>(null);
   const [authFails,    setAuthFails]    = useState<any[]>([]);
   const [bruteForce,   setBruteForce]   = useState<any[]>([]);
@@ -66,13 +67,14 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
   const [ipsEvents,    setIpsEvents]    = useState<any>(null);
   const [afterHours,   setAfterHours]   = useState<any[]>([]);
   const [wirelessAuth, setWirelessAuth] = useState<any>(null);
+  const [mitreCov,     setMitreCov]     = useState<any[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [activeSection, setActiveSection] = useState('overview');
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, af, bf, fw, vpn, ips, ah, wa] = await Promise.all([
+      const [s, af, bf, fw, vpn, ips, ah, wa, mc] = await Promise.all([
         fetch(`/api/security/summary?hours=${hours}`).then(r => r.json()),
         fetch(`/api/security/auth-failures?hours=${hours}`).then(r => r.json()),
         fetch(`/api/security/brute-force?hours=${hours}`).then(r => r.json()),
@@ -81,6 +83,7 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
         fetch(`/api/security/ips-events?hours=${hours}`).then(r => r.json()),
         fetch(`/api/security/after-hours?hours=${hours}`).then(r => r.json()),
         fetch(`/api/security/wireless-auth?hours=${hours}`).then(r => r.json()),
+        fetch(`/api/stats/mitre-coverage?hours=${hours}`).then(r => r.json()),
       ]);
       setSummary(s ? {
         ...s,
@@ -98,6 +101,7 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
       setIpsEvents(ips);
       setAfterHours(ah.data || []);
       setWirelessAuth(wa);
+      setMitreCov(mc.data || []);
     } catch (e) { console.error(e); }
     setLoading(false);
   }, [hours]);
@@ -113,7 +117,20 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
     { id: 'ips',        label: 'IPS / Threats',      alert: (summary?.ips_events       || 0) > 0 },
     { id: 'afterhours', label: 'After-Hours',        alert: (summary?.after_hours_events || 0) > 0 },
     { id: 'wireless',   label: 'Wireless Auth',      alert: (wirelessAuth?.summary?.failures || 0) > 5 },
+    { id: 'attack',     label: 'ATT&CK Coverage' },
   ];
+
+  // ── MITRE ATT&CK coverage matrix data ──
+  const covMap: Record<string, number> = {};
+  mitreCov.forEach((r: any) => { covMap[r.technique] = parseInt(r.count) || 0; });
+  const byTactic: Record<string, string[]> = {};
+  Object.keys(MITRE_TECHNIQUES).forEach(id => {
+    const tac = MITRE_TECHNIQUES[id].tactic;
+    (byTactic[tac] = byTactic[tac] || []).push(id);
+  });
+  const covTactics = MITRE_TACTIC_ORDER.filter(t => byTactic[t] && byTactic[t].length);
+  const covTotal = mitreCov.reduce((a: number, r: any) => a + (parseInt(r.count) || 0), 0);
+  const covTacticsActive = covTactics.filter(t => byTactic[t].some(id => (covMap[id] || 0) > 0)).length;
 
   return (
     <div>
@@ -574,6 +591,60 @@ export default function SecurityAnalysis({ hours }: { hours: number }) {
                       ))}
                     </tbody>
                   </table>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'attack' && (
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 16 }}>
+                <StatCard value={mitreCov.length}    label="Techniques Observed" color='var(--tint-purple-fg)' bg='var(--tint-purple)' border='var(--tint-purple)' />
+                <StatCard value={covTotal}           label="Mapped Events"       color='var(--tint-info-fg)'   bg='var(--tint-info)'   border='var(--tint-info)' />
+                <StatCard value={covTacticsActive}   label="Tactics Active"      color='var(--tint-warn-fg)'   bg='var(--tint-warn)'   border='var(--tint-warn)' />
+              </div>
+              <div style={CARD}>
+                <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>MITRE ATT&amp;CK Coverage</div>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
+                  How observed activity maps to ATT&amp;CK techniques over the selected window. Click a technique to view its logs.
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 10, alignItems: 'start' }}>
+                  {covTactics.map(tac => (
+                    <div key={tac} style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                      <div style={{ padding: '6px 10px', background: 'var(--surface-subtle)', fontSize: 'var(--text-xs)',
+                        fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                        {tac}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 6 }}>
+                        {byTactic[tac].map(id => {
+                          const c = covMap[id] || 0;
+                          const active = c > 0;
+                          return (
+                            <button key={id} onClick={() => active && onTechnique?.(id)} disabled={!active || !onTechnique}
+                              title={`${id} · ${MITRE_TECHNIQUES[id].name}${active ? ` — ${c.toLocaleString()} events (click to view)` : ' — no activity in window'}`}
+                              style={{ textAlign: 'left', cursor: active && onTechnique ? 'pointer' : 'default',
+                                border: `1px solid ${active ? 'var(--tint-purple)' : 'var(--border-light)'}`,
+                                background: active ? 'var(--tint-purple)' : 'var(--bg-primary)', borderRadius: 6,
+                                padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: 2, opacity: active ? 1 : 0.5 }}>
+                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', fontWeight: 700,
+                                color: active ? 'var(--tint-purple-fg)' : 'var(--text-muted)' }}>
+                                {id}{active ? ` · ${c.toLocaleString()}` : ''}
+                              </span>
+                              <span style={{ fontSize: 'var(--text-xs)', color: active ? 'var(--tint-purple-fg)' : 'var(--text-muted)',
+                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {MITRE_TECHNIQUES[id].name}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {covTotal === 0 && (
+                  <div style={{ marginTop: 14, fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>
+                    No ATT&amp;CK-mapped events in this window yet. Techniques are tagged on new logs as they arrive at the collector.
+                  </div>
                 )}
               </div>
             </div>
