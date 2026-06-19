@@ -1277,6 +1277,10 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.2.2': [
+    'MITRE precision: routine VPN traffic (IPsec negotiate, SSL alerts) is no longer tagged T1133 at the event level — it was drowning the ATT&CK Coverage view in benign VPN volume. T1133 now maps only on the VPN brute-force correlation alert, where it is security-relevant',
+    'Added scripts/fix-mitre-vpn-t1133.js to strip the over-broad T1133 tag from already-tagged events (run once as postgres)',
+  ],
   '2.2.1': [
     'MITRE mapping coverage: event tagging now reads the structured subtype/type fields (e.g. Fortinet IPS/VPN events) and a broader set of auth-failure phrasings, so more events map to techniques like T1190/T1133/T1110',
     'Hardened the ATT&CK coverage query so an unexpected non-array value under structured_data.mitre can never error the endpoint',

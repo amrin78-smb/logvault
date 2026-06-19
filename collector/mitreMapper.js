@@ -31,12 +31,13 @@ function mapTechniques(entry) {
       /brute.?force|password\s*spray|account.?lock|login.{0,12}fail|authentication fail(?:ed|ure)?|failed (?:login|logon|auth)/i.test(msg)) {
     ids.add('T1110');
   }
-  // T1133 External Remote Services (Initial Access) — VPN / remote access.
-  // Fortinet & co. set structured subtype='vpn' even when the message lacks a keyword.
-  if (cat === 'vpn' || subt === 'vpn' ||
-      /\bvpn\b|globalprotect|ssl-?vpn|ipsec|anyconnect/i.test(msg)) {
-    ids.add('T1133');
-  }
+  // NOTE: T1133 External Remote Services is intentionally NOT tagged at the event
+  // level. Keying it off VPN category/subtype tagged ALL routine VPN traffic (IPsec
+  // negotiate, SSL alerts) as a technique, which is benign tunnel activity and drowned
+  // out real signal in the coverage view. T1133 is mapped only on the VPN_BRUTE_FORCE
+  // correlation rule (collector/correlationEngine.js MITRE_BY_RULE), which is the
+  // security-relevant altitude for "adversary used external remote services".
+
   // T1046 Network Service Discovery (Discovery) — scanning
   if (/port\s*scan|host\s*sweep|\bnmap\b|network scan/i.test(msg)) {
     ids.add('T1046');
