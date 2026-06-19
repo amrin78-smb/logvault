@@ -35,13 +35,16 @@ const { evaluateCorrelation } = require('./correlationEngine');
 const { syncFromNetVault }    = require('./netvaultSync');
 const { runCleanup }          = require('../scripts/cleanup');
 const { enrichIP, configureDNS } = require('./dnsLookup');
+const { enrichExternalIP, isPrivateIP } = require('./geoEnrich');
 const { sendAlertEmail }         = require('./emailer');
 
 // IPs seen this session — avoid re-enriching same IP repeatedly
 const seenIPs = new Set();
 
-// DNS settings cache — reloaded every 5 minutes
-let dnsSettings = { enabled: true, server: '' };
+// DNS settings cache — reloaded every 5 minutes.
+// Also carries the AbuseIPDB API key for GeoIP/threat enrichment (same TTL,
+// folded into one query). The key is never logged.
+let dnsSettings = { enabled: true, server: '', abuseKey: '' };
 let dnsSettingsLoadedAt = 0;
 const DNS_SETTINGS_TTL = 5 * 60 * 1000; // 5 minutes
 
@@ -50,7 +53,8 @@ async function getDNSSettings() {
   if (now - dnsSettingsLoadedAt < DNS_SETTINGS_TTL) return dnsSettings;
   try {
     const { rows } = await pool.query(
-      `SELECT key, value FROM app_settings WHERE key IN ('dns_server', 'dns_lookup_enabled')`
+      `SELECT key, value FROM app_settings
+       WHERE key IN ('dns_server', 'dns_lookup_enabled', 'abuseipdb_api_key')`
     );
     const s = Object.fromEntries(rows.map(r => [r.key, r.value]));
     const newServer  = s.dns_server || '';
@@ -60,10 +64,47 @@ async function getDNSSettings() {
       configureDNS(newServer);
       console.log(`[DNS] Server updated to: ${newServer || 'system default'}`);
     }
-    dnsSettings = { enabled: newEnabled, server: newServer };
+    dnsSettings = { enabled: newEnabled, server: newServer, abuseKey: s.abuseipdb_api_key || '' };
     dnsSettingsLoadedAt = now;
   } catch {}
   return dnsSettings;
+}
+
+// Upsert GeoIP/threat enrichment into known_hosts for an external IP.
+// COALESCE keeps existing values when a future enrichment returns null, and the
+// WHERE guard means a NetVault-synced row's hostname/vendor/site/brand/model are
+// never touched — we only set the geo/threat columns + is_external/last_enriched.
+async function upsertGeoEnrichment(ip, data) {
+  if (!ip || !data) return;
+  const cleanIP = String(ip).replace(/\/\d+$/, '').trim();
+  try {
+    await pool.query(`
+      INSERT INTO known_hosts
+        (ip_address, country_code, country_name, city, asn, asn_org,
+         is_external, abuse_score, is_known_bad, threat_tags, last_enriched, last_seen)
+      VALUES ($1::inet, $2, $3, $4, $5, $6, TRUE, $7, $8, $9, NOW(), NOW())
+      ON CONFLICT (ip_address) DO UPDATE SET
+        country_code  = COALESCE(EXCLUDED.country_code,  known_hosts.country_code),
+        country_name  = COALESCE(EXCLUDED.country_name,  known_hosts.country_name),
+        city          = COALESCE(EXCLUDED.city,          known_hosts.city),
+        asn           = COALESCE(EXCLUDED.asn,           known_hosts.asn),
+        asn_org       = COALESCE(EXCLUDED.asn_org,       known_hosts.asn_org),
+        is_external   = TRUE,
+        abuse_score   = COALESCE(EXCLUDED.abuse_score,   known_hosts.abuse_score),
+        is_known_bad  = COALESCE(EXCLUDED.is_known_bad,  known_hosts.is_known_bad),
+        threat_tags   = COALESCE(EXCLUDED.threat_tags,   known_hosts.threat_tags),
+        last_enriched = NOW(),
+        last_seen     = NOW()
+    `, [
+      cleanIP,
+      data.country_code, data.country_name, data.city, data.asn, data.asn_org,
+      (data.abuse_score === null || data.abuse_score === undefined) ? null : data.abuse_score,
+      (data.abuse_score === null || data.abuse_score === undefined) ? null : data.is_known_bad,
+      (data.threat_tags && data.threat_tags.length) ? data.threat_tags : null,
+    ]);
+  } catch (err) {
+    console.error(`[GeoEnrich] Upsert error for ${cleanIP}:`, err.message);
+  }
 }
 
 // ── Ingestion guard settings (allow-list + rate limit) ────────
@@ -675,14 +716,22 @@ function processMessage(rawMsg, sourceIp) {
 
   enqueue(entry);
 
-  // DNS reverse lookup for new IPs — best effort, non-blocking
+  // DNS reverse lookup + GeoIP/threat enrichment for new IPs — best effort,
+  // non-blocking (fire-and-forget; never awaited on the ingest hot path).
   const ipKey = entry.source_ip;
   if (ipKey && !seenIPs.has(ipKey)) {
     seenIPs.add(ipKey);
     if (seenIPs.size > 10000) seenIPs.clear();
     getDNSSettings().then(s => {
       if (s.enabled) enrichIP(ipKey, pool).catch(() => {});
-    });
+      // GeoIP/threat enrichment for EXTERNAL IPs only — private IPs never leave
+      // the box (isPrivateIP guard inside enrichExternalIP too, belt-and-braces).
+      if (!isPrivateIP(ipKey)) {
+        enrichExternalIP(ipKey, s.abuseKey)
+          .then(data => { if (data) return upsertGeoEnrichment(ipKey, data); })
+          .catch(() => {});
+      }
+    }).catch(() => {});
   }
 
   // Run alert rules for medium+ severity

@@ -7,6 +7,7 @@ import TimelineChart   from '@/components/TimelineChart';
 import TopTalkers      from '@/components/TopTalkers';
 import VendorBreakdown from '@/components/VendorBreakdown';
 import { TopSecurityEvents, TopBlockedDestinations, TopConnectionFailures, VPNStatus, ActiveAlertsSummary, InterfaceEventsSummary, FirewallActions } from '@/components/DashboardWidgets';
+import { KnownBadSources } from '@/components/ThreatIntel';
 import LogExplorer     from '@/components/LogExplorer';
 import LiveTail        from '@/components/LiveTail';
 import AlertEvents     from '@/components/AlertEvents';
@@ -375,6 +376,15 @@ export default function Home() {
                     {widget}
                   </div>
                 ))}
+              </div>
+
+              {/* Row 5: Threat Intelligence — known-bad external sources */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginBottom: 12 }}>
+                <div style={{ height: 320, overflow: 'hidden' }}>
+                  <ErrorBoundary name="Known-Bad Sources">
+                    <KnownBadSources onNavigate={(ip) => openExplorer({ host: ip })} />
+                  </ErrorBoundary>
+                </div>
               </div>
 
               <ErrorBoundary name="Storage Widget"><StorageWidget /></ErrorBoundary>

@@ -370,9 +370,26 @@ ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS last_synced      TIMESTAMPTZ;
 ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS site_id INTEGER;
 CREATE INDEX IF NOT EXISTS idx_known_hosts_site_id ON known_hosts (site_id);
 
+-- ── GeoIP / threat-intel enrichment columns ──────────────────
+-- Populated by the collector's enrichment pass (GeoIP lookup + AbuseIPDB).
+-- Known-bad = is_known_bad = TRUE OR abuse_score >= 50.
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS country_code  TEXT;
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS country_name  TEXT;
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS city          TEXT;
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS asn           TEXT;
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS asn_org       TEXT;
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS is_external   BOOLEAN DEFAULT FALSE;
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS abuse_score   SMALLINT;
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS is_known_bad  BOOLEAN DEFAULT FALSE;
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS threat_tags   TEXT[];
+ALTER TABLE known_hosts ADD COLUMN IF NOT EXISTS last_enriched TIMESTAMPTZ;
+
 -- RBAC: site filtering uses known_hosts.site_id (int) matching
 --       NetVault user_sites.site_id. No additional LogVault tables needed —
 --       roles and user→site assignments live in the NetVault DB.
+
+-- GeoIP / threat-intel enrichment settings
+INSERT INTO app_settings (key, value) VALUES ('abuseipdb_api_key', '') ON CONFLICT (key) DO NOTHING;
 
 -- DNS lookup settings
 INSERT INTO app_settings (key, value) VALUES ('dns_server', '') ON CONFLICT (key) DO NOTHING;

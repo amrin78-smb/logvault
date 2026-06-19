@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { GeoInline, KnownBadBadge } from '@/components/ThreatIntel';
 
 const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' };
 const TITLE = { fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 };
@@ -97,6 +98,7 @@ export function TopBlockedDestinations({ hours, onNavigate }: { hours: number; o
                       fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
                       {row.dst_ip || '—'}
                     </span>
+                    {row.is_known_bad && <KnownBadBadge score={row.abuse_score} compact />}
                     {row.vendor && (
                       <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', background: 'var(--border-light)',
                         padding: '1px 4px', borderRadius: 4, flexShrink: 0, textTransform: 'capitalize' }}>
@@ -108,6 +110,11 @@ export function TopBlockedDestinations({ hours, onNavigate }: { hours: number; o
                     {parseInt(row.deny_count).toLocaleString()}
                   </span>
                 </div>
+                {(row.is_external || row.country_code || row.asn_org) && (
+                  <div style={{ marginBottom: 3 }}>
+                    <GeoInline row={row} />
+                  </div>
+                )}
                 <div style={{ height: 5, background: 'var(--border-light)', borderRadius: 2, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: '#dc2626', borderRadius: 2, transition: 'width 0.5s' }} />
                 </div>

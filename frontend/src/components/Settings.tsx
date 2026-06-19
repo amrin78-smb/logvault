@@ -21,6 +21,7 @@ interface Settings {
   email_notify_digest_hour:  string;
   email_notify_recipients:   string;
   email_notify_cooldown_mins: string;
+  abuseipdb_api_key:         string;
 }
 
 const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 20, boxShadow: 'var(--shadow-sm)' };
@@ -272,7 +273,10 @@ export default function Settings() {
     email_notify_digest_hour: '8',
     email_notify_recipients: '',
     email_notify_cooldown_mins: '30',
+    abuseipdb_api_key: '',
   });
+  // Count of known-bad IPs from threat intel (shown in the Threat Intelligence section).
+  const [knownBadCount, setKnownBadCount] = useState<number | null>(null);
   const [saving,   setSaving]     = useState(false);
   const [activeTab, setActiveTab] = useState<'email' | 'system' | 'updates' | 'about'>('system');
   const [testTo,   setTestTo]     = useState('');
@@ -393,6 +397,14 @@ export default function Settings() {
           setSettings(s => ({ ...s, ...d.data }));
         }
       }).catch(() => {});
+  }, []);
+
+  // Threat-intel enrichment stats — count of known-bad external IPs detected.
+  useEffect(() => {
+    fetch('/api/threats/known-bad')
+      .then(r => r.json())
+      .then((d: unknown) => setKnownBadCount(Array.isArray(d) ? d.length : 0))
+      .catch(() => setKnownBadCount(null));
   }, []);
 
   // Load alert rules once when the Email tab is first opened.
@@ -520,6 +532,37 @@ export default function Settings() {
                 Used for reverse lookups of IPs appearing in logs — both internal devices and external IPs.
                 Settings are applied automatically within 5 minutes — no restart needed.
               </div>
+            </div>
+          </div>
+
+          {/* Threat Intelligence */}
+          <div style={CARD}>
+            <div style={SECTION_HEADER}>Threat Intelligence</div>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
+              GeoIP data uses ip-api.com (free, no key needed). AbuseIPDB requires a free API key for threat scoring.
+            </div>
+
+            <div style={{ maxWidth: 420, marginBottom: 4 }}>
+              <label style={LABEL}>AbuseIPDB API Key</label>
+              <input style={INPUT} type="password" value={settings.abuseipdb_api_key}
+                onChange={e => setSettings(s => ({ ...s, abuseipdb_api_key: e.target.value }))}
+                placeholder="••••••••••••••••" autoComplete="off" />
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 6 }}>
+                Get a free key at abuseipdb.com (1,000 checks/day free).
+              </div>
+            </div>
+
+            {/* Enrichment stats */}
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 16,
+              background: knownBadCount && knownBadCount > 0 ? 'var(--tint-danger)' : 'var(--surface-subtle)',
+              border: '1px solid var(--border)', borderRadius: 8, padding: '8px 14px' }}>
+              <span style={{ fontSize: 'var(--text-lg)', fontWeight: 700,
+                color: knownBadCount && knownBadCount > 0 ? 'var(--tint-danger-fg)' : 'var(--text-primary)' }}>
+                {knownBadCount === null ? '—' : knownBadCount.toLocaleString()}
+              </span>
+              <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+                known-bad IP{knownBadCount === 1 ? '' : 's'} detected
+              </span>
             </div>
           </div>
 

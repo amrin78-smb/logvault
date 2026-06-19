@@ -853,6 +853,7 @@ $env:PGPASSWORD = "<set-in-NSSM-env>"
 | `collector_allowed_sources` | (empty) | Comma-separated IPs/CIDRs the collector accepts syslog from. **Empty = allow ALL** (default). IPv4/CIDR only — non-IPv4 sources fail open. |
 | `collector_rate_limit_enabled` | false | Enable per-source-IP ingestion rate limiting |
 | `collector_rate_limit_pps` | 0 | Max packets/sec per source IP. `0` = unlimited (sentinel). Only applies when `collector_rate_limit_enabled` is true |
+| `abuseipdb_api_key` | (empty) | AbuseIPDB API key for threat scoring of external IPs. Empty = GeoIP only (ip-api.com, no key). Read by the collector via the 5-min DNS-settings cache; never logged. |
 
 > **Collector ingestion hardening (default-permissive).** The allow-list and rate-limit
 > above are off by default so they never drop live traffic until an operator opts in. Both
@@ -883,6 +884,7 @@ $env:PGPASSWORD = "<set-in-NSSM-env>"
 | Storage & capacity widget | Real disk usage via PowerShell Get-PSDrive |
 | Known hosts | NetVault sync + manual, collapsible list |
 | NocVault rebrand | Throughout UI (cookie name unchanged) |
+| GeoIP + threat intel enrichment | `collector/geoEnrich.js` enriches external IPs at ingest (ip-api.com geo + optional AbuseIPDB scoring) into `known_hosts`; country/ASN on dashboard widgets, "Known-Bad Sources" widget, `GET /api/threats/known-bad`. Private IPs never sent externally; never blocks ingestion |
 | Time-partitioned storage | `syslog_entries` daily RANGE partitions + DROP-partition retention; cleanup runs in-process in the collector every 24h (no scheduled task) |
 | Tamper-evident log integrity | HMAC-SHA256 hash chain (`prev_hash`/`entry_hash`); `verify-integrity.js`; append-only app role |
 | Durable ingest spool | Disk write-ahead spool, replay on boot — no log loss on crash/restart/DB outage |

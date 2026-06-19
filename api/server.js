@@ -189,13 +189,17 @@ app.get('/api/stats/top-talkers', asyncHandler(async (req, res) => {
         COALESCE(kh.hostname, se.source_host, se.source_ip::TEXT) AS host,
         se.source_ip::TEXT AS source_ip,
         COALESCE(kh.vendor, se.vendor) AS vendor,
+        kh.country_code, kh.country_name, kh.asn_org,
+        kh.abuse_score, kh.is_known_bad, kh.is_external,
         COUNT(*) AS log_count,
         MAX(se.received_at) AS last_seen
       FROM syslog_entries se
       LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
       WHERE se.received_at > NOW() - make_interval(hours => $1)
       ${sf.clause}
-      GROUP BY se.source_host, se.source_ip, kh.hostname, kh.vendor, se.vendor
+      GROUP BY se.source_host, se.source_ip, kh.hostname, kh.vendor, se.vendor,
+        kh.country_code, kh.country_name, kh.asn_org,
+        kh.abuse_score, kh.is_known_bad, kh.is_external
       ORDER BY log_count DESC
       LIMIT $2
     `, [hours, limit, ...sf.params]);
@@ -260,24 +264,27 @@ app.get('/api/stats/top-failures', asyncHandler(async (req, res) => {
       SELECT
         COALESCE(structured_data->>'dstip', 'unknown') AS dst_ip,
         COALESCE(structured_data->>'service', '') AS service,
+        kh.country_code, kh.country_name, kh.asn_org,
+        kh.abuse_score, kh.is_known_bad, kh.is_external,
         COUNT(*) AS fail_count
       FROM syslog_entries
+      LEFT JOIN known_hosts kh ON kh.ip_address = syslog_entries.source_ip
       WHERE received_at > NOW() - make_interval(hours => $1)
         AND (
           -- Fortinet connection failures
-          (vendor = 'fortinet' AND message ILIKE '%Connection Failed%')
+          (syslog_entries.vendor = 'fortinet' AND message ILIKE '%Connection Failed%')
           OR
           -- Palo Alto session end with no bytes
-          (vendor = 'paloalto' AND message ILIKE '%session_end%' AND message ILIKE '%bytes%0%')
+          (syslog_entries.vendor = 'paloalto' AND message ILIKE '%session_end%' AND message ILIKE '%bytes%0%')
           OR
           -- Cisco TCP unreachable / timeout
-          (vendor = 'cisco' AND (
+          (syslog_entries.vendor = 'cisco' AND (
             message ILIKE '%unreachable%'
             OR message ILIKE '%timed out%'
           ))
           OR
           -- Generic connection failure indicators
-          (vendor NOT IN ('fortinet','paloalto','cisco') AND (
+          (syslog_entries.vendor NOT IN ('fortinet','paloalto','cisco') AND (
             message ILIKE '%connection failed%'
             OR message ILIKE '%connection refused%'
             OR message ILIKE '%host unreachable%'
@@ -286,7 +293,9 @@ app.get('/api/stats/top-failures', asyncHandler(async (req, res) => {
         )
         AND structured_data->>'dstip' IS NOT NULL
       ${sf.clause}
-      GROUP BY structured_data->>'dstip', structured_data->>'service'
+      GROUP BY structured_data->>'dstip', structured_data->>'service',
+        kh.country_code, kh.country_name, kh.asn_org,
+        kh.abuse_score, kh.is_known_bad, kh.is_external
       ORDER BY fail_count DESC
       LIMIT 5
     `, [hours, ...sf.params]);
@@ -304,13 +313,16 @@ app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
       SELECT
         COALESCE(structured_data->>'dstip', 'unknown') AS dst_ip,
         COALESCE(structured_data->>'service', '') AS service,
-        vendor,
+        syslog_entries.vendor,
+        kh.country_code, kh.country_name, kh.asn_org,
+        kh.abuse_score, kh.is_known_bad, kh.is_external,
         COUNT(*) AS deny_count
       FROM syslog_entries
+      LEFT JOIN known_hosts kh ON kh.ip_address = syslog_entries.source_ip
       WHERE received_at > NOW() - make_interval(hours => $1)
         AND (
           -- Fortinet: policy deny or UTM block
-          (vendor = 'fortinet' AND (
+          (syslog_entries.vendor = 'fortinet' AND (
             structured_data->>'action' = 'deny'
             OR structured_data->>'action' = 'blocked'
             OR message ILIKE '%action=deny%'
@@ -318,7 +330,7 @@ app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
           ))
           OR
           -- Palo Alto: deny or drop in traffic logs
-          (vendor = 'paloalto' AND (
+          (syslog_entries.vendor = 'paloalto' AND (
             structured_data->>'action' = 'deny'
             OR structured_data->>'action' = 'drop'
             OR message ILIKE '%action=deny%'
@@ -326,13 +338,13 @@ app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
           ))
           OR
           -- Cisco: ACL deny messages
-          (vendor = 'cisco' AND (
+          (syslog_entries.vendor = 'cisco' AND (
             message ILIKE '%denied%'
             OR message ILIKE '%ACL%deny%'
           ))
           OR
           -- Generic: any vendor with explicit deny/block action
-          (vendor NOT IN ('fortinet','paloalto','cisco') AND (
+          (syslog_entries.vendor NOT IN ('fortinet','paloalto','cisco') AND (
             structured_data->>'action' IN ('deny','block','drop','blocked')
             OR message ILIKE '%action=deny%'
             OR message ILIKE '%action=block%'
@@ -341,7 +353,9 @@ app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
         )
         AND structured_data->>'dstip' IS NOT NULL
       ${sf.clause}
-      GROUP BY structured_data->>'dstip', structured_data->>'service', vendor
+      GROUP BY structured_data->>'dstip', structured_data->>'service', syslog_entries.vendor,
+        kh.country_code, kh.country_name, kh.asn_org,
+        kh.abuse_score, kh.is_known_bad, kh.is_external
       ORDER BY deny_count DESC
       LIMIT 5
     `, [hours, ...sf.params]);
@@ -707,10 +721,13 @@ app.get('/api/hosts', asyncHandler(async (req, res) => {
   const { rows } = await pool.query(`
     SELECT ip_address::TEXT, hostname, vendor, description,
       site_name, brand, model, device_status, lifecycle_status,
-      synced_from_nv, last_synced, last_seen
+      synced_from_nv, last_synced, last_seen,
+      country_code, country_name, city, asn, asn_org, is_external,
+      abuse_score, is_known_bad, threat_tags, last_enriched
     FROM known_hosts
     ${where}
-    ORDER BY synced_from_nv DESC, last_seen DESC
+    ORDER BY is_known_bad DESC NULLS LAST, abuse_score DESC NULLS LAST,
+      synced_from_nv DESC, last_seen DESC
   `, params);
   res.json({ data: rows });
 }));
@@ -741,6 +758,68 @@ app.post('/api/hosts/sync-netvault', requireSuperAdmin, asyncHandler(async (req,
     await writeAudit(pool, req, 'hosts.sync_netvault', { result: 'error', detail: { message: err.message } });
     res.status(500).json({ error: 'Internal server error' });
   }
+}));
+
+// ── THREAT INTELLIGENCE ──────────────────────────────────────
+// Known-bad hosts = known_hosts flagged is_known_bad = TRUE OR abuse_score >= 50.
+// RBAC: known_hosts carries site_id directly (NetVault site link), so we filter
+// on it the same way /api/hosts does — getSiteFilter builds a source_ip subquery
+// for syslog_entries, which does not apply to this known_hosts-keyed table. The
+// per-source-IP getSiteFilter clause IS still used for the total_hits subquery
+// (which reads syslog_entries.source_ip) so a user only counts hits from their
+// own sites, matching the other per-source endpoints.
+app.get('/api/threats/known-bad', asyncHandler(async (req, res) => {
+  const limit = safeInt(req.query.limit, 100, 500);
+  const rbac = req.rbac;
+
+  // Site filter on known_hosts.site_id (admins: none; no-sites user: 1=0).
+  let khWhere = '';
+  const params = [];
+  let p = 1;
+  if (rbac && rbac.allowedSiteIds !== null && rbac.allowedSiteIds !== undefined) {
+    if (rbac.allowedSiteIds.length === 0) {
+      khWhere = 'AND 1=0';
+    } else {
+      khWhere = `AND kh.site_id = ANY($${p}::int[])`;
+      params.push(rbac.allowedSiteIds);
+      p += 1;
+    }
+  }
+
+  // Site filter for the correlated 24h hit count (per-source on syslog_entries).
+  const sf = getSiteFilter(rbac, p, 'se');
+  params.push(...sf.params);
+  p = sf.nextParamIndex;
+
+  const limitIdx = p;
+  params.push(limit);
+
+  const { rows } = await pool.query(`
+    SELECT
+      kh.ip_address::TEXT AS ip_address,
+      kh.hostname,
+      kh.country_name,
+      kh.country_code,
+      kh.asn_org,
+      kh.abuse_score,
+      kh.threat_tags,
+      kh.last_enriched,
+      kh.last_seen,
+      COALESCE((
+        SELECT COUNT(*)
+        FROM syslog_entries se
+        WHERE se.source_ip = kh.ip_address
+          AND se.received_at > NOW() - INTERVAL '24 hours'
+          ${sf.clause}
+      ), 0) AS total_hits
+    FROM known_hosts kh
+    WHERE (kh.is_known_bad = TRUE OR kh.abuse_score >= 50)
+    ${khWhere}
+    ORDER BY kh.abuse_score DESC NULLS LAST
+    LIMIT $${limitIdx}
+  `, params);
+
+  res.json({ data: rows });
 }));
 
 // ── NETWORK HEALTH ───────────────────────────────────────────
@@ -1147,6 +1226,13 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.1.0': [
+    'GeoIP enrichment: external source IPs are now tagged with country, city and ASN/owner (free ip-api.com, no key required)',
+    'Threat intelligence: optional AbuseIPDB scoring flags known-bad IPs (set a free API key in Settings → Threat Intelligence)',
+    'New "Known-Bad Sources" dashboard widget and country/ASN context on top-talker / blocked / failure widgets',
+    'New GET /api/threats/known-bad endpoint (RBAC-filtered) listing flagged external IPs with 24h hit counts',
+    'Enrichment runs at ingest in the collector (private IPs never leave the box, never blocks ingestion) and is stored in known_hosts',
+  ],
   '2.0.0': [
     'Log storage is now time-partitioned (daily) — retention drops whole partitions instead of slow bulk DELETEs, keeping the database fast as it grows',
     'Tamper-evident log integrity: every entry is hash-chained (HMAC-SHA256) and logs are now append-only, so any modification is detectable (run scripts/verify-integrity.js to check)',
