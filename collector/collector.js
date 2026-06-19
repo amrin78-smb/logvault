@@ -13,7 +13,10 @@ const crypto   = require('crypto');
 const fs       = require('fs');
 const path     = require('path');
 const { Pool } = require('pg');
-require('dotenv').config({ path: path.join(__dirname, '..', '.env.local') });
+// Load .env.local by EXPLICIT path (relative to THIS file, not process.cwd()),
+// so DB creds + LOG_INTEGRITY_KEY load regardless of the NSSM AppDirectory.
+// override:false (the default) keeps NSSM AppEnvironmentExtra vars authoritative.
+require('dotenv').config({ path: path.join(__dirname, '..', '.env.local'), override: false });
 
 const { parseGeneric }  = require('../parsers/generic');
 const { parseCisco }    = require('../parsers/cisco');
@@ -450,45 +453,57 @@ let buffer      = [];
 let retryBuffer = []; // Holds failed batches for retry
 let flushTimer  = null;
 
+// Max rows per INSERT. 18 params/row → keep total params well under PostgreSQL's
+// 65,535-per-query protocol limit, even when toFlush grows large under DB
+// backpressure (buffer is not size-capped). Exceeding the limit surfaces as the
+// wire-protocol error "bind message has N parameter formats but 0 parameters".
+const MAX_INSERT_ROWS = 1000; // 1000 × 18 = 18,000 params — safe margin
+
 async function flushBuffer() {
   // Combine retry buffer with current buffer
   const toFlush = [...retryBuffer, ...buffer.splice(0, buffer.length)];
   retryBuffer = [];
   if (toFlush.length === 0) return;
 
-  const values = [];
-  const params = [];
-  let p = 1;
+  // Insert in chunks so a single query never exceeds the parameter limit.
+  for (let i = 0; i < toFlush.length; i += MAX_INSERT_ROWS) {
+    const chunk = toFlush.slice(i, i + MAX_INSERT_ROWS);
+    const values = [];
+    const params = [];
+    let p = 1;
 
-  for (const row of toFlush) {
-    values.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
-    params.push(
-      row.received_at, row.log_timestamp, row.source_ip, row.source_host,
-      row.facility, row.severity, row.severity_label, row.facility_label,
-      row.vendor, row.program, row.message, row.raw_message,
-      JSON.stringify(row.structured_data || {}), row.is_parsed,
-      row.category || null, row.risk_score || 0,
-      row.prev_hash || null, row.entry_hash || null
-    );
-  }
+    for (const row of chunk) {
+      values.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
+      params.push(
+        row.received_at, row.log_timestamp, row.source_ip, row.source_host,
+        row.facility, row.severity, row.severity_label, row.facility_label,
+        row.vendor, row.program, row.message, row.raw_message,
+        JSON.stringify(row.structured_data || {}), row.is_parsed,
+        row.category || null, row.risk_score || 0,
+        row.prev_hash || null, row.entry_hash || null
+      );
+    }
 
-  try {
-    await pool.query(`
-      INSERT INTO syslog_entries
-        (received_at, log_timestamp, source_ip, source_host, facility, severity,
-         severity_label, facility_label, vendor, program, message, raw_message,
-         structured_data, is_parsed, category, risk_score, prev_hash, entry_hash)
-      VALUES ${values.join(',')}
-    `, params);
-    // Confirm these entries are durably in the DB so their spool segments
-    // can be reclaimed once fully flushed.
-    spoolConfirmFlushed(toFlush);
-  } catch (err) {
-    console.error(`[DB] Flush error (${toFlush.length} rows): ${err.message}`);
-    // Move failed batch to retry buffer — will retry on next flush
-    // Cap retry buffer at 1000 rows to avoid unbounded memory growth
-    retryBuffer = [...toFlush, ...retryBuffer].slice(0, 1000);
-    console.error(`[DB] ${retryBuffer.length} rows queued for retry`);
+    try {
+      await pool.query(`
+        INSERT INTO syslog_entries
+          (received_at, log_timestamp, source_ip, source_host, facility, severity,
+           severity_label, facility_label, vendor, program, message, raw_message,
+           structured_data, is_parsed, category, risk_score, prev_hash, entry_hash)
+        VALUES ${values.join(',')}
+      `, params);
+      // Confirm these entries are durably in the DB so their spool segments
+      // can be reclaimed once fully flushed.
+      spoolConfirmFlushed(chunk);
+    } catch (err) {
+      console.error(`[DB] Flush error (${chunk.length} rows): ${err.message}`);
+      // Requeue this chunk + every not-yet-attempted row for the next flush.
+      // Cap at 1000 to bound memory; un-flushed rows remain in the on-disk
+      // spool and replay on restart, so they are not lost.
+      retryBuffer = [...toFlush.slice(i), ...retryBuffer].slice(0, 1000);
+      console.error(`[DB] ${retryBuffer.length} rows queued for retry`);
+      return;
+    }
   }
 }
 
