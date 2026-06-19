@@ -578,16 +578,27 @@ app.get('/api/alerts/events', asyncHandler(async (req, res) => {
 }));
 
 app.patch('/api/alerts/events/:id/acknowledge', asyncHandler(async (req, res) => {
-  await pool.query('UPDATE alert_events SET acknowledged=TRUE, acknowledged_at=NOW() WHERE id=$1', [req.params.id]);
+  const ackBy = (req.rbac && req.rbac.userId) ? String(req.rbac.userId) : null;
+  await pool.query(
+    'UPDATE alert_events SET acknowledged=TRUE, acknowledged_at=NOW(), acknowledged_by=$2 WHERE id=$1',
+    [req.params.id, ackBy]
+  );
   res.json({ ok: true });
 }));
 
 app.patch('/api/alerts/events/acknowledge-all', asyncHandler(async (req, res) => {
   const { ids } = req.body;
+  const ackBy = (req.rbac && req.rbac.userId) ? String(req.rbac.userId) : null;
   if (ids && Array.isArray(ids) && ids.length > 0) {
-    await pool.query('UPDATE alert_events SET acknowledged=TRUE, acknowledged_at=NOW() WHERE id = ANY($1::int[])', [ids]);
+    await pool.query(
+      'UPDATE alert_events SET acknowledged=TRUE, acknowledged_at=NOW(), acknowledged_by=$2 WHERE id = ANY($1::int[])',
+      [ids, ackBy]
+    );
   } else {
-    await pool.query('UPDATE alert_events SET acknowledged=TRUE, acknowledged_at=NOW() WHERE acknowledged=FALSE');
+    await pool.query(
+      'UPDATE alert_events SET acknowledged=TRUE, acknowledged_at=NOW(), acknowledged_by=$1 WHERE acknowledged=FALSE',
+      [ackBy]
+    );
   }
   res.json({ ok: true });
 }));
@@ -1120,6 +1131,13 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '1.5.0': [
+    'Security hardening: removed all hardcoded credential fallbacks from code and scrubbed secrets from the repo — passwords and NEXTAUTH_SECRET now come only from NSSM/.env',
+    'Session cookies now auto-enable the Secure flag when served over HTTPS (no change on HTTP deployments)',
+    'Collector can now restrict ingestion by source IP/CIDR allow-list and rate-limit per source (both opt-in, default off — no impact on existing ingestion)',
+    'Alert acknowledgements now record who acknowledged them (acknowledged_by)',
+    'Fixed an alerting bug where threshold rules could silently never fire when the event count jumped past the threshold in one burst',
+  ],
   '1.4.0': [
     'Network Health now has a time-range picker in its header, matching the other pages',
     'Switch between 15m / 1h / 6h / 24h / 48h / 7d / 30d (and custom ranges) without leaving the page — defaults to 24h',

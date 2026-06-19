@@ -3,13 +3,23 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 
-// Connect to netvault DB for shared user authentication
+// Fail fast if the shared SSO secret is not provided by the environment
+// (NSSM AppEnvironmentExtra in prod, .env.local in dev). Never fall back to a
+// baked-in literal — that would let a leaked default forge sessions.
+// Skip during `next build` (page-data collection runs with no runtime env);
+// the check still fires when the server actually boots.
+if (!process.env.NEXTAUTH_SECRET && process.env.NEXT_PHASE !== 'phase-production-build') {
+  throw new Error('NEXTAUTH_SECRET is not set — provide it via NSSM env / .env.local');
+}
+
+// Connect to netvault DB for shared user authentication.
+// Secrets (DB password) come from the environment only — no hardcoded fallback.
 const netvaultPool = new Pool({
   host:     process.env.NETVAULT_DB_HOST     || 'localhost',
   port:     parseInt(process.env.NETVAULT_DB_PORT || '5432'),
   database: process.env.NETVAULT_DB_NAME     || 'netvault',
   user:     process.env.NETVAULT_DB_USER     || 'netvault',
-  password: process.env.NETVAULT_DB_PASS     || 'PgAdmin@2026!',
+  password: process.env.NETVAULT_DB_PASS,
   ssl:      false,
   max:      3,
 });
@@ -109,7 +119,9 @@ export const authOptions: NextAuthOptions = {
         httpOnly: true,
         sameSite: 'lax',
         path:     '/',
-        secure:   false, // HTTP on local network
+        // Secure cookies only when served over HTTPS — derived from NEXTAUTH_URL
+        // so the current HTTP deployment keeps working and HTTPS auto-enables it.
+        secure:   (process.env.NEXTAUTH_URL || '').startsWith('https'),
       },
     },
   },

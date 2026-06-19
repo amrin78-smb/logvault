@@ -260,6 +260,14 @@ INSERT INTO app_settings (key, value) VALUES ('email_notify_digest_hour', '8') O
 INSERT INTO app_settings (key, value) VALUES ('email_notify_recipients', '') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value) VALUES ('email_notify_cooldown_mins', '30') ON CONFLICT (key) DO NOTHING;
 
+-- Collector ingestion guard (allow-list + rate limit) — DEFAULT PERMISSIVE
+-- collector_allowed_sources: comma-separated IPs/CIDRs; '' = allow ALL sources
+-- collector_rate_limit_enabled: 'true' to enable per-source-IP rate limiting
+-- collector_rate_limit_pps: max packets/sec per source IP; '0' = unlimited
+INSERT INTO app_settings (key, value) VALUES ('collector_allowed_sources', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('collector_rate_limit_enabled', 'false') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('collector_rate_limit_pps', '0') ON CONFLICT (key) DO NOTHING;
+
 -- Grant permissions to logvault_user
 GRANT ALL ON ALL TABLES IN SCHEMA public TO logvault_user;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO logvault_user;

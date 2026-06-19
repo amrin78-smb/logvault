@@ -27,7 +27,9 @@ const HUB = process.env.NOCVAULT_HUB_URL || 'http://localhost:3000';
 const TOKEN_OPTS = {
   secret: process.env.NEXTAUTH_SECRET,
   cookieName: 'nexvault.session-token',
-  secureCookie: false,
+  // Must match the cookie's Secure flag (set from NEXTAUTH_URL protocol in
+  // auth.ts), otherwise getToken returns null and RBAC silently breaks.
+  secureCookie: (process.env.NEXTAUTH_URL || '').startsWith('https'),
 };
 
 export default async function proxy(req: NextRequest) {

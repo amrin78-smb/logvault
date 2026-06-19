@@ -59,6 +59,113 @@ async function getDNSSettings() {
   return dnsSettings;
 }
 
+// ── Ingestion guard settings (allow-list + rate limit) ────────
+// Both DEFAULT PERMISSIVE so this never drops live traffic unless an
+// operator opts in. Reloaded every 5 minutes from app_settings (no restart).
+let ingestSettings = {
+  allowedSources: [],      // parsed allow-list rules; [] = allow ALL
+  rateLimitEnabled: false, // disabled by default
+  rateLimitPps: 0,         // 0 = unlimited (sentinel)
+};
+let ingestSettingsLoadedAt = 0;
+const INGEST_SETTINGS_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Parse a comma-separated allow-list string into matcher rules.
+// Supports plain IPv4 ("10.0.0.1") and CIDR ("10.0.0.0/8").
+// Returns an array of rule objects; an empty array means "allow all".
+function parseAllowList(raw) {
+  if (!raw || !String(raw).trim()) return [];
+  const rules = [];
+  for (const tokenRaw of String(raw).split(',')) {
+    const token = tokenRaw.trim();
+    if (!token) continue;
+    const slash = token.indexOf('/');
+    if (slash !== -1) {
+      const base = ipToInt(token.slice(0, slash));
+      const bits = parseInt(token.slice(slash + 1), 10);
+      if (base === null || isNaN(bits) || bits < 0 || bits > 32) continue;
+      // mask of `bits` high bits set (>>> 0 to keep unsigned; bits=0 → 0)
+      const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+      rules.push({ network: (base & mask) >>> 0, mask });
+    } else {
+      const ip = ipToInt(token);
+      if (ip === null) continue;
+      rules.push({ network: ip, mask: 0xffffffff });
+    }
+  }
+  return rules;
+}
+
+// IPv4 dotted-quad → unsigned 32-bit int, or null if not a valid IPv4.
+function ipToInt(ip) {
+  if (!ip) return null;
+  const parts = String(ip).trim().split('.');
+  if (parts.length !== 4) return null;
+  let val = 0;
+  for (const p of parts) {
+    if (!/^\d{1,3}$/.test(p)) return null;
+    const n = parseInt(p, 10);
+    if (n > 255) return null;
+    val = (val << 8) | n;
+  }
+  return val >>> 0;
+}
+
+// True if sourceIp is permitted by the current allow-list.
+// Empty allow-list → always true (permissive default).
+function isAllowedSource(sourceIp) {
+  const rules = ingestSettings.allowedSources;
+  if (!rules.length) return true;
+  const ip = ipToInt(sourceIp);
+  if (ip === null) return true; // non-IPv4 (e.g. IPv6) — don't drop, fail open
+  for (const r of rules) {
+    if (((ip & r.mask) >>> 0) === r.network) return true;
+  }
+  return false;
+}
+
+async function getIngestSettings() {
+  const now = Date.now();
+  if (now - ingestSettingsLoadedAt < INGEST_SETTINGS_TTL) return ingestSettings;
+  try {
+    const { rows } = await pool.query(
+      `SELECT key, value FROM app_settings
+       WHERE key IN ('collector_allowed_sources','collector_rate_limit_enabled','collector_rate_limit_pps')`
+    );
+    const s = Object.fromEntries(rows.map(r => [r.key, r.value]));
+    ingestSettings = {
+      allowedSources:   parseAllowList(s.collector_allowed_sources),
+      rateLimitEnabled: s.collector_rate_limit_enabled === 'true',
+      rateLimitPps:     Math.max(0, parseInt(s.collector_rate_limit_pps || '0', 10) || 0),
+    };
+    ingestSettingsLoadedAt = now;
+  } catch {}
+  return ingestSettings;
+}
+
+// ── Per-source sliding-window rate limiter (1-second buckets) ──
+// Map: sourceIp → { sec: epochSecond, count: packetsThisSecond }
+const rateBuckets = new Map();
+
+// Returns true if the packet should be dropped due to rate limit.
+function isRateLimited(sourceIp) {
+  if (!ingestSettings.rateLimitEnabled) return false;
+  const pps = ingestSettings.rateLimitPps;
+  if (!pps || pps <= 0) return false; // 0 = unlimited
+  const sec = Math.floor(Date.now() / 1000);
+  let b = rateBuckets.get(sourceIp);
+  if (!b || b.sec !== sec) {
+    b = { sec, count: 0 };
+    rateBuckets.set(sourceIp, b);
+  }
+  b.count++;
+  return b.count > pps;
+}
+
+// Drop counters — logged in aggregate, never per-packet (avoids spam).
+let droppedByAllowList = 0;
+let droppedByRateLimit = 0;
+
 // ── Crash resilience ──────────────────────────────────────────
 process.on('uncaughtException', (err) => {
   console.error('[FATAL] Uncaught exception:', err.message, err.stack);
@@ -246,6 +353,11 @@ function normalizeEntry(entry, raw, sourceIp) {
 }
 
 function processMessage(rawMsg, sourceIp) {
+  // ── Ingestion guard (allow-list + rate limit) ──
+  // Both default-permissive; settings are cached so this is cheap per packet.
+  if (!isAllowedSource(sourceIp)) { droppedByAllowList++; return; }
+  if (isRateLimited(sourceIp))    { droppedByRateLimit++; return; }
+
   const raw = rawMsg.toString('utf8').trim();
   if (!raw) return;
 
@@ -356,7 +468,7 @@ async function checkAlertRules(entry) {
     const fresh = hits.filter(t => t > now - windowMs);
     recentEvents.set(key, fresh);
 
-    if (fresh.length === rule.threshold_count) {
+    if (fresh.length >= rule.threshold_count) {
       // Check suppression — don't re-fire same rule for same source within suppression window
       const sourceKey     = `${rule.id}__${entry.source_ip || 'any'}`;
       const lastFired     = suppressionMap.get(sourceKey) || 0;
@@ -469,6 +581,23 @@ async function main() {
 
   flushTimer = setInterval(flushBuffer, BATCH_INTERVAL);
   await getAlertRules();
+
+  // Prime ingestion-guard settings + keep the cache warm (5-min TTL).
+  await getIngestSettings();
+  setInterval(() => { getIngestSettings().catch(() => {}); }, INGEST_SETTINGS_TTL);
+
+  // Aggregate drop visibility — log every 60s only when something was dropped
+  // (avoids per-packet spam). Also prunes stale rate-limit buckets.
+  setInterval(() => {
+    if (droppedByAllowList || droppedByRateLimit) {
+      console.log(`[Ingest] Dropped in last 60s — allow-list: ${droppedByAllowList}, rate-limit: ${droppedByRateLimit}`);
+      droppedByAllowList = 0;
+      droppedByRateLimit = 0;
+    }
+    // Prune rate buckets older than the current second to cap memory.
+    const sec = Math.floor(Date.now() / 1000);
+    for (const [ip, b] of rateBuckets) { if (b.sec < sec) rateBuckets.delete(ip); }
+  }, 60 * 1000);
 
   // Sync NetVault assets immediately then every 15 minutes
   syncFromNetVault(pool).catch(err => console.error('[NetVaultSync] Initial sync error:', err.message));

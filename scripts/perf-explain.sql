@@ -6,7 +6,7 @@
 -- Nothing here writes data — it only runs EXPLAIN (ANALYZE, BUFFERS).
 --
 -- How to run:
---   $env:PGPASSWORD = "NVAdmin@2026"
+--   $env:PGPASSWORD = "<set-in-NSSM-env>"
 --   & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U logvault_user -d logvault -f C:\Apps\logvault\scripts\perf-explain.sql > C:\Apps\logvault\logs\perf-explain.txt
 --
 -- Then send back perf-explain.txt. The numbers that matter:

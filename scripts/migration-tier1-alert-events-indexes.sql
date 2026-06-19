@@ -15,7 +15,7 @@
 --   Run with psql -f (each statement autocommits). Do NOT wrap in BEGIN.
 --
 -- How to run:
---   $env:PGPASSWORD = "NVAdmin@2026"
+--   $env:PGPASSWORD = "<set-in-NSSM-env>"
 --   & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U logvault_user -d logvault -f C:\Apps\logvault\scripts\migration-tier1-alert-events-indexes.sql
 -- ============================================================
 

@@ -178,25 +178,30 @@ Invoke-WebRequest -Uri "http://localhost:3005/api/health" -UseBasicParsing | Sel
 
 ## Database
 
+> **Secrets are never committed.** All passwords and `NEXTAUTH_SECRET` are supplied
+> at runtime via NSSM `AppEnvironmentExtra` (prod) or `.env.local` (dev). The values
+> below are shown as `<set-in-NSSM-env>` placeholders — get the real values from the
+> server's NSSM config / `.env.local`, never hardcode them.
+
 ### Connection details
 ```
 Host:     localhost
 Port:     5432
 Database: logvault
 User:     logvault_user
-Password: NVAdmin@2026
+Password: <set-in-NSSM-env>
 ```
 
 ### NetVault DB (read-only, for SSO + asset sync)
 ```
 Database: netvault
 User:     netvault
-Password: PgAdmin@2026!
+Password: <set-in-NSSM-env>
 ```
 
 ### Run psql commands
 ```powershell
-$env:PGPASSWORD = "PgAdmin@2026!"
+$env:PGPASSWORD = "<set-in-NSSM-env>"
 & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -d logvault -c "YOUR SQL HERE"
 ```
 
@@ -250,12 +255,12 @@ DB_HOST=localhost
 DB_PORT=5432
 LV_DB_NAME=logvault
 LV_DB_USER=logvault_user
-LV_DB_PASS=NVAdmin@2026
+LV_DB_PASS=<set-in-NSSM-env>
 NETVAULT_DB_HOST=localhost
 NETVAULT_DB_PORT=5432
 NETVAULT_DB_NAME=netvault
 NETVAULT_DB_USER=netvault
-NETVAULT_DB_PASS=PgAdmin@2026!
+NETVAULT_DB_PASS=<set-in-NSSM-env>
 ```
 
 **LogVault-API:**
@@ -265,14 +270,14 @@ DB_HOST=localhost
 DB_PORT=5432
 LV_DB_NAME=logvault
 LV_DB_USER=logvault_user
-LV_DB_PASS=NVAdmin@2026
+LV_DB_PASS=<set-in-NSSM-env>
 LV_APP_URL=http://192.168.6.111:3004
 NOCVAULT_HUB_URL=http://192.168.6.111:3000
 NETVAULT_DB_HOST=localhost
 NETVAULT_DB_PORT=5432
 NETVAULT_DB_NAME=netvault
 NETVAULT_DB_USER=netvault
-NETVAULT_DB_PASS=PgAdmin@2026!
+NETVAULT_DB_PASS=<set-in-NSSM-env>
 ```
 
 > `NOCVAULT_HUB_URL` lets the API reach the NocVault hub for license enforcement
@@ -283,14 +288,14 @@ NETVAULT_DB_PASS=PgAdmin@2026!
 ```
 NODE_ENV=production
 NEXTAUTH_URL=http://192.168.6.111:3004
-NEXTAUTH_SECRET=bue3VdWszntJ24GMhfKg1QkPIEaZYC95
+NEXTAUTH_SECRET=<set-in-NSSM-env>
 NOCVAULT_HUB_URL=http://192.168.6.111:3000
 NEXT_PUBLIC_NOCVAULT_HUB_URL=http://192.168.6.111:3000
 NETVAULT_DB_HOST=localhost
 NETVAULT_DB_PORT=5432
 NETVAULT_DB_NAME=netvault
 NETVAULT_DB_USER=netvault
-NETVAULT_DB_PASS=PgAdmin@2026!
+NETVAULT_DB_PASS=<set-in-NSSM-env>
 LV_APP_PORT=3004
 ```
 
@@ -313,7 +318,7 @@ LogVault has NO local login. All auth goes through NetVault hub.
 - `frontend/src/proxy.ts` — protects all pages (replaces middleware.ts)
 - `frontend/src/app/sso/page.tsx` — SSO landing (must be wrapped in Suspense)
 
-**Shared secret:** `bue3VdWszntJ24GMhfKg1QkPIEaZYC95`
+**Shared secret:** `<set-in-NSSM-env>` (the `NEXTAUTH_SECRET` value — never committed; supplied via NSSM env / `.env.local`)
 
 **Cookie name:** `nexvault.session-token` — DO NOT CHANGE (breaks existing sessions)
 
@@ -672,7 +677,13 @@ async function getSettings() {
 - `collector/emailer.js` → sends email if rule has `notify_email` set and SMTP configured
 
 ### Alert rule matching
-Rules match on: severity array, vendor array, host pattern (ILIKE), message regex pattern, threshold count + window
+Rules match on: severity array, vendor array, host pattern (ILIKE), message regex pattern, threshold count + window. Threshold fires on `fresh.length >= rule.threshold_count` (not `===`).
+
+### Alert acknowledgement
+`alert_events.acknowledged_by` records the acting user's **NetVault user id (as text)**,
+taken from `req.rbac.userId` (the `X-User-Id` header set by the proxy). Resolving it to a
+display name requires a join to `netvault.users.id`. Set on both the single-ack and
+bulk-ack endpoints in `api/server.js`.
 
 ---
 
@@ -737,6 +748,9 @@ const BRAND_TO_VENDOR = {
 | Component defined inside component | Always define components at module level |
 | Alert spam (70+ rows) | 30-min suppression + upsert existing open alert |
 | Known hosts too long | Collapsible with show 10 / show all |
+| Alert threshold `===` (never fires on burst) | Compare `fresh.length >= rule.threshold_count` — count can jump past threshold in one tick |
+| Hardcoded credential fallback (`\|\| 'secret'`) in code | Read secrets from `process.env` only; fail fast if missing — never bake a literal default |
+| Cookie `secure: false` hardcoded | Derive from `NEXTAUTH_URL.startsWith('https')` so HTTPS auto-enables Secure without breaking HTTP |
 
 ---
 
@@ -761,7 +775,7 @@ Get-Content "C:\Apps\logvault\logs\app.log"        -Tail 30
 Invoke-WebRequest -Uri "http://localhost:3005/api/health" -UseBasicParsing | Select-Object -ExpandProperty Content
 
 # Check ingestion
-$env:PGPASSWORD = "NVAdmin@2026"
+$env:PGPASSWORD = "<set-in-NSSM-env>"
 & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U logvault_user -d logvault -c "SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - INTERVAL '1 hour';"
 ```
 
@@ -784,6 +798,14 @@ $env:PGPASSWORD = "NVAdmin@2026"
 | `smtp_pass` | (empty) | SMTP password |
 | `smtp_from` | (empty) | From email address |
 | `smtp_enabled` | false | Enable email alerts |
+| `collector_allowed_sources` | (empty) | Comma-separated IPs/CIDRs the collector accepts syslog from. **Empty = allow ALL** (default). IPv4/CIDR only — non-IPv4 sources fail open. |
+| `collector_rate_limit_enabled` | false | Enable per-source-IP ingestion rate limiting |
+| `collector_rate_limit_pps` | 0 | Max packets/sec per source IP. `0` = unlimited (sentinel). Only applies when `collector_rate_limit_enabled` is true |
+
+> **Collector ingestion hardening (default-permissive).** The allow-list and rate-limit
+> above are off by default so they never drop live traffic until an operator opts in. Both
+> reload via the 5-min dynamic-settings cache (no restart). The collector logs a 60-second
+> aggregate of packets dropped by each guard (never per-packet, to avoid log spam).
 
 ---
 
