@@ -24,11 +24,41 @@ function scoreLog(entry) {
   const cat = entry.structured_data?.category || 'network';
   score += catScores[cat] || 0;
 
+  const sd = entry.structured_data || {};
+
   // Action (0-20 points)
-  const action = entry.structured_data?.action;
+  const action = String(sd.action || '').toLowerCase();
   if (action === 'blocked')    score += 5;
   if (action === 'quarantine') score += 10;
   if (action === 'alert')      score += 15;
+
+  // Auth-failure actions / subcategories — brute-force precursors (defensive: fields may be absent)
+  const sub = String(sd.subcategory || '').toLowerCase();
+  if (action === 'ssl-login-fail' || action === 'ssl-exit-error') score += 18;
+  if (sub === 'login_failed') score += 15;
+  if (sub === 'auth_failed')  score += 12;
+
+  // Denied/blocked traffic — generic across vendors
+  if (/^(deny|drop|block|reject)/.test(action)) score += 8;
+
+  // Bad geography — generic: a denied/failed event from a non-local (foreign) source IP.
+  // No customer-specific home country hardcoded; only nudges when the event is already
+  // suspicious (denied/blocked or an auth-failure) and the source country is present & non-local.
+  const srcCountry = String(sd.srccountry || '').toLowerCase();
+  const isSuspicious = /^(deny|drop|block|reject|blocked|ssl-login-fail|ssl-exit-error)/.test(action)
+    || sub === 'login_failed' || sub === 'auth_failed';
+  const LOCAL_GEO = new Set(['', 'reserved', 'unspecified', 'n/a', 'na', 'private']);
+  if (isSuspicious && !LOCAL_GEO.has(srcCountry)) score += 6;
+
+  // FortiOS's own threat signal (URL/IPS reputation rating) when present
+  const crlevel = String(sd.crlevel || '').toLowerCase();
+  if (crlevel === 'critical') score += 18;
+  else if (crlevel === 'high') score += 12;
+  const crscore = parseInt(sd.crscore, 10);
+  if (!isNaN(crscore)) {
+    if (crscore >= 50) score += 12;
+    else if (crscore >= 20) score += 6;
+  }
 
   // Known bad patterns (0-15 points bonus each)
   const msg = (entry.message || '').toLowerCase();

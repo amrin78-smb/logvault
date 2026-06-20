@@ -67,7 +67,17 @@ function byVendor(vendor, s, msg) {
       const sub    = (s.subtype || '').toLowerCase();
       const action = (s.action  || '').toLowerCase();
       if (type === 'utm') {
-        if (sub === 'webfilter') return 'web';
+        if (sub === 'webfilter') {
+          // Malicious-category URL blocks are security events, not acceptable-use 'web'.
+          // Defensive: structured fields may be absent on old data → fall back to 'web'.
+          const crlevel = String(s.crlevel || '').toLowerCase();
+          const catText = `${String(s.catdesc || '').toLowerCase()} ${String(s.cat || '').toLowerCase()}`;
+          const MALICIOUS_CAT = /malware|phishing|botnet|spyware|command.?and.?control|\bc2\b|c&c/;
+          if (crlevel === 'high' || crlevel === 'critical' || MALICIOUS_CAT.test(catText)) {
+            return 'security';
+          }
+          return 'web';                                     // acceptable-use (Pornography, Spam, ...) stays 'web'
+        }
         if (sub === 'dlp')       return 'dlp';
         return 'security';                                  // ips, av, antivirus, app-ctrl, anomaly, ...
       }
@@ -86,7 +96,7 @@ function byVendor(vendor, s, msg) {
       }
       if (type === 'traffic') return 'firewall';
       if (['ssl-new-con', 'ssl-exit-error', 'tunnel-up', 'tunnel-down'].includes(action)) return 'vpn';
-      if (s.tunnel_type) return 'vpn';
+      if (s.tunneltype || s.tunnel_type) return 'vpn';      // parser stores `tunneltype` (no underscore)
       if (String(s.service || '').toLowerCase() === 'dns' || String(s.dstport) === '53') return 'dns';
       if (action) return 'firewall';
       return null;

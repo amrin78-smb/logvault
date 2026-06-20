@@ -1249,8 +1249,8 @@ app.get('/api/security/ips-events', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
   const [events, byThreat] = await Promise.all([
-    pool.query(`SELECT received_at, source_host, source_ip::TEXT, severity_label, message, structured_data->>'srcip' AS src_ip, structured_data->>'dstip' AS dst_ip, structured_data->>'msg' AS threat_name, structured_data->>'action' AS action, structured_data->>'subtype' AS subtype FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'type'='utm' ${sf.clause} ORDER BY received_at DESC LIMIT 100`, [hours, ...sf.params]),
-    pool.query(`SELECT COALESCE(structured_data->>'msg','Unknown') AS threat, structured_data->>'subtype' AS subtype, COUNT(*) AS hit_count, COUNT(DISTINCT structured_data->>'srcip') AS unique_sources FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'type'='utm' ${sf.clause} GROUP BY structured_data->>'msg', structured_data->>'subtype' ORDER BY hit_count DESC LIMIT 20`, [hours, ...sf.params]),
+    pool.query(`SELECT received_at, source_host, source_ip::TEXT, severity_label, message, structured_data->>'srcip' AS src_ip, structured_data->>'dstip' AS dst_ip, COALESCE(NULLIF(structured_data->>'certdesc',''), NULLIF(structured_data->>'catdesc',''), NULLIF(CONCAT_WS('/', NULLIF(structured_data->>'eventtype',''), NULLIF(structured_data->>'eventsubtype','')), ''), NULLIF(structured_data->>'attack',''), NULLIF(structured_data->>'msg',''), 'Unknown') AS threat_name, structured_data->>'hostname' AS hostname, structured_data->>'url' AS url, structured_data->>'catdesc' AS web_category, structured_data->>'crlevel' AS crlevel, structured_data->>'eventtype' AS eventtype, structured_data->>'action' AS action, structured_data->>'subtype' AS subtype FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'type'='utm' ${sf.clause} ORDER BY received_at DESC LIMIT 100`, [hours, ...sf.params]),
+    pool.query(`SELECT COALESCE(NULLIF(structured_data->>'certdesc',''), NULLIF(structured_data->>'catdesc',''), NULLIF(CONCAT_WS('/', NULLIF(structured_data->>'eventtype',''), NULLIF(structured_data->>'eventsubtype','')), ''), NULLIF(structured_data->>'attack',''), NULLIF(structured_data->>'msg',''), 'Unknown') AS threat, structured_data->>'subtype' AS subtype, COUNT(*) AS hit_count, COUNT(DISTINCT structured_data->>'srcip') AS unique_sources FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'type'='utm' ${sf.clause} GROUP BY COALESCE(NULLIF(structured_data->>'certdesc',''), NULLIF(structured_data->>'catdesc',''), NULLIF(CONCAT_WS('/', NULLIF(structured_data->>'eventtype',''), NULLIF(structured_data->>'eventsubtype','')), ''), NULLIF(structured_data->>'attack',''), NULLIF(structured_data->>'msg',''), 'Unknown'), structured_data->>'subtype' ORDER BY hit_count DESC LIMIT 20`, [hours, ...sf.params]),
   ]);
   res.json({ events: events.rows, by_threat: byThreat.rows });
 }));
@@ -1397,6 +1397,14 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.8.0': [
+    'Fortinet parser now captures ~40 more log fields (service, geo, interfaces, session/bytes; VPN gateway/port/IPsec status/XAuth user; UTM threat type/cert/hostname; webfilter URL/category/risk-level; admin UI/user) — fixes the empty "Top Services" widget and blank IPS threat names',
+    'Timestamps now use each log\'s own timezone offset instead of the collector\'s OS locale (prevents hour-shifted times)',
+    'Malicious-category / high-risk webfilter blocks are now classified as Security instead of Web',
+    'Risk scoring is now discriminating (auth failures, denied traffic, and FortiGate\'s own crlevel/crscore) instead of a flat severity+category lookup',
+    'Successful SSL-VPN logins are now classified, fixing brute-force-success correlation',
+    'Security tab IPS/Threats view shows the real threat name, target URL/host, web category, and threat level; backfill script extended to recover these fields for historical logs',
+  ],
   '2.7.1': [
     'Added scripts/backfill-fortinet-srcip.js to recover the real remote source IP, username, and country for pre-fix historical Fortinet events (re-parses raw_message through the current parser; dry-run by default)',
     'Backfill is purely additive and idempotent — it only fills missing fields and preserves existing structured_data (mitre, category, etc.), so historical slide-in detail + CSV export match new rows',

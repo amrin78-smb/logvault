@@ -65,6 +65,26 @@ function SevBadge({ label }: { label: string }) {
   );
 }
 
+// Small tinted pill for an IPS event's criticality level (crlevel)
+function CrLevelBadge({ level }: { level?: string | null }) {
+  if (!level) return null;
+  const lv = String(level).toLowerCase();
+  const map: Record<string, { bg: string; color: string }> = {
+    critical: { bg: 'var(--tint-danger)',  color: 'var(--tint-danger-fg)' },
+    high:     { bg: 'var(--tint-danger)',  color: 'var(--tint-danger-fg)' },
+    medium:   { bg: 'var(--tint-warn)',    color: 'var(--tint-warn-fg)' },
+    low:      { bg: 'var(--tint-info)',    color: 'var(--tint-info-fg)' },
+  };
+  const st = map[lv];
+  if (!st) return null; // only surface meaningful severity levels
+  return (
+    <span style={{ padding: '1px 6px', borderRadius: 4, fontSize: 'var(--text-xs)', fontWeight: 700,
+      background: st.bg, color: st.color, textTransform: 'uppercase', letterSpacing: '0.3px', whiteSpace: 'nowrap' }}>
+      {lv}
+    </span>
+  );
+}
+
 function RiskBadge({ count, thresholds }: { count: number; thresholds: [number, number] }) {
   const [warn, danger] = thresholds;
   let bg = 'var(--tint-success)'; let color = 'var(--tint-success-fg)'; let label = 'Low';
@@ -647,7 +667,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                 ) : (
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
                     <thead><tr style={{ borderBottom: '2px solid var(--border-light)' }}>
-                      {['Time','Firewall','Src IP','Dst IP','Type','Severity','Threat'].map(h => <th key={h} style={TH}>{h}</th>)}
+                      {['Time','Firewall','Src IP','Dst IP','Target / URL','Type','Severity','Threat'].map(h => <th key={h} style={TH}>{h}</th>)}
                     </tr></thead>
                     <tbody>
                       {ipsEvents.events?.map((r: any, i: number) => (
@@ -656,10 +676,26 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                           <td style={{ ...TD, ...MONO, color: 'var(--text-primary)', fontWeight: 500 }}>{r.source_host || r.source_ip}</td>
                           <td style={{ ...TD, ...MONO, color: '#dc2626', fontSize: 'var(--text-xs)' }}>{r.src_ip || '—'}</td>
                           <td style={{ ...TD, ...MONO, color: '#2563eb', fontSize: 'var(--text-xs)' }}>{r.dst_ip || '—'}</td>
-                          <td style={{ ...TD, color: 'var(--text-muted)', textTransform: 'capitalize', fontSize: 'var(--text-xs)' }}>{r.subtype || '—'}</td>
+                          <td style={{ ...TD, color: 'var(--text-secondary)', fontSize: 'var(--text-xs)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                            title={r.url || r.hostname || ''}>
+                            {r.url || r.hostname || '—'}
+                          </td>
+                          <td style={{ ...TD, color: 'var(--text-muted)', textTransform: 'capitalize', fontSize: 'var(--text-xs)' }}>{r.subtype || r.eventtype || '—'}</td>
                           <td style={TD}><SevBadge label={r.severity_label} /></td>
-                          <td style={{ ...TD, color: '#991b1b', fontWeight: 500, maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {r.threat_name || r.message}
+                          <td style={{ ...TD, color: '#991b1b', fontWeight: 500, maxWidth: 280 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 250 }}
+                                title={r.threat_name || r.message || ''}>
+                                {r.threat_name || r.message || '—'}
+                              </span>
+                              <CrLevelBadge level={r.crlevel} />
+                              {r.web_category && (
+                                <span style={{ padding: '1px 6px', borderRadius: 4, fontSize: 'var(--text-xs)', fontWeight: 600,
+                                  background: 'var(--tint-info)', color: 'var(--tint-info-fg)', whiteSpace: 'nowrap' }}>
+                                  {r.web_category}
+                                </span>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}

@@ -1,23 +1,35 @@
 /**
- * One-time backfill: recover the real remote source IP / user / country for
- * pre-fix historical Fortinet events.
+ * One-time backfill: recover ALL parser-captured fields for historical Fortinet
+ * events (originally just the remote source IP — now generalized).
  *
- * Before the Fortinet parser learned to surface the remote-client fields
- * (remip -> srcip, plus user/srccountry/reason/logdesc etc.), ~1,200 SSL-VPN /
- * auth rows were ingested with `remip=` in raw_message but NO `srcip` in
- * structured_data. As a result historical slide-in detail + CSV export show the
- * reporting firewall instead of the real remote user/attacker, and they don't
- * match rows ingested after the fix.
+ * The Fortinet parser has been substantially expanded over time. Early versions
+ * surfaced only a handful of normalized fields, so historical rows are missing
+ * dozens of values that the CURRENT parser now extracts from the same
+ * raw_message: the remote-client fields (remip -> srcip, user/srccountry/
+ * reason/logdesc), plus ~40 newer fields — service, dstcountry, proto,
+ * srcintf/dstintf, sessionid, policyname, bytes/pkts, app; VPN gateway/port/
+ * IPsec status/XAuth user; UTM eventtype/threattype/cert/hostname/virus/attack;
+ * webfilter url/cat/catdesc/crscore/crlevel; admin ui/user; etc. As a result
+ * historical rows power empty widgets (e.g. "Top Services") and blank IPS threat
+ * names, and they don't match rows ingested after each parser improvement.
  *
- * This script re-parses each affected row's raw_message through the CURRENT
+ * This script re-parses each Fortinet row's raw_message through the CURRENT
  * Fortinet parser (parsers/fortinet.js — the exact same code live ingestion
- * uses) and MERGES the recovered normalized fields back into the existing
- * structured_data. It is purely ADDITIVE:
- *   - it only fills keys that are currently null/undefined,
+ * uses) and MERGES every recovered field back into the existing structured_data.
+ * It is purely ADDITIVE and generalized:
+ *   - it adds ANY key the fresh parse produced that is missing/null in the
+ *     existing structured_data (no fixed key list to maintain — new parser
+ *     fields are recovered automatically),
  *   - it never overwrites an existing non-null value,
  *   - it never removes existing keys (mitre, category, etc. are preserved).
- * If a row would not change, it is skipped, so the script is idempotent and safe
- * to re-run (rows that already have srcip are excluded by the WHERE clause).
+ * If a row would not change, it is skipped (per-row no-op skip), so the script
+ * is idempotent and safe to re-run. The earlier srcip-only version has already
+ * been run on this deployment; re-running this recovers the remaining fields and
+ * leaves srcip rows that gain nothing untouched.
+ *
+ * NOTE: log_timestamp is intentionally NOT touched here — existing timestamps
+ * are already correct for this deployment; the parser's tz fix is forward-looking
+ * for newly-ingested logs only.
  *
  * MUST run as postgres (syslog_entries is append-only for logvault_user — UPDATE
  * is REVOKEd). Uses POSTGRES_PASSWORD from .env.local, matching the other
@@ -45,14 +57,6 @@ const pool = new Pool({
 
 const BATCH = 500;
 
-// The normalized fields the current Fortinet parser recovers for VPN/auth rows.
-// We only ever ADD these when the existing structured_data lacks them.
-const MERGE_KEYS = [
-  'srcip', 'remip', 'user', 'srccountry', 'reason', 'logdesc',
-  'dstip', 'dstport', 'srcport', 'group', 'dst_host',
-  'subcategory', 'action', 'subtype',
-];
-
 function isEmpty(v) {
   return v === null || v === undefined;
 }
@@ -60,15 +64,18 @@ function isEmpty(v) {
 /**
  * Merge the re-parsed fields into the existing structured_data.
  * Returns { merged, changed, added } — `merged` is a new object, `added` lists
- * the keys that were filled in. Additive only: existing non-null values and any
- * keys not in MERGE_KEYS (mitre, category, devname, ...) are preserved untouched.
+ * the keys that were filled in. Generalized + additive only: ANY key the fresh
+ * parse produced that the existing structured_data lacks (missing or null) is
+ * added; existing non-null values and any keys the parser no longer emits
+ * (mitre, category, devname, ...) are preserved untouched. No fixed key list —
+ * new parser fields are recovered automatically.
  */
 function mergeRecovered(existing, parsed) {
   const base = (existing && typeof existing === 'object') ? existing : {};
   const recovered = (parsed && parsed.structured_data) || {};
   const merged = Object.assign({}, base);
   const added = [];
-  for (const key of MERGE_KEYS) {
+  for (const key of Object.keys(recovered)) {
     if (!isEmpty(recovered[key]) && isEmpty(base[key])) {
       merged[key] = recovered[key];
       added.push(key);
@@ -77,25 +84,25 @@ function mergeRecovered(existing, parsed) {
   return { merged, changed: added.length > 0, added };
 }
 
-const TARGET_WHERE =
-  `vendor = 'fortinet'
-     AND NOT (structured_data ? 'srcip')
-     AND raw_message ~ 'remip=[0-9]'`;
+// All Fortinet rows can potentially gain newly-captured fields. The per-row
+// no-op skip below keeps this idempotent: a row that gains nothing is never
+// rewritten, so an UPDATE only happens when the merged object actually differs.
+const TARGET_WHERE = `vendor = 'fortinet'`;
 
 async function run() {
   if (!process.env.POSTGRES_PASSWORD) {
-    console.error('[BackfillSrcip] POSTGRES_PASSWORD is not set (.env.local) — this script must run as postgres.');
+    console.error('[Backfill] POSTGRES_PASSWORD is not set (.env.local) — this script must run as postgres.');
     process.exit(1);
   }
 
-  console.log(`[BackfillSrcip] ${APPLY ? 'APPLYING' : 'DRY RUN'} — recovering remip/srcip/user/country for pre-fix Fortinet rows (batches of ${BATCH}).`);
-  if (!APPLY) console.log('[BackfillSrcip] No changes will be written. Re-run with --run to apply.');
+  console.log(`[Backfill] ${APPLY ? 'APPLYING' : 'DRY RUN'} — recovering ALL parser-captured fields for Fortinet rows (batches of ${BATCH}).`);
+  if (!APPLY) console.log('[Backfill] No changes will be written. Re-run with --run to apply.');
 
   // Up-front candidate count (rows matching the target predicate).
   const { rows: cntRows } = await pool.query(
     `SELECT COUNT(*)::bigint AS n FROM syslog_entries WHERE ${TARGET_WHERE}`
   );
-  console.log(`[BackfillSrcip] ${cntRows[0].n} candidate rows match the target predicate.`);
+  console.log(`[Backfill] ${cntRows[0].n} candidate rows match the target predicate.`);
 
   let scanned = 0, changed = 0, skipped = 0, lastId = 0, nextLog = 5000;
   let samplesShown = 0;
@@ -128,11 +135,11 @@ async function run() {
       if (!APPLY && samplesShown < MAX_SAMPLES) {
         samplesShown++;
         const before = r.structured_data || {};
-        console.log(`\n[BackfillSrcip] --- SAMPLE ${samplesShown} (id=${r.id}) ---`);
+        console.log(`\n[Backfill] --- SAMPLE ${samplesShown} (id=${r.id}) ---`);
         console.log(`  source_ip (syslog sender): ${r.source_ip}`);
-        console.log(`  recovered keys: ${added.join(', ')}`);
-        console.log(`  BEFORE: srcip=${JSON.stringify(before.srcip)} remip=${JSON.stringify(before.remip)} user=${JSON.stringify(before.user)} srccountry=${JSON.stringify(before.srccountry)} subcategory=${JSON.stringify(before.subcategory)}`);
-        console.log(`  AFTER : srcip=${JSON.stringify(merged.srcip)} remip=${JSON.stringify(merged.remip)} user=${JSON.stringify(merged.user)} srccountry=${JSON.stringify(merged.srccountry)} subcategory=${JSON.stringify(merged.subcategory)}`);
+        console.log(`  recovered keys (${added.length}): ${added.join(', ')}`);
+        console.log(`  BEFORE: srcip=${JSON.stringify(before.srcip)} service=${JSON.stringify(before.service)} eventtype=${JSON.stringify(before.eventtype)} user=${JSON.stringify(before.user)} subcategory=${JSON.stringify(before.subcategory)}`);
+        console.log(`  AFTER : srcip=${JSON.stringify(merged.srcip)} service=${JSON.stringify(merged.service)} eventtype=${JSON.stringify(merged.eventtype)} user=${JSON.stringify(merged.user)} subcategory=${JSON.stringify(merged.subcategory)}`);
         console.log(`  preserved keys (sample): mitre=${JSON.stringify(before.mitre)} category=${JSON.stringify(before.category)} devname=${JSON.stringify(before.devname)} type=${JSON.stringify(before.type)}`);
       }
     }
@@ -157,18 +164,18 @@ async function run() {
     }
 
     if (scanned >= nextLog) {
-      console.log(`[BackfillSrcip] Processed ${scanned} rows (${changed} ${APPLY ? 'updated' : 'would update'}, ${skipped} skipped)...`);
+      console.log(`[Backfill] Processed ${scanned} rows (${changed} ${APPLY ? 'updated' : 'would update'}, ${skipped} skipped)...`);
       nextLog += 5000;
     }
   }
 
   const verb = APPLY ? 'updated' : 'would update';
-  console.log(`\n[BackfillSrcip] Done. Processed ${scanned} rows: ${changed} ${verb}, ${skipped} skipped (no change / unparseable).`);
-  if (!APPLY && changed > 0) console.log('[BackfillSrcip] DRY RUN — re-run with --run to apply these changes.');
+  console.log(`\n[Backfill] Done. Processed ${scanned} rows: ${changed} ${verb}, ${skipped} skipped (no change / unparseable).`);
+  if (!APPLY && changed > 0) console.log('[Backfill] DRY RUN — re-run with --run to apply these changes.');
   await pool.end();
 }
 
 run().catch(err => {
-  console.error('[BackfillSrcip] Error:', err.message);
+  console.error('[Backfill] Error:', err.message);
   process.exit(1);
 });
