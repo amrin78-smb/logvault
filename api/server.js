@@ -1405,6 +1405,264 @@ app.get('/api/security/failed-logins-by-country', asyncHandler(async (req, res) 
   res.json({ data: rows });
 }));
 
+// ── ADVANCED ANALYTICS (computed on the fly — no new tables) ──
+// All four endpoints below are READ-ONLY and RBAC site-filtered on syslog_entries
+// via getSiteFilter, matching every other /api/stats and /api/security route.
+
+// 1) Activity heatmap — log volume by day-of-week × hour-of-day.
+//    metric=all (default) counts every entry; metric=auth_failed restricts to
+//    auth-failure events. Default window 168h (7 days).
+app.get('/api/stats/heatmap', asyncHandler(async (req, res) => {
+  const hours  = safeHours(req.query.hours || '168', 720);
+  const metric = req.query.metric === 'auth_failed' ? 'auth_failed' : 'all';
+  const sf = getSiteFilter(req.rbac, 2, 'se');
+  const metricClause = metric === 'auth_failed'
+    ? `AND se.structured_data->>'subcategory' IN ('login_failed','auth_failed')`
+    : '';
+  const cacheKey = `heatmap:${metric}:${hours}:${rbacCacheKey(req.rbac)}`;
+  const data = await getCached(cacheKey, 60000, async () => {
+    const { rows } = await pool.query(`
+      SELECT
+        EXTRACT(DOW  FROM se.received_at)::int AS dow,
+        EXTRACT(HOUR FROM se.received_at)::int AS hour,
+        COUNT(*)::bigint AS count
+      FROM syslog_entries se
+      WHERE se.received_at > NOW() - make_interval(hours => $1)
+      ${metricClause}
+      ${sf.clause}
+      GROUP BY dow, hour
+      ORDER BY dow, hour
+    `, [hours, ...sf.params]);
+    return { metric, hours, data: rows };
+  });
+  res.json(data);
+}));
+
+// 2) Failed logins by country WITH a prior-period count for trend arrows.
+//    count = failures in the last `hours`; prev_count = failures in the equal
+//    window immediately before that (computed in one query via FILTER).
+app.get('/api/stats/geo', asyncHandler(async (req, res) => {
+  const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'se');
+  // Same country resolution + known_hosts join as /api/security/failed-logins-by-country
+  // (prefer the event's srccountry, fall back to known_hosts geo of the REAL source).
+  // The outer time bound covers BOTH windows (now-2*hours … now); the FILTER clauses
+  // split current vs prior so count + prev_count come from a single scan.
+  const cacheKey = `geo:${hours}:${rbacCacheKey(req.rbac)}`;
+  const data = await getCached(cacheKey, 60000, async () => {
+    const { rows } = await pool.query(`
+      SELECT
+        COALESCE(se.structured_data->>'srccountry', kh.country_name) AS country,
+        kh.country_code,
+        COUNT(*) FILTER (
+          WHERE se.received_at > NOW() - make_interval(hours => $1)
+        )::bigint AS count,
+        COUNT(*) FILTER (
+          WHERE se.received_at BETWEEN NOW() - make_interval(hours => $1 * 2)
+                                   AND NOW() - make_interval(hours => $1)
+        )::bigint AS prev_count,
+        COUNT(DISTINCT COALESCE(se.structured_data->>'srcip', se.source_ip::text)) FILTER (
+          WHERE se.received_at > NOW() - make_interval(hours => $1)
+        )::bigint AS distinct_sources
+      FROM syslog_entries se
+      LEFT JOIN known_hosts kh
+        ON COALESCE(se.structured_data->>'srcip', se.source_ip::text) ~ '^[0-9.]+$'
+       AND host(kh.ip_address) = COALESCE(se.structured_data->>'srcip', se.source_ip::text)
+      WHERE se.received_at > NOW() - make_interval(hours => $1 * 2)
+        AND se.structured_data->>'subcategory' IN ('login_failed','auth_failed')
+        AND COALESCE(se.structured_data->>'srccountry', kh.country_name) IS NOT NULL
+        AND COALESCE(se.structured_data->>'srccountry', kh.country_name) <> ''
+      ${sf.clause}
+      GROUP BY COALESCE(se.structured_data->>'srccountry', kh.country_name), kh.country_code
+      HAVING COUNT(*) FILTER (WHERE se.received_at > NOW() - make_interval(hours => $1)) > 0
+      ORDER BY count DESC
+      LIMIT 20
+    `, [hours, ...sf.params]);
+    return { hours, data: rows };
+  });
+  res.json(data);
+}));
+
+// 3) Capacity / ingestion forecast — computed in JS from on-the-fly aggregates.
+//    No stored table: daily volume → least-squares linear regression → 30-day
+//    projection + status/confidence; ingestion spike (today vs avg); silent
+//    devices (active before, quiet now).
+app.get('/api/stats/forecast', asyncHandler(async (req, res) => {
+  const days = safeInt(req.query.days, 30, 365);
+  const sf = getSiteFilter(req.rbac, 2, 'se');
+  const cacheKey = `forecast:${days}:${rbacCacheKey(req.rbac)}`;
+  const data = await getCached(cacheKey, 60000, async () => {
+    // a) Daily volume series over the requested window.
+    const dailyRes = await pool.query(`
+      SELECT date_trunc('day', se.received_at) AS d, COUNT(*)::bigint AS c
+      FROM syslog_entries se
+      WHERE se.received_at > NOW() - make_interval(days => $1)
+      ${sf.clause}
+      GROUP BY 1
+      ORDER BY 1
+    `, [days, ...sf.params]);
+
+    const daily = dailyRes.rows.map(r => ({
+      date: r.d, count: parseInt(r.c, 10) || 0,
+    }));
+
+    // b) Least-squares linear regression (x = day index, y = count).
+    let slope = 0;
+    const n = daily.length;
+    if (n >= 2) {
+      const xs = daily.map((_, i) => i);
+      const ys = daily.map(d => d.count);
+      const meanX = xs.reduce((a, b) => a + b, 0) / n;
+      const meanY = ys.reduce((a, b) => a + b, 0) / n;
+      let num = 0, den = 0;
+      for (let i = 0; i < n; i++) {
+        num += (xs[i] - meanX) * (ys[i] - meanY);
+        den += (xs[i] - meanX) ** 2;
+      }
+      slope = den === 0 ? 0 : num / den;
+    }
+
+    // Project the next 30 days from the regression line: y = meanY + slope*(x-meanX).
+    const meanY = n ? daily.reduce((a, d) => a + d.count, 0) / n : 0;
+    const meanX = n ? (n - 1) / 2 : 0;
+    let projectedTotal = 0;
+    for (let k = 0; k < 30; k++) {
+      const x = (n - 1) + 1 + k; // days after the last observed day
+      projectedTotal += Math.max(0, Math.round(meanY + slope * (x - meanX)));
+    }
+
+    // Status by slope relative to the average daily volume (guard divide-by-zero).
+    const relSlope = meanY > 0 ? slope / meanY : 0;
+    let status = 'steady';
+    if (relSlope > 0.02) status = 'growing';
+    else if (relSlope < -0.02) status = 'declining';
+
+    // Confidence by sample size.
+    let confidence = 'low';
+    if (n >= 14) confidence = 'high';
+    else if (n >= 7) confidence = 'medium';
+
+    // c) Ingestion spike — today's count so far vs avg daily count.
+    const todayRes = await pool.query(`
+      SELECT COUNT(*)::bigint AS c
+      FROM syslog_entries se
+      WHERE se.received_at >= date_trunc('day', NOW())
+      ${sf.clause}
+    `, sf.params);
+    const today = parseInt(todayRes.rows[0]?.c, 10) || 0;
+    const avgDaily = n ? Math.round(meanY) : 0;
+    const spike = avgDaily > 0 ? today > avgDaily * 1.5 : false;
+
+    // d) Silent devices — source_hosts active in the prior week but silent in the
+    //    last 24h. Over an 8-day window, FILTER recent vs prior per source_host.
+    const silentRes = await pool.query(`
+      SELECT
+        se.source_host,
+        host(MAX(se.source_ip)) AS source_ip,
+        COUNT(*) FILTER (
+          WHERE se.received_at BETWEEN NOW() - interval '8 days' AND NOW() - interval '1 day'
+        )::bigint AS prior_count,
+        COUNT(*) FILTER (WHERE se.received_at > NOW() - interval '24 hours')::bigint AS recent_count,
+        MAX(se.received_at) AS last_seen
+      FROM syslog_entries se
+      WHERE se.received_at > NOW() - interval '8 days'
+        AND se.source_host IS NOT NULL AND se.source_host <> ''
+      ${sf.clause}
+      GROUP BY se.source_host
+      HAVING COUNT(*) FILTER (
+               WHERE se.received_at BETWEEN NOW() - interval '8 days' AND NOW() - interval '1 day'
+             ) >= 50
+         AND COUNT(*) FILTER (WHERE se.received_at > NOW() - interval '24 hours') = 0
+      ORDER BY prior_count DESC
+      LIMIT 20
+    `, sf.params);
+    const silent = silentRes.rows.map(r => ({
+      source_host: r.source_host,
+      source_ip:   r.source_ip,
+      prior_count: parseInt(r.prior_count, 10) || 0,
+      last_seen:   r.last_seen,
+    }));
+
+    return {
+      volume: {
+        daily,
+        slope: Math.round(slope * 100) / 100,
+        projected_next_30d_total: projectedTotal,
+        status,
+        confidence,
+      },
+      ingestion: { today, avg_daily: avgDaily, spike },
+      silent,
+    };
+  });
+  res.json(data);
+}));
+
+// 4) What changed vs baseline — values seen in the recent `days` window that did
+//    NOT appear in the prior 30 days, via a NOT EXISTS anti-join, per dimension.
+app.get('/api/stats/whats-changed', asyncHandler(async (req, res) => {
+  const days = safeInt(req.query.days, 1, 30);
+  const cacheKey = `whats-changed:${days}:${rbacCacheKey(req.rbac)}`;
+  const data = await getCached(cacheKey, 60000, async () => {
+    // Each dimension: aggregate recent-window distinct values + counts, anti-joined
+    // against the set of values seen in the 30 days BEFORE the recent window. The
+    // RBAC site filter is applied to BOTH the recent (r) and baseline (b) scans so a
+    // restricted user only ever compares within their own sites. Param order:
+    // $1 = days (recent window), $2..$2+k = site params for r, then again for b.
+    function buildAntiJoin(expr, extraRecent) {
+      const sfR = getSiteFilter(req.rbac, 2, 'r');
+      const sfB = getSiteFilter(req.rbac, 2 + sfR.params.length, 'b');
+      const sql = `
+        SELECT v AS value, cnt AS count FROM (
+          SELECT ${expr.replace(/\bse\./g, 'r.')} AS v, COUNT(*)::bigint AS cnt
+          FROM syslog_entries r
+          WHERE r.received_at > NOW() - make_interval(days => $1)
+            AND ${expr.replace(/\bse\./g, 'r.')} IS NOT NULL
+            AND ${expr.replace(/\bse\./g, 'r.')} NOT IN ('', 'N/A')
+            ${extraRecent ? extraRecent.replace(/\bse\./g, 'r.') : ''}
+          ${sfR.clause}
+          GROUP BY 1
+        ) recent
+        WHERE NOT EXISTS (
+          SELECT 1 FROM syslog_entries b
+          WHERE b.received_at BETWEEN NOW() - make_interval(days => $1) - interval '30 days'
+                                  AND NOW() - make_interval(days => $1)
+            AND ${expr.replace(/\bse\./g, 'b.')} = recent.v
+            ${sfB.clause}
+        )
+        ORDER BY count DESC, value
+        LIMIT 15
+      `;
+      const params = [days, ...sfR.params, ...sfB.params];
+      return { sql, params };
+    }
+
+    const dims = {
+      new_countries: buildAntiJoin(`se.structured_data->>'srccountry'`),
+      new_users:     buildAntiJoin(`se.structured_data->>'user'`),
+      new_sources:   buildAntiJoin(`COALESCE(se.structured_data->>'srcip', se.source_ip::text)`),
+      new_services:  buildAntiJoin(`se.structured_data->>'service'`),
+    };
+
+    const [countries, users, sources, services] = await Promise.all([
+      pool.query(dims.new_countries.sql, dims.new_countries.params),
+      pool.query(dims.new_users.sql,     dims.new_users.params),
+      pool.query(dims.new_sources.sql,   dims.new_sources.params),
+      pool.query(dims.new_services.sql,  dims.new_services.params),
+    ]);
+
+    const shape = (r) => r.rows.map(x => ({ value: x.value, count: parseInt(x.count, 10) || 0 }));
+    return {
+      window_days:   days,
+      new_countries: shape(countries),
+      new_users:     shape(users),
+      new_sources:   shape(sources),
+      new_services:  shape(services),
+    };
+  });
+  res.json(data);
+}));
+
 // ── DISK SPACE ───────────────────────────────────────────────
 const { execSync } = require('child_process');
 const path = require('path');
@@ -1467,6 +1725,14 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.12.0': [
+    'Risk scores are now explainable — each event records its contributing factors, and the log detail panel shows a "Why this score?" breakdown.',
+    'MITRE ATT&CK badges now carry plain-language explanations (what the technique means and why it matters) in a hover popover.',
+    'New on-prem analytics (no external calls): capacity & ingestion forecasting with spike and silent-device detection, and a "what\'s new vs the last 30 days" view (new countries, accounts, sources, services).',
+    'New visualizations: activity-by-hour-of-week heatmaps (overall + failed logins) and per-country failed-login trend arrows in the Security tab.',
+    'New dashboard widgets: Capacity & Ingestion Health and What\'s New / Changed.',
+    'Added shared severity-color and trend-arrow UI primitives for consistent representation.',
+  ],
   '2.11.1': [
     'Fix: the Log Explorer (and CSV export) returned HTTP 500 when filtering by host — a SQL parameter-index offset in the host filter shifted every later placeholder (RBAC filter, LIMIT/OFFSET) out of alignment.',
     'Drilling from a Security-tab row (e.g. IPS/Threats) into the Log Explorer by host now loads results correctly instead of erroring.',

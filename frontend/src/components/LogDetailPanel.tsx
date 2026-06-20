@@ -53,6 +53,71 @@ const VENDOR_COLORS: Record<string, string> = {
   windows: '#0078D4', sonicwall: '#FF6600',
 };
 
+interface RiskFactor { label: string; points: number; }
+
+// Parse structured_data.risk_factors (CONTRACT: array of { label, points },
+// already sorted desc by the collector). Guards every field; returns [] when
+// absent or malformed (older logs simply get no breakdown).
+function parseRiskFactors(sd: Record<string, any>): RiskFactor[] {
+  const raw = sd?.risk_factors;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((f: any) => ({ label: String(f?.label ?? ''), points: Number(f?.points) || 0 }))
+    .filter(f => f.label !== '' && f.points > 0);
+}
+
+function RiskFactorBreakdown({ factors, score }: { factors: RiskFactor[]; score: number }) {
+  const [open, setOpen] = useState(false);
+  if (factors.length === 0) return null;
+
+  const max = Math.max(...factors.map(f => f.points), 1);
+  const top = factors.slice(0, 2).map(f => f.label);
+  const summary = top.length === 1
+    ? `Driven mainly by ${top[0]}.`
+    : `Driven mainly by ${top[0]} and ${top[1]}.`;
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
+          background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 8 }}>
+        <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-muted)',
+          textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          Why This Score? · {score}/100
+        </span>
+        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+          {open ? '▾ Hide' : `▸ ${factors.length} factor${factors.length === 1 ? '' : 's'}`}
+        </span>
+      </button>
+      <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)',
+        borderRadius: 8, padding: '10px 12px' }}>
+        <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.5,
+          marginBottom: open ? 10 : 0 }}>
+          {summary}
+        </div>
+        {open && factors.map((f, i) => (
+          <div key={i} style={{ padding: '6px 0', borderTop: '1px solid var(--border-light)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', wordBreak: 'break-word' }}>
+                {f.label}
+              </span>
+              <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--tint-warn-fg)',
+                flexShrink: 0 }}>
+                +{f.points}
+              </span>
+            </div>
+            <div style={{ marginTop: 4, height: 4, borderRadius: 2, background: 'var(--surface-subtle)',
+              overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${Math.round((f.points / max) * 100)}%`,
+                background: 'var(--primary)', borderRadius: 2 }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Field({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
@@ -108,7 +173,10 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
   const sevStyle  = SEV_COLORS[log.severity_label] || { color: 'var(--text-muted)', bg: 'var(--surface-subtle)' };
   const risk      = riskBadge(log.risk_score || 0);
   const cleanIP   = log.source_ip?.replace('/32', '');
-  const sdEntries = log.structured_data ? Object.entries(log.structured_data).filter(([, v]) => v !== null && v !== '') : [];
+  const sdEntries = log.structured_data
+    ? Object.entries(log.structured_data).filter(([k, v]) => v !== null && v !== '' && k !== 'risk_factors')
+    : [];
+  const riskFactors = parseRiskFactors(log.structured_data || {});
 
   // For auth/vpn events the syslog sender is the firewall; the real source is the remote
   // client (remip / structured_data.srcip). Surface it prominently when present and it
@@ -183,6 +251,9 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
               {log.message}
             </div>
           </div>
+
+          {/* Why this score? — risk factor breakdown (newer logs only) */}
+          <RiskFactorBreakdown factors={riskFactors} score={log.risk_score || 0} />
 
           {/* Remote source — real client for auth/vpn events */}
           {showRemote && (

@@ -3,6 +3,10 @@
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { GeoInline, KnownBadBadge } from '@/components/ThreatIntel';
+import { Trend } from '@/components/Trend';
+import type { ExplorerFilter } from '@/app/page';
+// `import type` is erased at build time, so this does NOT create a runtime
+// circular import even though page.tsx imports this module (mirrors LogExplorer).
 
 const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' };
 const TITLE = { fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 };
@@ -392,6 +396,246 @@ export function InterfaceEventsSummary({ hours, onNavigate }: { hours: number; o
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Capacity & Ingestion Health ───────────────────────────────
+// Reads /api/stats/forecast — surfaces volume trend, today's ingestion vs the
+// daily average (with a spike flag), and "silent" devices that have stopped
+// logging. Forecast numbers are real JS numbers, so we Number()-guard rather
+// than parseInt (which would silently mangle non-string input).
+interface ForecastVolume {
+  daily?: { date: string; count: number }[];
+  slope?: number;
+  projected_next_30d_total?: number;
+  status?: 'growing' | 'steady' | 'declining';
+  confidence?: 'low' | 'medium' | 'high';
+}
+interface ForecastIngestion { today?: number; avg_daily?: number; spike?: boolean; }
+interface SilentDevice { source_host?: string; source_ip?: string; prior_count?: number; last_seen?: string; }
+interface ForecastData { volume?: ForecastVolume; ingestion?: ForecastIngestion; silent?: SilentDevice[]; }
+
+const STATUS_META: Record<string, { label: string; bg: string; fg: string }> = {
+  growing:   { label: 'Growing',   bg: 'var(--tint-info)',      fg: 'var(--tint-info-fg)' },
+  steady:    { label: 'Steady',    bg: 'var(--surface-subtle)', fg: 'var(--text-secondary)' },
+  declining: { label: 'Declining', bg: 'var(--tint-warn)',      fg: 'var(--tint-warn-fg)' },
+};
+
+// Tiny inline-SVG sparkline from the daily volume series. Returns null when
+// there's not enough data to draw a line.
+function Sparkline({ points }: { points: number[] }) {
+  if (!points || points.length < 2) return null;
+  const w = 120, h = 28;
+  const max = Math.max(...points, 1);
+  const min = Math.min(...points, 0);
+  const range = max - min || 1;
+  const coords = points.map((v, i) => {
+    const x = (i / (points.length - 1)) * w;
+    const y = h - ((v - min) / range) * h;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block' }}>
+      <polyline points={coords} fill="none" stroke="var(--tint-info-fg)" strokeWidth="1.5"
+        strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function CapacityIngestionHealth({ openExplorer }: { openExplorer?: (filter: ExplorerFilter) => void }) {
+  const [data, setData] = useState<ForecastData | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch('/api/stats/forecast?days=30')
+      .then(r => r.json())
+      .then(d => { setData(d || null); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const ingestion = data?.ingestion || {};
+  const volume = data?.volume || {};
+  const silent = Array.isArray(data?.silent) ? data!.silent : [];
+  const today = Number(ingestion.today) || 0;
+  const avgDaily = Number(ingestion.avg_daily) || 0;
+  const spike = Boolean(ingestion.spike);
+  const projected = Number(volume.projected_next_30d_total) || 0;
+  const statusKey = volume.status && STATUS_META[volume.status] ? volume.status : 'steady';
+  const statusMeta = STATUS_META[statusKey];
+  const sparkPoints = Array.isArray(volume.daily) ? volume.daily.map(d => Number(d?.count) || 0) : [];
+
+  return (
+    <div style={{ ...CARD, height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ ...TITLE, flexShrink: 0 }}>Capacity & Ingestion Health</div>
+      <div style={{ ...SUB, flexShrink: 0 }}>Volume forecast, ingestion rate & silent devices</div>
+      {loading ? (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>Loading...</div>
+      ) : (
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Headline: today vs avg + spike badge */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                <span style={{ fontSize: 'var(--text-2xl)', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1 }}>
+                  {today.toLocaleString()}
+                </span>
+                <Trend value={today} prev={avgDaily} invert />
+              </div>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2 }}>
+                logs today · avg {avgDaily.toLocaleString()}/day
+              </div>
+            </div>
+            {spike && (
+              <span style={{ flexShrink: 0, fontSize: 'var(--text-xs)', fontWeight: 700, padding: '3px 8px',
+                borderRadius: 6, background: 'var(--tint-warn)', color: 'var(--tint-warn-fg)' }}>
+                ⚠ Ingestion spike
+              </span>
+            )}
+          </div>
+
+          {/* Volume trend: status + confidence + 30d projection + sparkline */}
+          <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+              <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 600 }}>Volume trend</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, padding: '2px 7px', borderRadius: 5,
+                  background: statusMeta.bg, color: statusMeta.fg }}>{statusMeta.label}</span>
+                {volume.confidence && (
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', textTransform: 'capitalize' }}>
+                    {volume.confidence} confidence
+                  </span>
+                )}
+              </span>
+            </div>
+            {sparkPoints.length >= 2 && <Sparkline points={sparkPoints} />}
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 6 }}>
+              Projected next 30d: <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{projected.toLocaleString()}</span> logs
+            </div>
+          </div>
+
+          {/* Silent devices — high-value: devices that historically logged but went quiet */}
+          <div>
+            <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--tint-warn-fg)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+              Silent devices (stopped logging)
+            </div>
+            {silent.length === 0 ? (
+              <div style={{ fontSize: 'var(--text-sm)', color: '#16a34a', fontWeight: 500 }}>✓ All known devices are logging</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {silent.slice(0, 8).map((d, i) => {
+                  const label = d.source_host || d.source_ip || '—';
+                  const drill = d.source_ip || d.source_host;
+                  const prior = Number(d.prior_count) || 0;
+                  return (
+                    <div key={i} onClick={() => { if (openExplorer && drill) openExplorer({ host: drill }); }}
+                      title={`${label} — normally ${prior.toLocaleString()} logs · last seen ${d.last_seen || 'unknown'}`}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                        padding: '5px 8px', background: 'rgba(217,119,6,0.12)', borderRadius: 6,
+                        cursor: openExplorer && drill ? 'pointer' : 'default' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 600,
+                          fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {label}
+                        </span>
+                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+                          last seen {d.last_seen || 'unknown'}
+                        </span>
+                      </div>
+                      <span style={{ flexShrink: 0, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+                        normally {prior.toLocaleString()}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── What's New / Changed ──────────────────────────────────────
+// Reads /api/stats/whats-changed — values seen in the last day but NOT in the
+// prior 30 days, grouped into four compact sections. Drillable into the Log
+// Explorer (new source → host filter; users/services/countries → free-text q).
+interface ChangeRow { value: string; count: number; }
+interface WhatsChangedData {
+  window_days?: number;
+  new_countries?: ChangeRow[];
+  new_users?: ChangeRow[];
+  new_sources?: ChangeRow[];
+  new_services?: ChangeRow[];
+}
+
+function ChangeSection({ title, rows, drill }:
+  { title: string; rows: ChangeRow[]; drill?: (value: string) => void }) {
+  const list = Array.isArray(rows) ? rows : [];
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+        {title}
+      </div>
+      {list.length === 0 ? (
+        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontStyle: 'italic' }}>nothing new</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {list.slice(0, 8).map((row, i) => {
+            const value = row?.value ?? '—';
+            const count = Number(row?.count) || 0;
+            return (
+              <div key={i} onClick={() => { if (drill && row?.value) drill(row.value); }}
+                title={`${value} — ${count.toLocaleString()} events`}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                  padding: '3px 6px', background: 'var(--surface-subtle)', borderRadius: 5,
+                  cursor: drill && row?.value ? 'pointer' : 'default' }}>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 500,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                  {value}
+                </span>
+                <span style={{ flexShrink: 0, fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--tint-info-fg)' }}>
+                  {count.toLocaleString()}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function WhatsChanged({ openExplorer }: { openExplorer?: (filter: ExplorerFilter) => void }) {
+  const [data, setData] = useState<WhatsChangedData | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch('/api/stats/whats-changed?days=1')
+      .then(r => r.json())
+      .then(d => { setData(d || null); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const windowDays = Number(data?.window_days) || 1;
+  return (
+    <div style={{ ...CARD, height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ ...TITLE, flexShrink: 0 }}>What&apos;s New / Changed</div>
+      <div style={{ ...SUB, flexShrink: 0 }}>First seen in the last {windowDays}d (not in the prior 30d) · Click to investigate</div>
+      {loading ? (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>Loading...</div>
+      ) : (
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4,
+          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', alignContent: 'start' }}>
+          <ChangeSection title="New Countries" rows={data?.new_countries || []}
+            drill={openExplorer ? (v) => openExplorer({ q: v }) : undefined} />
+          <ChangeSection title="New Accounts" rows={data?.new_users || []}
+            drill={openExplorer ? (v) => openExplorer({ q: v }) : undefined} />
+          <ChangeSection title="New Sources" rows={data?.new_sources || []}
+            drill={openExplorer ? (v) => openExplorer({ host: v }) : undefined} />
+          <ChangeSection title="New Services" rows={data?.new_services || []}
+            drill={openExplorer ? (v) => openExplorer({ q: v }) : undefined} />
         </div>
       )}
     </div>

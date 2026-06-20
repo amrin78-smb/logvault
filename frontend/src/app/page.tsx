@@ -6,7 +6,7 @@ import SeverityChart   from '@/components/SeverityChart';
 import TimelineChart   from '@/components/TimelineChart';
 import TopTalkers      from '@/components/TopTalkers';
 import VendorBreakdown from '@/components/VendorBreakdown';
-import { TopSecurityEvents, TopBlockedDestinations, TopConnectionFailures, VPNStatus, ActiveAlertsSummary, InterfaceEventsSummary, FirewallActions } from '@/components/DashboardWidgets';
+import { TopSecurityEvents, TopBlockedDestinations, TopConnectionFailures, VPNStatus, ActiveAlertsSummary, InterfaceEventsSummary, FirewallActions, CapacityIngestionHealth, WhatsChanged } from '@/components/DashboardWidgets';
 import { KnownBadSources } from '@/components/ThreatIntel';
 import LogExplorer     from '@/components/LogExplorer';
 import LiveTail        from '@/components/LiveTail';
@@ -389,7 +389,23 @@ export default function Home() {
                 ))}
               </div>
 
-              {/* Row 6: Threat Intelligence — known-bad external sources */}
+              {/* Row 6: Capacity & Ingestion Health + What's New / Changed — 2 equal columns */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                {[
+                  <ErrorBoundary name="Capacity & Ingestion Health">
+                    <CapacityIngestionHealth openExplorer={openExplorer} />
+                  </ErrorBoundary>,
+                  <ErrorBoundary name="What's New / Changed">
+                    <WhatsChanged openExplorer={openExplorer} />
+                  </ErrorBoundary>,
+                ].map((widget, i) => (
+                  <div key={i} style={{ height: 340, overflow: 'hidden' }}>
+                    {widget}
+                  </div>
+                ))}
+              </div>
+
+              {/* Row 7: Threat Intelligence — known-bad external sources */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginBottom: 12 }}>
                 <div style={{ height: 320, overflow: 'hidden' }}>
                   <ErrorBoundary name="Known-Bad Sources">

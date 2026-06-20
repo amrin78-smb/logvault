@@ -30,7 +30,7 @@ const { parseJuniper, detectJuniper }       = require('../parsers/juniper');
 const { parseWindows, detectWindows }       = require('../parsers/windows');
 const { parseSonicWall, detectSonicWall }   = require('../parsers/sonicwall');
 const { getCategory }    = require('./taxonomy');
-const { scoreLog }       = require('./riskScorer');
+const { scoreLogExplained } = require('./riskScorer');
 const { mapTechniques }  = require('./mitreMapper');
 const { evaluateCorrelation } = require('./correlationEngine');
 const { syncFromNetVault }    = require('./netvaultSync');
@@ -708,7 +708,12 @@ function processMessage(rawMsg, sourceIp) {
   // ── Universal taxonomy + risk scoring ──
   entry.structured_data.category = getCategory(entry.vendor, entry.structured_data, entry.message);
   entry.category   = entry.structured_data.category || 'network';
-  entry.risk_score = scoreLog(entry);
+  // Score once, then persist the contributing factors so the UI can explain
+  // "Why this score?". risk_factors rides inside structured_data (already
+  // serialized into the INSERT, like the mitre field) — no new DB column.
+  const riskResult = scoreLogExplained(entry);
+  entry.risk_score = riskResult.score;
+  if (riskResult.factors.length) entry.structured_data.risk_factors = riskResult.factors;
 
   // MITRE ATT&CK technique mapping (event-level). Stored inside structured_data
   // (already serialized into the INSERT, excluded from the hash chain) so no new

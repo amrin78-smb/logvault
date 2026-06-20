@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { PageHeader, TableSkeleton, CardSkeleton, EmptyState } from './ui';
 import { MITRE_TECHNIQUES, MITRE_TACTIC_ORDER } from './mitre';
 import TimeRangePicker from './TimeRangePicker';
+import { Trend } from './Trend';
+import { Heatmap } from './Heatmap';
 
 const CARD = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 };
 const TH   = { padding: '8px 12px', textAlign: 'left' as const, color: 'var(--text-muted)', fontWeight: 600, fontSize: 'var(--text-xs)' };
@@ -133,13 +135,15 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
   const [mitreCov,     setMitreCov]     = useState<any[]>([]);
   const [targetedUsers, setTargetedUsers] = useState<any[]>([]);
   const [failsByCountry, setFailsByCountry] = useState<any[]>([]);
+  const [heatmapAll,    setHeatmapAll]    = useState<any[]>([]);
+  const [heatmapAuth,   setHeatmapAuth]   = useState<any[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [activeSection, setActiveSection] = useState('overview');
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, af, bf, fw, vpn, ips, ah, wa, mc, tu, fc] = await Promise.all([
+      const [s, af, bf, fw, vpn, ips, ah, wa, mc, tu, fc, hmAll, hmAuth] = await Promise.all([
         fetch(`/api/security/summary?hours=${hours}`).then(r => r.json()),
         fetch(`/api/security/auth-failures?hours=${hours}`).then(r => r.json()),
         fetch(`/api/security/brute-force?hours=${hours}`).then(r => r.json()),
@@ -150,7 +154,9 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
         fetch(`/api/security/wireless-auth?hours=${hours}`).then(r => r.json()),
         fetch(`/api/stats/mitre-coverage?hours=${hours}`).then(r => r.json()),
         fetch(`/api/security/top-targeted-users?hours=${hours}`).then(r => r.json()),
-        fetch(`/api/security/failed-logins-by-country?hours=${hours}`).then(r => r.json()),
+        fetch(`/api/stats/geo?hours=${hours}`).then(r => r.json()),
+        fetch(`/api/stats/heatmap?metric=all&hours=${hours}`).then(r => r.json()),
+        fetch(`/api/stats/heatmap?metric=auth_failed&hours=${hours}`).then(r => r.json()),
       ]);
       setSummary(s ? {
         ...s,
@@ -173,6 +179,8 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
       setMitreCov(mc.data || []);
       setTargetedUsers(tu.data || []);
       setFailsByCountry(fc.data || []);
+      setHeatmapAll(Array.isArray(hmAll?.data) ? hmAll.data : []);
+      setHeatmapAuth(Array.isArray(hmAuth?.data) ? hmAuth.data : []);
     } catch (e) { console.error(e); }
     setLoading(false);
   }, [hours]);
@@ -221,6 +229,10 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
   const covTactics = MITRE_TACTIC_ORDER.filter(t => byTactic[t] && byTactic[t].length);
   const covTotal = mitreCov.reduce((a: number, r: any) => a + (parseInt(r.count) || 0), 0);
   const covTacticsActive = covTactics.filter(t => byTactic[t].some(id => (covMap[id] || 0) > 0)).length;
+
+  // ── Hour-of-week heatmap cells (coerce string counts → numbers) ──
+  const heatmapAllCells = (heatmapAll || []).map((r: any) => ({ dow: Number(r.dow), hour: Number(r.hour), count: Number(r.count) }));
+  const heatmapAuthCells = (heatmapAuth || []).map((r: any) => ({ dow: Number(r.dow), hour: Number(r.hour), count: Number(r.count) }));
 
   return (
     <div>
@@ -384,6 +396,15 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                   </table>
                 </div>
               )}
+
+              {/* Activity by Hour of Week heatmap */}
+              <div style={CARD}>
+                <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Activity by Hour of Week</div>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
+                  Total log volume by day of week and hour — darker cells indicate busier periods
+                </div>
+                <Heatmap data={heatmapAllCells} />
+              </div>
             </>
           )}
 
@@ -478,8 +499,9 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {failsByCountry.map((r, i) => {
-                    const fails = parseInt(r.failure_count) || 0;
-                    const max = parseInt(failsByCountry[0]?.failure_count) || 1;
+                    const fails = Number(r.count) || 0;
+                    const prev = Number(r.prev_count) || 0;
+                    const max = Number(failsByCountry[0]?.count) || 1;
                     const pct = Math.round((fails / max) * 100);
                     const d = drillRow({ q: r.country }, 'transparent');
                     return (
@@ -491,12 +513,22 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                           <div style={{ height: '100%', width: `${pct}%`, background: '#dc2626', borderRadius: 3 }} />
                         </div>
                         <div style={{ width: 70, textAlign: 'right', fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--tint-danger-fg)' }}>{fails.toLocaleString()}</div>
-                        <div style={{ width: 90, textAlign: 'right', fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{parseInt(r.distinct_sources) || 0} src</div>
+                        <div style={{ width: 56, textAlign: 'right' }}><Trend value={fails} prev={prev} /></div>
+                        <div style={{ width: 90, textAlign: 'right', fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{Number(r.distinct_sources) || 0} src</div>
                       </div>
                     );
                   })}
                 </div>
               )}
+            </div>
+
+            {/* Failed Logins by Hour of Week */}
+            <div style={CARD}>
+              <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Failed Logins by Hour of Week</div>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
+                When failed authentication attempts occur — clusters outside business hours can indicate automated attacks
+              </div>
+              <Heatmap data={heatmapAuthCells} />
             </div>
             </>
           )}
