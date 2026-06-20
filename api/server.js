@@ -1397,6 +1397,10 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.7.1': [
+    'Added scripts/backfill-fortinet-srcip.js to recover the real remote source IP, username, and country for pre-fix historical Fortinet events (re-parses raw_message through the current parser; dry-run by default)',
+    'Backfill is purely additive and idempotent — it only fills missing fields and preserves existing structured_data (mitre, category, etc.), so historical slide-in detail + CSV export match new rows',
+  ],
   '2.7.0': [
     'CSV export now includes the detail-panel fields for analysis: real remote source IP, country, username, login outcome (subcategory), action, subtype, destination IP, and reason — previously only top-level columns (which showed the reporting firewall, not the attacker)',
     'Export CSV is now RFC-4180 quoted and blanks the firewall\'s "N/A" placeholders for clean analysis',
