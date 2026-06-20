@@ -114,12 +114,13 @@ function StatCard({ value, label, color, bg, border, warn = false }: {
   );
 }
 
-export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval, onRefreshChange, onTechnique }: {
+export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval, onRefreshChange, onTechnique, onDrill }: {
   hours: number;
   onHoursChange: (hours: number) => void;
   refreshInterval: number;
   onRefreshChange: (seconds: number) => void;
   onTechnique?: (technique: string) => void;
+  onDrill?: (filter: { host?: string; q?: string; category?: string; technique?: string; severity?: string; vendor?: string }) => void;
 }) {
   const [summary,      setSummary]      = useState<any>(null);
   const [authFails,    setAuthFails]    = useState<any[]>([]);
@@ -177,6 +178,25 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
   }, [hours]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Build clickable-row props that drill into the Log Explorer pre-filtered to this
+  // row's context. Returns {} (no cursor/onClick) when no useful filter value exists
+  // or no onDrill handler is wired, so rows without a target aren't falsely clickable.
+  // `restoreBg` is the row's normal background, restored on mouse-leave after the hover.
+  const drillRow = (
+    filter: { host?: string; q?: string; category?: string; technique?: string; severity?: string; vendor?: string },
+    restoreBg: string,
+  ) => {
+    const value = filter.host || filter.q || filter.category || filter.technique || filter.severity || filter.vendor;
+    if (!onDrill || !value) return {};
+    return {
+      onClick: () => onDrill(filter),
+      title: 'Open in Log Explorer',
+      style: { cursor: 'pointer' as const },
+      onMouseEnter: (e: { currentTarget: HTMLElement }) => { e.currentTarget.style.background = 'var(--surface-subtle)'; },
+      onMouseLeave: (e: { currentTarget: HTMLElement }) => { e.currentTarget.style.background = restoreBg; },
+    };
+  };
 
   const SECTIONS = [
     { id: 'overview',   label: 'Overview' },
@@ -336,12 +356,14 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                         const users: string[] = Array.isArray(r.sample_users) ? r.sample_users : [];
                         const distinct = parseInt(r.distinct_users) || 0;
                         const isThreat = r.is_known_bad || (typeof r.abuse_score === 'number' && r.abuse_score >= 50);
+                        const rowBg = isThreat ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)';
                         return (
-                          <tr key={i} onClick={() => setActiveSection('authfail')}
-                            style={{ borderBottom: '1px solid var(--border-light)', cursor: 'pointer',
-                              background: isThreat ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}
+                          <tr key={i}
+                            onClick={() => { if (onDrill && r.source_ip) onDrill({ host: r.source_ip }); else setActiveSection('authfail'); }}
+                            title={onDrill && r.source_ip ? 'Open in Log Explorer' : undefined}
+                            style={{ borderBottom: '1px solid var(--border-light)', cursor: 'pointer', background: rowBg }}
                             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--surface-subtle)'; }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = isThreat ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)'; }}>
+                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = rowBg; }}>
                             <td style={{ ...TD, ...MONO, color: '#dc2626', fontWeight: 600, whiteSpace: 'nowrap' }}>
                               {r.source_ip}
                               {isThreat && <span style={{ marginLeft: 6 }}><ThreatBadge knownBad={r.is_known_bad} abuseScore={r.abuse_score} /></span>}
@@ -385,8 +407,10 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                       const users: string[] = Array.isArray(r.sample_users) ? r.sample_users : [];
                       const distinct = parseInt(r.distinct_users) || 0;
                       const isThreat = r.is_known_bad || (typeof r.abuse_score === 'number' && r.abuse_score >= 50);
+                      const rowBg = isThreat ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)';
+                      const d = drillRow({ host: r.source_ip }, rowBg);
                       return (
-                        <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: isThreat ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
+                        <tr key={i} {...d} style={{ borderBottom: '1px solid var(--border-light)', background: rowBg, ...(d.style || {}) }}>
                           <td style={{ ...TD, ...MONO, color: '#dc2626', fontWeight: 600, whiteSpace: 'nowrap' }}>
                             {r.source_ip}
                             {isThreat && <span style={{ marginLeft: 6 }}><ThreatBadge knownBad={r.is_known_bad} abuseScore={r.abuse_score} /></span>}
@@ -426,8 +450,10 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                     {targetedUsers.map((r, i) => {
                       const fails = parseInt(r.failure_count) || 0;
                       const hot = fails >= 20;
+                      const rowBg = hot ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)';
+                      const d = drillRow({ q: r.username }, rowBg);
                       return (
-                        <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: hot ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
+                        <tr key={i} {...d} style={{ borderBottom: '1px solid var(--border-light)', background: rowBg, ...(d.style || {}) }}>
                           <td style={{ ...TD, ...MONO, color: 'var(--text-primary)', fontWeight: 600 }}>{r.username || '—'}</td>
                           <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 10 }}>{fails}</span></td>
                           <td style={{ ...TD, color: 'var(--text-secondary)' }}>{parseInt(r.distinct_sources) || 0}</td>
@@ -455,8 +481,9 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                     const fails = parseInt(r.failure_count) || 0;
                     const max = parseInt(failsByCountry[0]?.failure_count) || 1;
                     const pct = Math.round((fails / max) * 100);
+                    const d = drillRow({ q: r.country }, 'transparent');
                     return (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div key={i} {...d} style={{ display: 'flex', alignItems: 'center', gap: 12, borderRadius: 4, ...(d.style || {}) }}>
                         <div style={{ width: 180, fontSize: 'var(--text-sm)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           <CountryLabel country={r.country} code={r.country_code} />
                         </div>
@@ -489,9 +516,11 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                     {['Source IP','Host','Failures','First Fail','Last Fail','Success After?','Success Time'].map(h => <th key={h} style={TH}>{h}</th>)}
                   </tr></thead>
                   <tbody>
-                    {bruteForce.map((r, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--border-light)',
-                        background: r.success_after_failure ? 'var(--tint-purple)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
+                    {bruteForce.map((r, i) => {
+                      const rowBg = r.success_after_failure ? 'var(--tint-purple)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)';
+                      const d = drillRow({ host: r.source_ip }, rowBg);
+                      return (
+                      <tr key={i} {...d} style={{ borderBottom: '1px solid var(--border-light)', background: rowBg, ...(d.style || {}) }}>
                         <td style={{ ...TD, ...MONO, color: r.success_after_failure ? 'var(--tint-purple-fg)' : '#dc2626', fontWeight: 600 }}>{r.source_ip}</td>
                         <td style={{ ...TD, ...MONO, color: 'var(--text-primary)' }}>{r.host}</td>
                         <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 10 }}>{r.fail_count}</span></td>
@@ -506,7 +535,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                           {r.success_time ? new Date(r.success_time).toLocaleString() : '—'}
                         </td>
                       </tr>
-                    ))}
+                    ); })}
                   </tbody>
                 </table>
               )}
@@ -529,13 +558,16 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                         {['Source IP','Deny Count','Destinations'].map(h => <th key={h} style={TH}>{h}</th>)}
                       </tr></thead>
                       <tbody>
-                        {fwDenies.by_source?.map((r: any, i: number) => (
-                          <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
+                        {fwDenies.by_source?.map((r: any, i: number) => {
+                          const rowBg = i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)';
+                          const d = drillRow({ host: r.src_ip }, rowBg);
+                          return (
+                          <tr key={i} {...d} style={{ borderBottom: '1px solid var(--border-light)', background: rowBg, ...(d.style || {}) }}>
                             <td style={{ ...TD, ...MONO, color: '#dc2626', fontWeight: 600 }}>{r.src_ip}</td>
                             <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-warn-fg)', background: 'var(--tint-warn)', padding: '2px 8px', borderRadius: 10 }}>{r.deny_count}</span></td>
                             <td style={{ ...TD, color: 'var(--text-secondary)', fontSize: 'var(--text-xs)' }}>{Array.isArray(r.destinations) ? r.destinations.slice(0, 3).join(', ') : '—'}</td>
                           </tr>
-                        ))}
+                        ); })}
                       </tbody>
                     </table>
                   )}
@@ -553,13 +585,16 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                         {['Destination IP','Deny Count','From Sources'].map(h => <th key={h} style={TH}>{h}</th>)}
                       </tr></thead>
                       <tbody>
-                        {fwDenies.by_destination?.map((r: any, i: number) => (
-                          <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
+                        {fwDenies.by_destination?.map((r: any, i: number) => {
+                          const rowBg = i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)';
+                          const d = drillRow({ host: r.dst_ip }, rowBg);
+                          return (
+                          <tr key={i} {...d} style={{ borderBottom: '1px solid var(--border-light)', background: rowBg, ...(d.style || {}) }}>
                             <td style={{ ...TD, ...MONO, color: '#2563eb', fontWeight: 600 }}>{r.dst_ip}</td>
                             <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-warn-fg)', background: 'var(--tint-warn)', padding: '2px 8px', borderRadius: 10 }}>{r.deny_count}</span></td>
                             <td style={{ ...TD, color: 'var(--text-secondary)', fontSize: 'var(--text-xs)' }}>{Array.isArray(r.sources) ? r.sources.slice(0, 3).join(', ') : '—'}</td>
                           </tr>
-                        ))}
+                        ); })}
                       </tbody>
                     </table>
                   )}
@@ -573,9 +608,10 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                   {fwDenies.by_service?.map((r: any, i: number) => {
                     const maxCount = fwDenies.by_service?.[0]?.deny_count || 1;
                     const pct = Math.round((r.deny_count / maxCount) * 100);
+                    const d = drillRow({ q: r.service }, 'var(--surface-subtle)');
                     return (
-                      <div key={i} style={{ background: 'var(--surface-subtle)', border: '1px solid var(--border)', borderRadius: 8,
-                        padding: '10px 14px', minWidth: 120 }}>
+                      <div key={i} {...d} style={{ background: 'var(--surface-subtle)', border: '1px solid var(--border)', borderRadius: 8,
+                        padding: '10px 14px', minWidth: 120, ...(d.style || {}) }}>
                         <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>{r.service}</div>
                         <div style={{ fontSize: 'var(--text-xs)', color: '#ea580c', fontWeight: 700, marginBottom: 6 }}>{r.deny_count} denies</div>
                         <div style={{ height: 4, background: 'var(--border-light)', borderRadius: 2 }}>
@@ -605,9 +641,11 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                     {['Time','Firewall','VPN Source IP','User','Country','Type','Severity','Message'].map(h => <th key={h} style={TH}>{h}</th>)}
                   </tr></thead>
                   <tbody>
-                    {vpnEvents.map((r, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--border-light)',
-                        background: r.event_type === 'failure' ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
+                    {vpnEvents.map((r, i) => {
+                      const rowBg = r.event_type === 'failure' ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)';
+                      const d = drillRow({ host: r.vpn_src_ip || r.source_ip }, rowBg);
+                      return (
+                      <tr key={i} {...d} style={{ borderBottom: '1px solid var(--border-light)', background: rowBg, ...(d.style || {}) }}>
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(r.received_at).toLocaleTimeString()}</td>
                         <td style={{ ...TD, ...MONO, color: 'var(--text-primary)', fontWeight: 500 }}>{r.source_host || r.source_ip}</td>
                         <td style={{ ...TD, ...MONO, color: '#2563eb', fontSize: 'var(--text-xs)' }}>{r.vpn_src_ip || '—'}</td>
@@ -625,7 +663,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                           {r.detail || r.message}
                         </td>
                       </tr>
-                    ))}
+                    ); })}
                   </tbody>
                 </table>
               )}
@@ -642,8 +680,9 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                     {ipsEvents.by_threat.map((r: any, i: number) => {
                       const max = ipsEvents.by_threat[0]?.hit_count || 1;
                       const pct = Math.round((r.hit_count / max) * 100);
+                      const d = drillRow({ q: r.threat }, 'var(--tint-danger)');
                       return (
-                        <div key={i} style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 8, padding: '10px 14px', minWidth: 150 }}>
+                        <div key={i} {...d} style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 8, padding: '10px 14px', minWidth: 150, ...(d.style || {}) }}>
                           <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--tint-danger-fg)', marginBottom: 2, wordBreak: 'break-word' }}>{r.threat}</div>
                           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 4, textTransform: 'capitalize' }}>{r.subtype}</div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -670,8 +709,12 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                       {['Time','Firewall','Src IP','Dst IP','Target / URL','Type','Severity','Threat'].map(h => <th key={h} style={TH}>{h}</th>)}
                     </tr></thead>
                     <tbody>
-                      {ipsEvents.events?.map((r: any, i: number) => (
-                        <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? 'var(--tint-danger)' : 'var(--bg-card)' }}>
+                      {ipsEvents.events?.map((r: any, i: number) => {
+                        const rowBg = i % 2 === 0 ? 'var(--tint-danger)' : 'var(--bg-card)';
+                        const ipsFilter = (r.src_ip || r.source_ip) ? { host: r.src_ip || r.source_ip } : { q: r.threat_name };
+                        const d = drillRow(ipsFilter, rowBg);
+                        return (
+                        <tr key={i} {...d} style={{ borderBottom: '1px solid var(--border-light)', background: rowBg, ...(d.style || {}) }}>
                           <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(r.received_at).toLocaleTimeString()}</td>
                           <td style={{ ...TD, ...MONO, color: 'var(--text-primary)', fontWeight: 500 }}>{r.source_host || r.source_ip}</td>
                           <td style={{ ...TD, ...MONO, color: '#dc2626', fontSize: 'var(--text-xs)' }}>{r.src_ip || '—'}</td>
@@ -698,7 +741,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                             </div>
                           </td>
                         </tr>
-                      ))}
+                      ); })}
                     </tbody>
                   </table>
                 )}
@@ -721,8 +764,11 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                     {['Time','Hour','Device','Vendor','Event Type','Severity','Message'].map(h => <th key={h} style={TH}>{h}</th>)}
                   </tr></thead>
                   <tbody>
-                    {afterHours.map((r, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? 'var(--tint-warn)' : 'var(--bg-card)' }}>
+                    {afterHours.map((r, i) => {
+                      const rowBg = i % 2 === 0 ? 'var(--tint-warn)' : 'var(--bg-card)';
+                      const d = drillRow({ host: r.source_ip }, rowBg);
+                      return (
+                      <tr key={i} {...d} style={{ borderBottom: '1px solid var(--border-light)', background: rowBg, ...(d.style || {}) }}>
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(r.received_at).toLocaleString()}</td>
                         <td style={{ ...TD, fontWeight: 700, color: '#ca8a04' }}>{String(r.hour_of_day).padStart(2,'0')}:xx</td>
                         <td style={{ ...TD, ...MONO, color: 'var(--text-primary)', fontWeight: 500 }}>{r.source_host || r.source_ip}</td>
@@ -736,7 +782,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                         <td style={TD}><SevBadge label={r.severity_label} /></td>
                         <td style={{ ...TD, color: 'var(--text-secondary)', maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.message}</td>
                       </tr>
-                    ))}
+                    ); })}
                   </tbody>
                 </table>
               )}
@@ -764,14 +810,17 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                       {['Time','Controller','Severity','Message'].map(h => <th key={h} style={TH}>{h}</th>)}
                     </tr></thead>
                     <tbody>
-                      {wirelessAuth.failures?.map((r: any, i: number) => (
-                        <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
+                      {wirelessAuth.failures?.map((r: any, i: number) => {
+                        const rowBg = i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)';
+                        const d = drillRow({ host: r.source_ip }, rowBg);
+                        return (
+                        <tr key={i} {...d} style={{ borderBottom: '1px solid var(--border-light)', background: rowBg, ...(d.style || {}) }}>
                           <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(r.received_at).toLocaleTimeString()}</td>
                           <td style={{ ...TD, ...MONO, color: 'var(--text-primary)', fontWeight: 500 }}>{r.source_host || r.source_ip}</td>
                           <td style={TD}><SevBadge label={r.severity_label} /></td>
                           <td style={{ ...TD, color: 'var(--text-secondary)', maxWidth: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.message}</td>
                         </tr>
-                      ))}
+                      ); })}
                     </tbody>
                   </table>
                 )}

@@ -1467,6 +1467,11 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.11.0': [
+    'Security-tab tables are now clickable: each row drills into the Log Explorer pre-filtered to its context — source/attacker IP, targeted user, denied service, blocked destination, threat, or ATT&CK technique.',
+    'Reuses the existing Log Explorer and its detail view (no new slide-ins or panels), so the Security analytics are now directly actionable for investigation.',
+    'Subtle hover + pointer affordance on every drillable row; rows with no useful filter value stay non-clickable.',
+  ],
   '2.10.0': [
     'Alerts are now clickable: a detail slide-in shows the alert\'s rule, severity, MITRE techniques, source, match count, detection window, and acknowledgement status.',
     'The panel lists the actual underlying logs that triggered the alert (by source within the rule\'s time window), each drillable into the full log detail view.',
