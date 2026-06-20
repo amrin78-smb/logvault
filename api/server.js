@@ -512,7 +512,7 @@ app.get('/api/logs', asyncHandler(async (req, res) => {
   }
   if (host)     {
     conditions.push(`(se.source_host ILIKE $${p++} OR kh.hostname ILIKE $${p++} OR se.source_ip::TEXT ILIKE $${p++})`);
-    params.push(`%${host}%`, `%${host}%`, `%${host}%`); p += 2;
+    params.push(`%${host}%`, `%${host}%`, `%${host}%`);
   }
   if (ip)       { conditions.push(`se.source_ip::TEXT ILIKE $${p++}`);           params.push(`%${ip}%`); }
 
@@ -778,7 +778,7 @@ app.get('/api/logs/export', asyncHandler(async (req, res) => {
   }
   if (host) {
     conditions.push(`(se.source_host ILIKE $${p++} OR kh.hostname ILIKE $${p++} OR se.source_ip::TEXT ILIKE $${p++})`);
-    params.push(`%${host}%`, `%${host}%`, `%${host}%`); p += 2;
+    params.push(`%${host}%`, `%${host}%`, `%${host}%`);
   }
   if (ip) { conditions.push(`se.source_ip::TEXT ILIKE $${p++}`); params.push(`%${ip}%`); }
 
@@ -1467,6 +1467,10 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.11.1': [
+    'Fix: the Log Explorer (and CSV export) returned HTTP 500 when filtering by host — a SQL parameter-index offset in the host filter shifted every later placeholder (RBAC filter, LIMIT/OFFSET) out of alignment.',
+    'Drilling from a Security-tab row (e.g. IPS/Threats) into the Log Explorer by host now loads results correctly instead of erroring.',
+  ],
   '2.11.0': [
     'Security-tab tables are now clickable: each row drills into the Log Explorer pre-filtered to its context — source/attacker IP, targeted user, denied service, blocked destination, threat, or ATT&CK technique.',
     'Reuses the existing Log Explorer and its detail view (no new slide-ins or panels), so the Security analytics are now directly actionable for investigation.',
