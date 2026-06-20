@@ -1397,6 +1397,14 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.9.0': [
+    'Applied the deep field-capture & correctness pass (previously done for Fortinet) to ALL vendor parsers: Cisco, Palo Alto, Check Point, SonicWall, Juniper, Windows, Aruba, Sangfor, Forcepoint, and the generic fallback',
+    'Every parser now emits the normalized contract (real remote source IP, dest IP, ports, username, login outcome) and the correct category, so cross-vendor brute-force/scan/IPS correlation and the Security tab work for all brands',
+    'Captures full security context: IPS/threat signature names + severity, web-filter URLs + categories, VPN/auth identity, and traffic service/proto/bytes/geo',
+    'Timezone-correct timestamps where the vendor log carries an offset (Check Point, SonicWall, Juniper, Windows, PAN-OS) instead of relying on the collector\'s OS locale',
+    'Expanded Windows Security event coverage (logon, account management, Kerberos/NTLM, process creation, audit) and Cisco multi-product coverage (ASA/FTD/ISE/AnyConnect auth, traffic, denies, intrusion)',
+    'Cross-vendor risk scoring now boosts events carrying a threat/signature name; firewall classification recognizes more action verbs. (Vendor mappings validated against synthetic samples — spot-check against real logs, especially PAN-OS CSV indices, when each device is onboarded.)',
+  ],
   '2.8.0': [
     'Fortinet parser now captures ~40 more log fields (service, geo, interfaces, session/bytes; VPN gateway/port/IPsec status/XAuth user; UTM threat type/cert/hostname; webfilter URL/category/risk-level; admin UI/user) — fixes the empty "Top Services" widget and blank IPS threat names',
     'Timestamps now use each log\'s own timezone offset instead of the collector\'s OS locale (prevents hour-shifted times)',

@@ -778,6 +778,8 @@ Every parser MUST, for auth/VPN/failed-login events, emit:
 
 Correlation rules in `collector/correlationEngine.js` (BRUTE_FORCE_SUCCESS, VPN_BRUTE_FORCE, PORT_SCAN, IPS_REPEATED_ATTACK) are **vendor-agnostic** (not gated to any vendor) and group by `structured_data.srcip || source_ip`, so attacks attribute to the real attacker IP. Keep new/updated parsers conforming to this contract so correlation works for every vendor.
 
+As of 2.9.0, **ALL vendor parsers** (Cisco, Palo Alto, Check Point, SonicWall, Juniper, Windows, Aruba, Sangfor, Forcepoint, and the generic fallback — not just Fortinet) implement this contract and capture the full per-vendor security field set (IPS/threat signatures + severity, web-filter URLs/categories, VPN/auth identity, traffic service/proto/bytes/geo).
+
 ---
 
 ## NetVault Asset Enrichment

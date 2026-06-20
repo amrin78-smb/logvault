@@ -31,12 +31,29 @@ function validIp(ip) {
   return ip.trim();
 }
 
+// Parse a port string into an int in range, else null.
+function validPort(p) {
+  if (p == null) return null;
+  const n = parseInt(p, 10);
+  if (isNaN(n) || n < 0 || n > 65535) return null;
+  return n;
+}
+
+// IPS / threat (NGFW situation) detection for the security-category escalation.
+const THREAT_RE = /attack|threat|intrusion|exploit|malware|virus|trojan|ransomware|botnet|spyware|worm|\bips\b|\bids\b|brute.?force|c2|command.?and.?control|vulnerab|0day|zero.?day|situation|signature|anomaly|phishing/i;
+
+// Web Security categories that indicate a malicious destination (escalate web→security).
+const MALICIOUS_WEB_CAT = /malware|phishing|botnet|spyware|command.?and.?control|\bc2\b|c&c|exploit|ransomware|trojan|compromised|malicious|suspicious|elevated.?risk|security.?risk|advanced.?malware/i;
+
 // Detect login/auth events and their result from signature/name/act text.
-// Returns 'login_failed', 'login_success', or null (non-auth).
-function authSubcategory(signatureId, name, act) {
-  const t = `${signatureId || ''} ${name || ''} ${act || ''}`.toLowerCase();
-  if (!/auth|login|logon|logoff|logout|sign.?in|credential|password|account/.test(t)) return null;
-  if (/fail|failed|denied|deny|reject|invalid|incorrect|wrong|bad|lockout|locked|unauthor/.test(t)) return 'login_failed';
+// Returns 'login_failed', 'login_success', 'auth_failed', or null (non-auth).
+function authSubcategory(signatureId, name, act, extra) {
+  const t = `${signatureId || ''} ${name || ''} ${act || ''} ${extra || ''}`.toLowerCase();
+  const hasLogin = /login|logon|logoff|logout|sign.?in/.test(t);
+  if (!hasLogin && !/auth|credential|password|account/.test(t)) return null;
+  if (/fail|failed|failure|denied|deny|reject|invalid|incorrect|wrong|bad|lockout|locked|unauthor/.test(t)) {
+    return hasLogin ? 'login_failed' : 'auth_failed';
+  }
   if (/success|succeed|succeeded|granted|accept|established|logged in|logon success/.test(t)) return 'login_success';
   return null;
 }
@@ -77,24 +94,37 @@ function normalizeAction(act) {
   return act.toLowerCase();
 }
 
-// Determine event category from CEF product and fields
-function getCategory(product, signatureId, fields) {
+// Determine event category from CEF product and fields.
+//   - NGFW/Stonesoft IPS "situation"/threat events  → 'security'
+//   - Web Security malicious-category destinations    → 'security' (escalated)
+//   - normal Web Security                             → 'web'
+//   - NGFW denied/blocked traffic                     → 'firewall'
+function getCategory(product, signatureId, name, fields) {
   const prod = (product || '').toLowerCase();
   const sig  = (signatureId || '').toLowerCase();
   const act  = (fields.act || '').toLowerCase();
+  const webCat = `${fields.cat || ''} ${fields.catdesc || ''} ${fields.cs2 || ''} ${fields.reason || ''}`;
+  const threatBlob = `${sig} ${(name || '').toLowerCase()} ${(fields.situation || '').toLowerCase()} ${(fields.reason || '').toLowerCase()} ${(fields.msg || '').toLowerCase()}`;
 
   if (prod.includes('email')) return 'email';
   if (prod.includes('dlp'))   return 'dlp';
-  if (prod.includes('ngfw') || prod.includes('firewall')) {
+  if (prod.includes('ngfw') || prod.includes('stonesoft') || prod.includes('firewall')) {
+    // IPS / threat situation on NGFW → security
+    if (fields.situation || THREAT_RE.test(threatBlob)) return 'security';
     if (act.includes('deny') || act.includes('drop') || act.includes('block')) return 'firewall';
     return 'network';
   }
-  if (prod.includes('web') || prod.includes('proxy')) {
-    if (fields.request || fields.dhost) return 'web';
-    return 'proxy';
+  if (prod.includes('web') || prod.includes('proxy') || prod.includes('security')) {
+    // Web Security: escalate malware/phishing destinations to security.
+    if (MALICIOUS_WEB_CAT.test(webCat) || MALICIOUS_WEB_CAT.test(threatBlob)) return 'security';
+    if (fields.request || fields.dhost || fields.url) return 'web';
+    if (THREAT_RE.test(threatBlob)) return 'security';
+    if (prod.includes('web') || prod.includes('proxy')) return 'proxy';
+    return 'security';
   }
   if (fields.suser && fields.duser) return 'email';
-  if (fields.request) return 'web';
+  if (MALICIOUS_WEB_CAT.test(webCat)) return 'security';
+  if (fields.request || fields.url) return 'web';
   return 'security';
 }
 
@@ -136,6 +166,7 @@ function parseForcepoint(raw, sourceIP) {
 
   let structured = {};
   let severity, severityLabel, program, message;
+  let logTimestamp = null;
 
   if (cefMatch) {
     // CEF format
@@ -148,11 +179,23 @@ function parseForcepoint(raw, sourceIP) {
 
     const fields = parseCEFExtension(extension);
     const action = normalizeAction(fields.act);
-    let category = getCategory(product, signatureId, fields);
+    let category = getCategory(product, signatureId, name, fields);
 
     // Auth events: classify subcategory + force category 'authentication'.
-    const subcategory = authSubcategory(signatureId, name, fields.act);
+    const subcategory = authSubcategory(signatureId, name, fields.act, fields.reason);
     if (subcategory) category = 'authentication';
+
+    // Threat / IPS situation name (NGFW/Stonesoft) or Web malicious category.
+    const threatName =
+      fields.situation ||
+      (fields.cs1Label === 'ThreatName' || fields.cs1Label === 'Threat' ? fields.cs1 : null) ||
+      (fields.cs2Label === 'ThreatName' || fields.cs2Label === 'Threat' ? fields.cs2 : null) ||
+      fields.threat || fields.malwareName || null;
+
+    // Web-filter category (Web Security): catdesc/cat, or a labeled custom string.
+    const webCategory =
+      fields.catdesc || fields.cat ||
+      (fields.cs2Label === 'Category' || fields.cs2Label === 'WebCategory' ? fields.cs2 : null) || null;
 
     structured = {
       // CEF header fields
@@ -174,6 +217,10 @@ function parseForcepoint(raw, sourceIP) {
       // the sender-as-attacker conflation that src_ip's sourceIP fallback has).
       srcip:         validIp(fields.src),
       dstip:         validIp(fields.dst),
+      // Contract port keys (srcport/dstport) — match the suite-wide contract used
+      // by Fortinet/Sangfor. src_port/dst_port kept too for back-compat.
+      srcport:       validPort(fields.spt),
+      dstport:       validPort(fields.dpt),
       src_ip:        fields.src    || sourceIP || null,
       dst_ip:        fields.dst    || null,
       dst_host:      fields.dhost  || null,
@@ -182,11 +229,12 @@ function parseForcepoint(raw, sourceIP) {
       protocol:      fields.proto  || fields.app || null,
 
       // User fields
-      user:          fields.suser  || fields.loginID || null,
+      user:          fields.suser  || fields.loginID || fields.user || null,
       dst_user:      fields.duser  || null,
 
       // Web fields
-      url:           fields.request || null,
+      url:           fields.request || fields.url || null,
+      web_category:  webCategory,
       method:        fields.requestMethod || null,
       user_agent:    fields.requestClientApplication || null,
       content_type:  fields.cs3Label === 'ContentType' ? fields.cs3 : null,
@@ -198,7 +246,12 @@ function parseForcepoint(raw, sourceIP) {
       // Policy fields
       policy:        fields.cs1Label === 'Policy'  ? fields.cs1 : null,
       reason:        fields.reason || null,
-      disposition:   fields.cn1Label === 'DispositionCode' ? fields.cn1 : null,
+      disposition:   fields.cn1Label === 'DispositionCode' ? fields.cn1 : (fields.disposition || null),
+
+      // Threat / IPS (NGFW/Stonesoft situation) fields
+      threat_name:   threatName,
+      situation:     fields.situation || null,
+      severity_text: fields.Severity || fields.severity || null,
 
       // DLP fields
       file_type:     fields.fileType || null,
@@ -208,7 +261,7 @@ function parseForcepoint(raw, sourceIP) {
       msg_subject:   fields.msg || null,
 
       // Device
-      device:        fields.dvc || null,
+      device:        fields.dvc || fields.deviceExternalId || null,
 
       // Raw extension for reference
       _raw_ext: extension ? extension.substring(0, 500) : null,
@@ -216,6 +269,14 @@ function parseForcepoint(raw, sourceIP) {
 
     // Remove null values
     Object.keys(structured).forEach(k => structured[k] === null && delete structured[k]);
+
+    // Timestamp from CEF `rt`/`start`/`end` (epoch millis) when present — uses the
+    // log's own time, not the collector OS clock.
+    const epoch = fields.rt || fields.start || fields.end;
+    if (epoch != null) {
+      const n = parseInt(epoch, 10);
+      if (!isNaN(n)) { const d = new Date(n); if (!isNaN(d.getTime())) logTimestamp = d; }
+    }
 
     message = buildSummary(product, name, fields, action);
 
@@ -234,11 +295,14 @@ function parseForcepoint(raw, sourceIP) {
     program       = `Forcepoint/${fields.product || 'Security'}`;
 
     const action   = normalizeAction(fields.action || fields.act);
-    let category   = getCategory(fields.product || '', '', fields);
+    let category   = getCategory(fields.product || '', fields.signature || fields.signatureId || '', fields.name, fields);
 
     // Auth events: classify subcategory + force category 'authentication'.
-    const subcategory = authSubcategory(fields.signature || fields.signatureId, fields.name, fields.action || fields.act);
+    const subcategory = authSubcategory(fields.signature || fields.signatureId, fields.name, fields.action || fields.act, fields.reason);
     if (subcategory) category = 'authentication';
+
+    const threatName = fields.situation || fields.threat || fields.signature || null;
+    const webCategory = fields.category || fields.catdesc || fields.cat || null;
 
     structured = {
       vendor:    'Forcepoint',
@@ -249,12 +313,18 @@ function parseForcepoint(raw, sourceIP) {
       // srcip = REAL client/source IP only — never the syslog sender.
       srcip:     validIp(fields.src || fields.source),
       dstip:     validIp(fields.dst || fields.destination),
+      srcport:   validPort(fields.spt || fields.srcport || fields.src_port),
+      dstport:   validPort(fields.dpt || fields.dstport || fields.dst_port),
       src_ip:    fields.src || fields.source || sourceIP || null,
       dst_ip:    fields.dst || fields.destination || null,
+      protocol:  fields.proto || fields.protocol || fields.app || null,
       user:      fields.user || fields.suser || null,
       reason:    fields.reason || null,
       policy:    fields.policy || null,
-      url:       fields.url || null,
+      url:       fields.url || fields.request || null,
+      web_category: webCategory,
+      threat_name:  threatName,
+      situation:    fields.situation || null,
     };
 
     Object.keys(structured).forEach(k => structured[k] === null && delete structured[k]);
@@ -275,7 +345,8 @@ function parseForcepoint(raw, sourceIP) {
     message,
     structured_data: structured,
     is_parsed:      true,
-    parser_version: 'forcepoint-v1.0',
+    parser_version: 'forcepoint-v1.1',
+    log_timestamp:  logTimestamp,
   };
 }
 

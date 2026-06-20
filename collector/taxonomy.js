@@ -216,7 +216,10 @@ const MSG_RULES = [
   ['dlp',            /\bdlp\b|data.loss|data.leak|sensitive.*data|policy.violation.*data/i],
 ];
 
-const FIREWALL_ACTIONS = new Set(['blocked', 'allowed', 'deny', 'accept', 'drop', 'pass']);
+const FIREWALL_ACTIONS = new Set([
+  'blocked', 'allowed', 'deny', 'accept', 'drop', 'pass',
+  'denied', 'dropped', 'accepted', 'rejected', 'reject', 'allow', 'permit', 'block',
+]);
 
 function byMessage(message, s) {
   for (const [cat, re] of MSG_RULES) {

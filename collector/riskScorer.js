@@ -60,6 +60,15 @@ function scoreLog(entry) {
     else if (crscore >= 20) score += 6;
   }
 
+  // Cross-vendor threat-name bonus — IPS/threat events from vendors WITHOUT
+  // Fortinet's crlevel/crscore (Palo Alto, Check Point, Juniper, Cisco, etc.)
+  // still carry a named signature/threat/attack; nudge those up. Complements,
+  // not replaces, the crlevel/crscore boosts above.
+  const THREAT_NAME_KEYS = ['threat', 'signature', 'attack', 'protection_name', 'situation', 'threat_name'];
+  for (const k of THREAT_NAME_KEYS) {
+    if (String(sd[k] || '').trim() !== '') { score += 12; break; }
+  }
+
   // Known bad patterns (0-15 points bonus each)
   const msg = (entry.message || '').toLowerCase();
   if (/brute.?force|repeated.?fail|account.?lock/i.test(msg)) score += 15;
