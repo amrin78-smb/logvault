@@ -119,6 +119,9 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
   const remoteUser  = isAuthVpn ? (sd.user || '') : '';
   const remoteCty   = isAuthVpn ? (sd.srccountry || '') : '';
   const showRemote  = Boolean(remoteIP && remoteIP !== cleanIP);
+  // Many VPN events are pre-auth probes: the firewall reports a remote IP/country but
+  // user is missing, empty, or the literal 'N/A' (no credentials submitted yet).
+  const hasRealUser = Boolean(remoteUser) && String(remoteUser).trim().toLowerCase() !== 'n/a';
 
   const SEVERITIES: Record<number, string> = { 0: '0,1,2', 1: '0,1,2', 2: '0,1,2', 3: '3', 4: '4', 5: '5', 6: '6' };
 
@@ -189,7 +192,13 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
               <div style={{ background: 'var(--tint-danger)', border: '1px solid var(--border)',
                 borderRadius: 8, padding: '0 12px' }}>
                 <Field label="Remote IP"   value={remoteIP}   mono />
-                {remoteUser && <Field label="User"    value={remoteUser} mono />}
+                {hasRealUser && <Field label="User"    value={remoteUser} mono />}
+                {!hasRealUser && (
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)',
+                    padding: '6px 0', borderBottom: '1px solid var(--border-light)', lineHeight: 1.5 }}>
+                    No username — pre-authentication probe (no credentials submitted)
+                  </div>
+                )}
                 {remoteCty  && <Field label="Country" value={remoteCty} />}
               </div>
             </div>

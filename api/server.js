@@ -719,7 +719,16 @@ app.get('/api/logs/export', asyncHandler(async (req, res) => {
   const { rows } = await pool.query(`
     SELECT se.received_at, COALESCE(kh.hostname, se.source_host) AS source_host,
       se.source_ip::TEXT, se.severity_label, se.vendor, se.program,
-      se.category, se.risk_score, se.message
+      se.category, se.risk_score, se.message,
+      -- Slide-in detail fields (from structured_data) for downstream analysis.
+      COALESCE(se.structured_data->>'srcip', se.structured_data->>'remip') AS remote_ip,
+      se.structured_data->>'user'       AS usr,
+      se.structured_data->>'srccountry' AS country,
+      se.structured_data->>'subcategory' AS subcategory,
+      se.structured_data->>'action'     AS action,
+      se.structured_data->>'subtype'    AS subtype,
+      se.structured_data->>'dstip'      AS dstip,
+      se.structured_data->>'reason'     AS reason
     FROM syslog_entries se
     LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
     WHERE ${conditions.join(' AND ')}
@@ -727,13 +736,21 @@ app.get('/api/logs/export', asyncHandler(async (req, res) => {
     LIMIT 10000
   `, params);
 
-  // Build CSV
-  const header = 'Time,Host,Source IP,Severity,Vendor,Program,Category,Risk Score,Message\n';
+  // Build CSV. esc() RFC-4180-quotes any field containing comma/quote/newline;
+  // clean() blanks out the firewall's "N/A" placeholders so columns stay analysis-friendly.
+  const esc = (v) => {
+    if (v == null) return '';
+    const s = String(v);
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const clean = (v) => (v == null || v === 'N/A' || v === '') ? '' : v;
+  const header = 'Time,Reporting Device,Reporting Device IP,Remote Source IP,Country,User,Category,Subcategory,Action,Subtype,Dest IP,Severity,Risk Score,Vendor,Program,Reason,Message\n';
   const csvRows = rows.map(r => [
-    r.received_at, r.source_host || '', r.source_ip || '',
-    r.severity_label, r.vendor, r.program || '',
-    r.category || '', r.risk_score != null ? r.risk_score : '',
-    `"${(r.message || '').replace(/"/g, '""')}"`,
+    esc(r.received_at), esc(r.source_host), esc(r.source_ip),
+    esc(clean(r.remote_ip)), esc(clean(r.country)), esc(clean(r.usr)),
+    esc(r.category), esc(clean(r.subcategory)), esc(clean(r.action)), esc(clean(r.subtype)), esc(clean(r.dstip)),
+    esc(r.severity_label), r.risk_score != null ? r.risk_score : '',
+    esc(r.vendor), esc(r.program), esc(clean(r.reason)), esc(r.message),
   ].join(','));
 
   const csv = header + csvRows.join('\n');
@@ -1380,6 +1397,11 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.7.0': [
+    'CSV export now includes the detail-panel fields for analysis: real remote source IP, country, username, login outcome (subcategory), action, subtype, destination IP, and reason — previously only top-level columns (which showed the reporting firewall, not the attacker)',
+    'Export CSV is now RFC-4180 quoted and blanks the firewall\'s "N/A" placeholders for clean analysis',
+    'Detail slide-in now labels pre-authentication probes ("no credentials submitted") when a VPN/auth event has a remote source but no username',
+  ],
   '2.6.0': [
     'Security tab now shows the real attacker IP, targeted username, and source country for auth/VPN failures (previously showed the reporting firewall)',
     'New widgets: Top Targeted Usernames and Failed Logins by Country',
