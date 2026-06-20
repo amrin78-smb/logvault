@@ -2,6 +2,10 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { ExplorerFilter } from '@/app/page';
 import LogDetailPanel from '@/components/LogDetailPanel';
+
+// ExplorerFilter (defined in app/page.tsx) doesn't carry the deep-link `threat`
+// filter, so widen it locally for the spots that thread `threat` through.
+type ExplorerFilterX = ExplorerFilter & { threat?: string };
 import { PageHeader, TableSkeleton, EmptyState } from './ui';
 
 const SEV_COLORS: Record<string, string> = {
@@ -55,7 +59,7 @@ const SEVERITIES = [
   { label: 'Info',      value: '6',     color: 'var(--tint-success-fg)', bg: 'var(--tint-success)', border: 'var(--tint-success)' },
 ];
 
-interface ActiveFilter { type: 'vendor' | 'severity' | 'category' | 'host' | 'q' | 'technique'; value: string; label: string; }
+interface ActiveFilter { type: 'vendor' | 'severity' | 'category' | 'host' | 'q' | 'technique' | 'threat'; value: string; label: string; }
 
 // For auth/vpn events the syslog sender is the firewall; the meaningful source is the
 // remote client (remip / structured_data.srcip). Returns the remote client IP when the
@@ -73,7 +77,7 @@ function remoteClientIP(row: any): string | null {
 }
 
 export default function LogExplorer({ initialFilter, onFilterUsed }: {
-  initialFilter?: ExplorerFilter;
+  initialFilter?: ExplorerFilterX;
   onFilterUsed?: () => void;
 }) {
   const [q,          setQ]         = useState('');
@@ -81,6 +85,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
   const [severity,   setSev]       = useState('');
   const [category,   setCategory]  = useState('');
   const [technique,  setTechnique] = useState('');
+  const [threat,     setThreat]    = useState('');
   const [host,       setHost]      = useState('');
   const [hours,      setHours]     = useState('24');
   const [logs,       setLogs]      = useState<any[]>([]);
@@ -99,6 +104,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
       if (initialFilter.vendor   !== undefined) setVendor(initialFilter.vendor);
       if (initialFilter.category !== undefined) setCategory(initialFilter.category);
       if (initialFilter.technique!== undefined) setTechnique(initialFilter.technique);
+      if (initialFilter.threat   !== undefined) setThreat(initialFilter.threat);
       if (initialFilter.host     !== undefined) setHost(initialFilter.host);
       if (initialFilter.hours    !== undefined) setHours(initialFilter.hours);
       if (onFilterUsed) onFilterUsed();
@@ -108,7 +114,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
 
   const abortRef = useRef<AbortController | null>(null);
 
-  const triggerSearch = async (filter?: ExplorerFilter) => {
+  const triggerSearch = async (filter?: ExplorerFilterX) => {
     // Cancel any in-flight search so an older response can't clobber a newer one.
     if (abortRef.current) abortRef.current.abort();
     const ctrl = new AbortController();
@@ -123,6 +129,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
     const effSeverity = 'severity' in f ? (f.severity || '') : severity;
     const effCategory = 'category' in f ? (f.category || '') : category;
     const effTechnique= 'technique'in f ? (f.technique|| '') : technique;
+    const effThreat   = 'threat'   in f ? (f.threat   || '') : threat;
     const effHost     = 'host'     in f ? (f.host     || '') : host;
     try {
       const params = new URLSearchParams({ hours: f.hours || hours, limit: '200' });
@@ -131,6 +138,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
       if (effSeverity) params.set('severity', effSeverity);
       if (effCategory) params.set('category', effCategory);
       if (effTechnique) params.set('technique', effTechnique);
+      if (effThreat)   params.set('threat', effThreat);
       if (effHost)     params.set('host', effHost);
       const r = await fetch(`/api/logs?${params}`, { signal: ctrl.signal });
       if (!r.ok) throw new Error(`API error: ${r.status}`);
@@ -145,7 +153,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
     }
   };
 
-  const search = useCallback(() => triggerSearch(), [q, vendor, severity, category, technique, host, hours]);
+  const search = useCallback(() => triggerSearch(), [q, vendor, severity, category, technique, threat, host, hours]);
 
   const applyPreset = (preset: typeof PRESETS[0]) => {
     setQ(preset.q);
@@ -159,18 +167,19 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
   };
 
   const removeFilter = (type: string) => {
-    const override: ExplorerFilter = {};
+    const override: ExplorerFilterX = {};
     if (type === 'vendor')   { setVendor('');   override.vendor = '';   }
     if (type === 'severity') { setSev('');       override.severity = ''; }
     if (type === 'category') { setCategory('');  override.category = ''; }
     if (type === 'technique'){ setTechnique(''); override.technique = ''; }
+    if (type === 'threat')   { setThreat('');    override.threat = '';   }
     if (type === 'host')     { setHost('');      override.host = '';     }
     if (type === 'q')        { setQ('');         override.q = '';        }
     setTimeout(() => triggerSearch(override), 50);
   };
 
   const clearAll = () => {
-    setVendor(''); setSev(''); setCategory(''); setTechnique(''); setHost(''); setQ(''); setHostInput('');
+    setVendor(''); setSev(''); setCategory(''); setTechnique(''); setThreat(''); setHost(''); setQ(''); setHostInput('');
     setTimeout(() => triggerSearch({ hours } as any), 50);
   };
 
@@ -184,6 +193,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
     ...(severity ? [{ type: 'severity' as const, value: severity, label: `severity: ${SEVERITIES.find(s => s.value === severity)?.label || severity}` }] : []),
     ...(category ? [{ type: 'category' as const, value: category, label: `category: ${CATEGORIES.find(c => c.value === category)?.label || category}` }] : []),
     ...(technique? [{ type: 'technique'as const, value: technique, label: `technique: ${technique}` }] : []),
+    ...(threat   ? [{ type: 'threat'   as const, value: threat,   label: `threat: ${threat}` }]     : []),
     ...(host     ? [{ type: 'host'     as const, value: host,     label: `host: ${host}` }]         : []),
     ...(q        ? [{ type: 'q'        as const, value: q,        label: `search: "${q}"` }]         : []),
   ];
@@ -245,7 +255,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
 
         {/* CSV export */}
         <button onClick={() => {
-          const params = new URLSearchParams({ hours, ...(q && { q }), ...(vendor && { vendor }), ...(severity && { severity }), ...(category && { category }), ...(host && { host }) });
+          const params = new URLSearchParams({ hours, ...(q && { q }), ...(vendor && { vendor }), ...(severity && { severity }), ...(category && { category }), ...(threat && { threat }), ...(host && { host }) });
           window.open(`/api/logs/export?${params}`, '_blank');
         }} title="Export to CSV"
           style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid var(--border)',

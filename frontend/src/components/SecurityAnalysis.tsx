@@ -122,7 +122,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
   refreshInterval: number;
   onRefreshChange: (seconds: number) => void;
   onTechnique?: (technique: string) => void;
-  onDrill?: (filter: { host?: string; q?: string; category?: string; technique?: string; severity?: string; vendor?: string }) => void;
+  onDrill?: (filter: { host?: string; q?: string; category?: string; technique?: string; threat?: string; severity?: string; vendor?: string }) => void;
 }) {
   const [summary,      setSummary]      = useState<any>(null);
   const [authFails,    setAuthFails]    = useState<any[]>([]);
@@ -192,10 +192,10 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
   // or no onDrill handler is wired, so rows without a target aren't falsely clickable.
   // `restoreBg` is the row's normal background, restored on mouse-leave after the hover.
   const drillRow = (
-    filter: { host?: string; q?: string; category?: string; technique?: string; severity?: string; vendor?: string },
+    filter: { host?: string; q?: string; category?: string; technique?: string; threat?: string; severity?: string; vendor?: string },
     restoreBg: string,
   ) => {
-    const value = filter.host || filter.q || filter.category || filter.technique || filter.severity || filter.vendor;
+    const value = filter.host || filter.q || filter.category || filter.technique || filter.threat || filter.severity || filter.vendor;
     if (!onDrill || !value) return {};
     return {
       onClick: () => onDrill(filter),
@@ -712,7 +712,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                     {ipsEvents.by_threat.map((r: any, i: number) => {
                       const max = ipsEvents.by_threat[0]?.hit_count || 1;
                       const pct = Math.round((r.hit_count / max) * 100);
-                      const d = drillRow({ q: r.threat }, 'var(--tint-danger)');
+                      const d = drillRow({ threat: r.threat }, 'var(--tint-danger)');
                       return (
                         <div key={i} {...d} style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 8, padding: '10px 14px', minWidth: 150, ...(d.style || {}) }}>
                           <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--tint-danger-fg)', marginBottom: 2, wordBreak: 'break-word' }}>{r.threat}</div>

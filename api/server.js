@@ -486,7 +486,7 @@ app.get('/api/stats/storage', asyncHandler(async (req, res) => {
 // ── LOG SEARCH ───────────────────────────────────────────────
 
 app.get('/api/logs', asyncHandler(async (req, res) => {
-  const { q, vendor, severity, host, ip, category, technique } = req.query;
+  const { q, vendor, severity, host, ip, category, technique, threat } = req.query;
   const hours  = safeHours(req.query.hours, 720);
   const page   = Math.max(parseInt(req.query.page || '1'), 1);
   const limit  = safeInt(req.query.limit, 100, 500);
@@ -519,6 +519,13 @@ app.get('/api/logs', asyncHandler(async (req, res) => {
     params.push(`%${host}%`);
   }
   if (ip)       { conditions.push(`se.source_ip::TEXT ILIKE $${p++}`);           params.push(`%${ip}%`); }
+  // Threat drill-down — matches the EXACT by_threat COALESCE used by
+  // GET /api/security/ips-events so a Threat Summary card drills into precisely
+  // that threat's events. Same field order / NULLIF / CONCAT_WS, compared = $N.
+  if (threat)   {
+    conditions.push(`COALESCE(NULLIF(se.structured_data->>'certdesc',''), NULLIF(se.structured_data->>'catdesc',''), NULLIF(CONCAT_WS('/', NULLIF(se.structured_data->>'eventtype',''), NULLIF(se.structured_data->>'eventsubtype','')), ''), NULLIF(se.structured_data->>'attack',''), NULLIF(se.structured_data->>'msg',''), 'Unknown') = $${p++}`);
+    params.push(threat);
+  }
 
   // RBAC site filter — restrict to the user's allowed sites
   const sf = getSiteFilter(req.rbac, p, 'se');
@@ -766,7 +773,7 @@ app.get('/api/alerts/events/:id/logs', asyncHandler(async (req, res) => {
 
 // CSV export
 app.get('/api/logs/export', asyncHandler(async (req, res) => {
-  const { q, vendor, severity, host, ip, category } = req.query;
+  const { q, vendor, severity, host, ip, category, threat } = req.query;
   const hours = safeHours(req.query.hours, 720);
 
   const conditions = [`se.received_at > NOW() - make_interval(hours => $1)`];
@@ -789,6 +796,12 @@ app.get('/api/logs/export', asyncHandler(async (req, res) => {
     params.push(`%${host}%`);
   }
   if (ip) { conditions.push(`se.source_ip::TEXT ILIKE $${p++}`); params.push(`%${ip}%`); }
+  // Threat drill-down — mirrors /api/logs so a CSV export from a Threat Summary
+  // drill matches the EXACT by_threat COALESCE (GET /api/security/ips-events).
+  if (threat) {
+    conditions.push(`COALESCE(NULLIF(se.structured_data->>'certdesc',''), NULLIF(se.structured_data->>'catdesc',''), NULLIF(CONCAT_WS('/', NULLIF(se.structured_data->>'eventtype',''), NULLIF(se.structured_data->>'eventsubtype','')), ''), NULLIF(se.structured_data->>'attack',''), NULLIF(se.structured_data->>'msg',''), 'Unknown') = $${p++}`);
+    params.push(threat);
+  }
 
   // RBAC site filter — restrict export to the user's allowed sites
   const sf = getSiteFilter(req.rbac, p, 'se');
@@ -837,7 +850,7 @@ app.get('/api/logs/export', asyncHandler(async (req, res) => {
   // Data-exfiltration audit — record the filters used and how many rows left.
   await writeAudit(pool, req, 'logs.export', {
     detail: {
-      filters: { q, vendor, severity, host, ip, category, hours },
+      filters: { q, vendor, severity, host, ip, category, threat, hours },
       row_count: rows.length,
     },
   });
@@ -1733,6 +1746,9 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.12.2': [
+    'Fix: clicking a "Threat Summary" card in the Security tab now opens the Log Explorer filtered to that specific threat and shows its events (new `threat` filter matching the parsed threat identity), instead of landing on an empty result.',
+  ],
   '2.12.1': [
     'Fix: drilling from a Security-tab row (IPS/Threats, blocked destinations, threat summary, etc.) into the Log Explorer by IP now returns results — the host filter now also matches the parsed source/destination IPs (structured_data.srcip/dstip/remip), not just the reporting device. Previously, drilling by an internal/client IP showed "No logs found".',
   ],
