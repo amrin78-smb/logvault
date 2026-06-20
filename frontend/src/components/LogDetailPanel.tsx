@@ -110,6 +110,16 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
   const cleanIP   = log.source_ip?.replace('/32', '');
   const sdEntries = log.structured_data ? Object.entries(log.structured_data).filter(([, v]) => v !== null && v !== '') : [];
 
+  // For auth/vpn events the syslog sender is the firewall; the real source is the remote
+  // client (remip / structured_data.srcip). Surface it prominently when present and it
+  // differs from the device's own IP — otherwise this block is hidden (behaviour unchanged).
+  const sd          = log.structured_data || {};
+  const isAuthVpn   = log.category === 'authentication' || log.category === 'vpn';
+  const remoteIP    = isAuthVpn ? String(sd.remip || sd.srcip || '').replace('/32', '') : '';
+  const remoteUser  = isAuthVpn ? (sd.user || '') : '';
+  const remoteCty   = isAuthVpn ? (sd.srccountry || '') : '';
+  const showRemote  = Boolean(remoteIP && remoteIP !== cleanIP);
+
   const SEVERITIES: Record<number, string> = { 0: '0,1,2', 1: '0,1,2', 2: '0,1,2', 3: '3', 4: '4', 5: '5', 6: '6' };
 
   return (
@@ -171,13 +181,27 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
             </div>
           </div>
 
+          {/* Remote source — real client for auth/vpn events */}
+          {showRemote && (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-muted)',
+                textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Remote Source</div>
+              <div style={{ background: 'var(--tint-danger)', border: '1px solid var(--border)',
+                borderRadius: 8, padding: '0 12px' }}>
+                <Field label="Remote IP"   value={remoteIP}   mono />
+                {remoteUser && <Field label="User"    value={remoteUser} mono />}
+                {remoteCty  && <Field label="Country" value={remoteCty} />}
+              </div>
+            </div>
+          )}
+
           {/* Core fields */}
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-muted)',
               textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Details</div>
             <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)',
               borderRadius: 8, padding: '0 12px' }}>
-              <Field label="Source IP"    value={cleanIP}             mono />
+              <Field label={showRemote ? 'Reporting device' : 'Source IP'} value={cleanIP} mono />
               <Field label="Hostname"     value={log.source_host}     mono />
               <Field label="Vendor"       value={log.vendor} />
               <Field label="Category"     value={log.category} />

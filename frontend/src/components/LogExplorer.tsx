@@ -57,6 +57,21 @@ const SEVERITIES = [
 
 interface ActiveFilter { type: 'vendor' | 'severity' | 'category' | 'host' | 'q' | 'technique'; value: string; label: string; }
 
+// For auth/vpn events the syslog sender is the firewall; the meaningful source is the
+// remote client (remip / structured_data.srcip). Returns the remote client IP when the
+// event carries one AND it differs from the device's own source_ip — else null (unchanged).
+function remoteClientIP(row: any): string | null {
+  const cat = row?.category;
+  if (cat !== 'authentication' && cat !== 'vpn') return null;
+  const sd = row?.structured_data;
+  if (!sd) return null;
+  const remote = String(sd.remip || sd.srcip || '').replace('/32', '');
+  if (!remote) return null;
+  const deviceIP = (row.source_ip || '').replace('/32', '');
+  if (remote === deviceIP) return null;
+  return remote;
+}
+
 export default function LogExplorer({ initialFilter, onFilterUsed }: {
   initialFilter?: ExplorerFilter;
   onFilterUsed?: () => void;
@@ -372,7 +387,17 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
                 </td>
                 <td style={{ padding: '9px 12px', fontFamily: 'var(--font-mono)',
                   fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--text-primary)' }}>
-                  {row.source_host || row.source_ip}
+                  {(() => {
+                    const remote = remoteClientIP(row);
+                    return remote ? (
+                      <>
+                        <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{remote}</span>
+                        <div style={{ color: 'var(--text-muted)', fontWeight: 400, marginTop: 2 }}>
+                          via {row.source_host || row.source_ip}
+                        </div>
+                      </>
+                    ) : (row.source_host || row.source_ip);
+                  })()}
                 </td>
                 <td style={{ padding: '9px 12px' }}>
                   <span style={{ fontSize: 'var(--text-xs)', padding: '2px 8px', borderRadius: 10, textTransform: 'capitalize',

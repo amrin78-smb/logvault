@@ -1,6 +1,6 @@
 {
   "name": "logvault",
-  "version": "2.3.1",
+  "version": "2.4.0",
   "description": "LogVault - NexVault Syslog Analyzer. Windows-native, on-premises syslog collection and analysis.",
   "private": true,
   "scripts": {

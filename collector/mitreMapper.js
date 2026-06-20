@@ -24,11 +24,21 @@ function mapTechniques(entry) {
   const msg  = (entry && entry.message) || '';
   const ids  = new Set();
 
-  // T1110 Brute Force (Credential Access) — failed/repeated auth, lockouts.
-  // Message regex covers the dominant phrasings ("login failed", "authentication
-  // failure", "failed login/logon/auth"), not just the Cisco-only subcategory enum.
-  if (sub === 'brute_force' || sub === 'login_failed' || sub === 'auth_failed' ||
-      /brute.?force|password\s*spray|account.?lock|login.{0,12}fail|authentication fail(?:ed|ure)?|failed (?:login|logon|auth)/i.test(msg)) {
+  // T1110 Brute Force (Credential Access) — REPEATED auth attempts / lockouts only.
+  // A single failed login/logon/auth (e.g. a lone FortiOS action=ssl-login-fail) is NOT
+  // brute force — brute force means many attempts. Tagging every individual auth failure
+  // T1110 at the event level produced a "Brute Force" badge on routine one-off failures
+  // and drowned out real signal, so the generic failed-login triggers (the login.{0,12}fail
+  // / "authentication failure" regex and the login_failed/auth_failed subcategories) were
+  // REMOVED here. Brute force is now determined at the correlation altitude:
+  // BRUTE_FORCE_SUCCESS (3+ failures then success) and VPN_BRUTE_FORCE (5+ VPN failures in
+  // 5 min) in collector/correlationEngine.js (MITRE_BY_RULE). This mirrors the T1133
+  // decision below.
+  // Event-level T1110 is kept ONLY when a SINGLE message itself attests repetition/lockout
+  // (an already-correlated signal), e.g. "account locked", "password spray", "repeated" or
+  // "multiple failed" attempts — or the pre-correlated sub === 'brute_force' subcategory.
+  if (sub === 'brute_force' ||
+      /brute.?force|password\s*spray|account.?lock(?:ed|out)?|(?:repeated|multiple|consecutive|\d+)\s+(?:failed|invalid)\s+(?:login|logon|auth|password|sign)/i.test(msg)) {
     ids.add('T1110');
   }
   // NOTE: T1133 External Remote Services is intentionally NOT tagged at the event

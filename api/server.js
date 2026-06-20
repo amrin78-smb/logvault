@@ -1277,6 +1277,13 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.4.0': [
+    'Fortinet parser now captures the remote client IP (remip), username, source country, and failure reason for SSL-VPN / auth events (previously dropped)',
+    'Log Explorer now shows the real remote source (and user/country) for VPN/auth events instead of the reporting firewall',
+    'A single failed login is no longer mislabeled "Brute Force" (MITRE T1110) — brute force is now determined by correlation (repeated failures) or explicit lockout/spray, matching the T1133 approach',
+    'VPN brute-force correlation can now group by the real attacker IP (srcip = remip), so genuine attacks are detected and attributed correctly',
+    'Added a backfill script to clear the incorrect T1110 tag from previously-ingested single-failure events',
+  ],
   '2.3.1': [
     "Launcher 'Log Sources' KPI now counts distinct source_host instead of source_ip (correct when devices send via syslog relays)",
     'In production, devices forward syslog through relays, so source_ip collapses to the relay IP and undercounts the real number of log-emitting devices',

@@ -52,6 +52,12 @@ function parseFortinet(raw, sourceIp) {
   if (kv.action) message += ` action=${kv.action}`;
   if (kv.msg) message += ` | ${kv.msg}`;
 
+  // FortiOS uses `srcip` for traffic logs but `remip` for VPN/auth logs.
+  // The correlation engine + UI key off structured_data.srcip, so when the log
+  // carries the remote-client IP as `remip` (and has no srcip of its own), surface
+  // it as srcip too — without overwriting an existing srcip. Keep the original remip.
+  const srcip = kv.srcip || kv.remip;
+
   return {
     source_ip:       sourceIp,
     source_host:     kv.devname || null,
@@ -69,12 +75,23 @@ function parseFortinet(raw, sourceIp) {
       logid:    kv.logid,
       type:     kv.type,
       subtype:  kv.subtype,
-      srcip:    kv.srcip,
+      srcip:    srcip,
       dstip:    kv.dstip,
+      srcport:  kv.srcport,
+      dstport:  kv.dstport,
       action:   kv.action,
       policy:   kv.policyid,
       vd:       kv.vd,
       msg:      kv.msg,
+      // Security-relevant identity / source fields (VPN / auth-failure logs).
+      // remip is the real remote client/attacker IP; user is the targeted account.
+      remip:    kv.remip,
+      user:     kv.user,
+      group:    kv.group,
+      srccountry: kv.srccountry,
+      reason:   kv.reason,
+      logdesc:  kv.logdesc,
+      dst_host: kv.dst_host,
     },
     is_parsed:       true,
     log_timestamp:   logTimestamp,
