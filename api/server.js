@@ -1064,23 +1064,43 @@ app.get('/api/health/summary', asyncHandler(async (req, res) => {
 app.get('/api/security/summary', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const sf  = getSiteFilter(req.rbac, 2, 'syslog_entries'); // bare-table subqueries
-  const sfA = getSiteFilter(req.rbac, 2, 'a');               // alias 'a' subquery
-  const [authFail, denies, vpn, ips, afterHours, bruteSuccess] = await Promise.all([
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND ((vendor='cisco' AND structured_data->>'subcategory' IN ('login_failed','auth_failed','brute_force')) OR (vendor='fortinet' AND message ILIKE '%failed%' AND message ILIKE '%login%') OR (vendor='aruba' AND message ILIKE '%authentication failed%') OR message ILIKE '%authentication failure%') ${sf.clause}`, [hours, ...sf.params]),
+  const sfA = getSiteFilter(req.rbac, 2, 'a');               // alias 'a' subquery (brute-force success)
+  const sfSe = getSiteFilter(req.rbac, 2, 'se');             // alias 'se' subquery (known-bad join)
+  const [authFail, denies, vpn, ips, afterHours, bruteSuccess, vpnLoginFail, knownBadFail] = await Promise.all([
+    // Real auth failure = normalized subcategory (vendor-agnostic), with a tight
+    // message-regex fallback. The old broad %fail%/%error% match counted SSL teardown
+    // noise (ssl-exit-error/ssl-alert/negotiate) as login failures — dropped.
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND (structured_data->>'subcategory' IN ('login_failed','auth_failed') OR message ILIKE '%login failed%' OR message ILIKE '%authentication fail%') ${sf.clause}`, [hours, ...sf.params]),
     pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'action' = 'deny' ${sf.clause}`, [hours, ...sf.params]),
     pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND (structured_data->>'subtype' = 'vpn' OR message ILIKE '%vpn%') ${sf.clause}`, [hours, ...sf.params]),
     pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'type' = 'utm' ${sf.clause}`, [hours, ...sf.params]),
     pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND (structured_data->>'subcategory' IN ('login_failed','config_change','auth_failed') OR message ILIKE '%login failed%' OR message ILIKE '%configured from%') AND EXTRACT(HOUR FROM received_at) NOT BETWEEN 7 AND 19 ${sf.clause}`, [hours, ...sf.params]),
-    pool.query(`SELECT COUNT(DISTINCT a.source_ip) AS count
+    // Brute-force success: vendor-agnostic. A real attacker source (real srcip, not the
+    // firewall) that had a login_failed AND a later login_success within the window.
+    pool.query(`SELECT COUNT(DISTINCT COALESCE(a.structured_data->>'srcip', a.source_ip::text)) AS count
       FROM syslog_entries a
-      INNER JOIN syslog_entries b ON b.source_ip = a.source_ip
-        AND b.vendor = 'cisco'
+      INNER JOIN syslog_entries b
+        ON COALESCE(b.structured_data->>'srcip', b.source_ip::text) = COALESCE(a.structured_data->>'srcip', a.source_ip::text)
         AND b.structured_data->>'subcategory' = 'login_failed'
         AND b.received_at > NOW() - make_interval(hours => $1)
+        AND b.received_at < a.received_at
       WHERE a.received_at > NOW() - make_interval(hours => $1)
-        AND a.vendor = 'cisco'
         AND a.structured_data->>'subcategory' = 'login_success'
       ${sfA.clause}`, [hours, ...sfA.params]),
+    // VPN login failures: vpn category/subtype AND a normalized auth failure.
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND (category='vpn' OR structured_data->>'subtype'='vpn') AND structured_data->>'subcategory' IN ('login_failed','auth_failed') ${sf.clause}`, [hours, ...sf.params]),
+    // Known-bad failures: login-failure events whose real source matches a known_hosts
+    // row flagged is_known_bad OR abuse_score >= 50. Join uses host(ip_address) because
+    // known_hosts.ip_address is INET stored with a /32 mask; shape-guard the join key.
+    pool.query(`SELECT COUNT(*) AS count
+      FROM syslog_entries se
+      LEFT JOIN known_hosts kh
+        ON COALESCE(se.structured_data->>'srcip', se.source_ip::text) ~ '^[0-9.]+$'
+       AND host(kh.ip_address) = COALESCE(se.structured_data->>'srcip', se.source_ip::text)
+      WHERE se.received_at > NOW() - make_interval(hours => $1)
+        AND (se.structured_data->>'subcategory' IN ('login_failed','auth_failed') OR se.message ILIKE '%login failed%' OR se.message ILIKE '%authentication fail%')
+        AND (kh.is_known_bad = TRUE OR kh.abuse_score >= 50)
+      ${sfSe.clause}`, [hours, ...sfSe.params]),
   ]);
   res.json({
     hours,
@@ -1090,24 +1110,44 @@ app.get('/api/security/summary', asyncHandler(async (req, res) => {
     ips_events:          parseInt(ips.rows[0].count),
     after_hours_events:  parseInt(afterHours.rows[0].count),
     brute_force_success: parseInt(bruteSuccess.rows[0].count),
+    vpn_login_failures:  parseInt(vpnLoginFail.rows[0].count),
+    known_bad_failures:  parseInt(knownBadFail.rows[0].count),
   });
 }));
 
 app.get('/api/security/auth-failures', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const sf = getSiteFilter(req.rbac, 2, 'se');
+  // Group by the REAL attacker source (normalized srcip, falling back to the syslog
+  // sender), vendor-agnostically. Detection uses the normalized subcategory with a tight
+  // message-regex fallback — the old per-vendor broad %failed%+%login% / %fail% matching
+  // wrongly counted SSL teardown noise. known_hosts join uses host(ip_address) (INET /32)
+  // with a shape-guarded text key, mirroring the top-blocked/top-failures joins.
   const { rows } = await pool.query(`
-    SELECT se.source_ip::TEXT, COALESCE(kh.hostname, se.source_host) AS source_host,
-      COUNT(*) AS failure_count, MIN(se.received_at) AS first_attempt, MAX(se.received_at) AS last_attempt, se.vendor,
-      ARRAY_AGG(DISTINCT LEFT(se.message, 150)) FILTER (WHERE LENGTH(se.message) < 200) AS sample_messages
-    FROM syslog_entries se LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    SELECT
+      COALESCE(se.structured_data->>'srcip', se.source_ip::text) AS source_ip,
+      COALESCE(kh.hostname, se.structured_data->>'srcip', se.source_host) AS source_host,
+      COUNT(*) AS failure_count,
+      COUNT(DISTINCT se.structured_data->>'user') AS distinct_users,
+      (ARRAY_AGG(DISTINCT se.structured_data->>'user')
+        FILTER (WHERE se.structured_data->>'user' IS NOT NULL
+          AND se.structured_data->>'user' NOT IN ('','N/A')))[1:5] AS sample_users,
+      MIN(se.received_at) AS first_attempt, MAX(se.received_at) AS last_attempt, se.vendor,
+      COALESCE(se.structured_data->>'srccountry', kh.country_name) AS country,
+      kh.country_code,
+      BOOL_OR(kh.is_known_bad) AS is_known_bad,
+      MAX(kh.abuse_score) AS abuse_score
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh
+      ON COALESCE(se.structured_data->>'srcip', se.source_ip::text) ~ '^[0-9.]+$'
+     AND host(kh.ip_address) = COALESCE(se.structured_data->>'srcip', se.source_ip::text)
     WHERE se.received_at > NOW() - make_interval(hours => $1)
-      AND ((se.vendor='cisco' AND se.structured_data->>'subcategory' IN ('login_failed','auth_failed','brute_force'))
-        OR (se.vendor='fortinet' AND se.message ILIKE '%failed%' AND se.message ILIKE '%login%')
-        OR (se.vendor='aruba' AND se.message ILIKE '%authentication failed%')
-        OR se.message ILIKE '%authentication failure%' OR se.message ILIKE '%login failed%')
+      AND (se.structured_data->>'subcategory' IN ('login_failed','auth_failed','brute_force')
+        OR se.message ILIKE '%login failed%' OR se.message ILIKE '%authentication fail%')
     ${sf.clause}
-    GROUP BY se.source_ip, se.source_host, kh.hostname, se.vendor
+    GROUP BY COALESCE(se.structured_data->>'srcip', se.source_ip::text),
+      COALESCE(kh.hostname, se.structured_data->>'srcip', se.source_host), se.vendor,
+      COALESCE(se.structured_data->>'srccountry', kh.country_name), kh.country_code
     ORDER BY failure_count DESC LIMIT 50
   `, [hours, ...sf.params]);
   res.json({ data: rows });
@@ -1116,29 +1156,37 @@ app.get('/api/security/auth-failures', asyncHandler(async (req, res) => {
 app.get('/api/security/brute-force', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const sf = getSiteFilter(req.rbac, 3, 'syslog_entries');
+  // Both CTEs group by the REAL attacker source (normalized srcip → syslog sender),
+  // vendor-agnostically, via the normalized subcategory (with a tight message fallback).
+  // known_hosts join uses host(ip_address) on the shape-guarded real-source key.
   const { rows } = await pool.query(`
     WITH failures AS (
-      SELECT source_ip, MIN(received_at) AS first_fail, MAX(received_at) AS last_fail, COUNT(*) AS fail_count
+      SELECT COALESCE(structured_data->>'srcip', source_ip::text) AS source_ip,
+        MIN(received_at) AS first_fail, MAX(received_at) AS last_fail, COUNT(*) AS fail_count,
+        COUNT(DISTINCT structured_data->>'user') AS distinct_users
       FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1)
-        AND ((vendor='cisco' AND structured_data->>'subcategory' IN ('login_failed','auth_failed'))
+        AND (structured_data->>'subcategory' IN ('login_failed','auth_failed')
           OR message ILIKE '%login failed%' OR message ILIKE '%authentication fail%')
       ${sf.clause}
-      GROUP BY source_ip
+      GROUP BY COALESCE(structured_data->>'srcip', source_ip::text)
     ),
     successes AS (
-      SELECT source_ip, MIN(received_at) AS success_time, message AS success_msg
+      SELECT COALESCE(structured_data->>'srcip', source_ip::text) AS source_ip,
+        MIN(received_at) AS success_time, message AS success_msg
       FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $2)
-        AND ((vendor='cisco' AND structured_data->>'subcategory' = 'login_success')
+        AND (structured_data->>'subcategory' = 'login_success'
           OR message ILIKE '%login success%' OR message ILIKE '%authenticated%')
       ${sf.clause}
-      GROUP BY source_ip, message
+      GROUP BY COALESCE(structured_data->>'srcip', source_ip::text), message
     )
-    SELECT f.source_ip::TEXT, COALESCE(kh.hostname, f.source_ip::TEXT) AS host,
-      f.fail_count, f.first_fail, f.last_fail, s.success_time, s.success_msg,
+    SELECT f.source_ip,
+      COALESCE(kh.hostname, f.source_ip) AS host,
+      f.fail_count, f.distinct_users, f.first_fail, f.last_fail, s.success_time, s.success_msg,
       CASE WHEN s.success_time IS NOT NULL THEN TRUE ELSE FALSE END AS success_after_failure
     FROM failures f
     LEFT JOIN successes s ON s.source_ip = f.source_ip AND s.success_time > f.first_fail
-    LEFT JOIN known_hosts kh ON kh.ip_address = f.source_ip
+    LEFT JOIN known_hosts kh
+      ON f.source_ip ~ '^[0-9.]+$' AND host(kh.ip_address) = f.source_ip
     WHERE f.fail_count >= 3
     ORDER BY success_after_failure DESC, f.fail_count DESC LIMIT 50
   `, [hours, hours, ...sf.params]);
@@ -1159,11 +1207,17 @@ app.get('/api/security/firewall-denies', asyncHandler(async (req, res) => {
 app.get('/api/security/vpn-events', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
+  // event_type is driven by the normalized subcategory — NOT the broad %fail%/%error%
+  // match, which mislabelled SSL teardown noise (ssl-exit-error/ssl-alert) as failures.
+  // vpn_src_ip is the REAL remote client (structured_data.srcip), not the firewall.
   const { rows } = await pool.query(`
     SELECT received_at, source_host, source_ip::TEXT, severity_label, message,
-      structured_data->>'srcip' AS vpn_src_ip, structured_data->>'msg' AS detail,
-      CASE WHEN message ILIKE '%fail%' OR message ILIKE '%error%' THEN 'failure'
-           WHEN message ILIKE '%success%' OR message ILIKE '%connected%' THEN 'success'
+      structured_data->>'srcip' AS vpn_src_ip,
+      structured_data->>'user' AS username,
+      structured_data->>'srccountry' AS country,
+      structured_data->>'msg' AS detail,
+      CASE WHEN structured_data->>'subcategory' IN ('login_failed','auth_failed') THEN 'failure'
+           WHEN structured_data->>'subcategory' = 'login_success' THEN 'success'
            ELSE 'info' END AS event_type
     FROM syslog_entries
     WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet'
@@ -1213,6 +1267,55 @@ app.get('/api/security/wireless-auth', asyncHandler(async (req, res) => {
     pool.query(`SELECT COUNT(*) FILTER (WHERE message ILIKE '%failed%') AS failures, COUNT(*) FILTER (WHERE message ILIKE '%success%' OR message ILIKE '%authenticated%') AS successes, COUNT(DISTINCT source_ip) AS devices FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='aruba' AND (message ILIKE '%authentication%' OR message ILIKE '%802.1x%') ${sf.clause}`, [hours, ...sf.params]),
   ]);
   res.json({ failures: failures.rows, summary: summary.rows[0] });
+}));
+
+app.get('/api/security/top-targeted-users', asyncHandler(async (req, res) => {
+  const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'se');
+  // Usernames most hit by real auth failures, vendor-agnostically. distinct_sources counts
+  // the REAL attacker source (normalized srcip → syslog sender), not the firewall.
+  const { rows } = await pool.query(`
+    SELECT se.structured_data->>'user' AS username,
+      COUNT(*) AS failure_count,
+      COUNT(DISTINCT COALESCE(se.structured_data->>'srcip', se.source_ip::text)) AS distinct_sources,
+      MAX(se.received_at) AS last_attempt
+    FROM syslog_entries se
+    WHERE se.received_at > NOW() - make_interval(hours => $1)
+      AND se.structured_data->>'subcategory' IN ('login_failed','auth_failed')
+      AND se.structured_data->>'user' IS NOT NULL
+      AND se.structured_data->>'user' NOT IN ('','N/A')
+    ${sf.clause}
+    GROUP BY se.structured_data->>'user'
+    ORDER BY failure_count DESC LIMIT 20
+  `, [hours, ...sf.params]);
+  res.json({ data: rows });
+}));
+
+app.get('/api/security/failed-logins-by-country', asyncHandler(async (req, res) => {
+  const hours = safeHours(req.query.hours);
+  const sf = getSiteFilter(req.rbac, 2, 'se');
+  // Auth failures grouped by country — preferring the event's own srccountry (Fortinet),
+  // falling back to the known_hosts geo of the REAL source. known_hosts join uses
+  // host(ip_address) on the shape-guarded real-source key. distinct_sources = real sources.
+  const { rows } = await pool.query(`
+    SELECT COALESCE(se.structured_data->>'srccountry', kh.country_name) AS country,
+      kh.country_code,
+      COUNT(*) AS failure_count,
+      COUNT(DISTINCT COALESCE(se.structured_data->>'srcip', se.source_ip::text)) AS distinct_sources
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh
+      ON COALESCE(se.structured_data->>'srcip', se.source_ip::text) ~ '^[0-9.]+$'
+     AND host(kh.ip_address) = COALESCE(se.structured_data->>'srcip', se.source_ip::text)
+    WHERE se.received_at > NOW() - make_interval(hours => $1)
+      AND (se.structured_data->>'subcategory' IN ('login_failed','auth_failed')
+        OR se.message ILIKE '%login failed%' OR se.message ILIKE '%authentication fail%')
+      AND COALESCE(se.structured_data->>'srccountry', kh.country_name) IS NOT NULL
+      AND COALESCE(se.structured_data->>'srccountry', kh.country_name) <> ''
+    ${sf.clause}
+    GROUP BY COALESCE(se.structured_data->>'srccountry', kh.country_name), kh.country_code
+    ORDER BY failure_count DESC LIMIT 20
+  `, [hours, ...sf.params]);
+  res.json({ data: rows });
 }));
 
 // ── DISK SPACE ───────────────────────────────────────────────
@@ -1277,6 +1380,13 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.6.0': [
+    'Security tab now shows the real attacker IP, targeted username, and source country for auth/VPN failures (previously showed the reporting firewall)',
+    'New widgets: Top Targeted Usernames and Failed Logins by Country',
+    'New KPIs: VPN Login Failures and failures From Known-Bad IPs (threat-intel via known_hosts)',
+    'Auth-failure / brute-force / VPN-event detection now uses normalized login_failed/login_success classification instead of loose message matching — eliminates false "VPN brute force" alerts from benign SSL teardown/negotiation events',
+    'Fortinet parser now classifies VPN/login auth outcome (subcategory) so failures are detected and correlated',
+  ],
   '2.5.0': [
     'All vendor parsers (Cisco, Palo Alto, Windows, Juniper, SonicWall, Aruba, Check Point, Sangfor, Forcepoint, generic) now extract the real remote client IP, username, and login outcome for auth/VPN/failed-login events — previously only Fortinet did',
     'Brute-force, VPN-brute-force, port-scan, and repeated-IPS correlation rules are now vendor-agnostic (previously Fortinet-only) and attribute alerts to the real attacker IP, not the relaying device',

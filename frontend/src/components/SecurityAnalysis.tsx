@@ -10,6 +10,41 @@ const TH   = { padding: '8px 12px', textAlign: 'left' as const, color: 'var(--te
 const TD   = { padding: '9px 12px', fontSize: 'var(--text-sm)' };
 const MONO = { fontFamily: 'var(--font-mono)' };
 
+// Convert a 2-letter ISO country code to a flag emoji (regional indicator symbols)
+function flagEmoji(code?: string | null): string {
+  if (!code || code.length !== 2) return '';
+  const cc = code.toUpperCase();
+  if (!/^[A-Z]{2}$/.test(cc)) return '';
+  return String.fromCodePoint(...[...cc].map(c => 0x1f1e6 + c.charCodeAt(0) - 65));
+}
+
+// Render a country label (flag + name/code), or an em-dash when unknown
+function CountryLabel({ country, code }: { country?: string | null; code?: string | null }) {
+  const flag = flagEmoji(code);
+  const name = country || code;
+  if (!name) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+  return (
+    <span style={{ whiteSpace: 'nowrap' }}>
+      {flag && <span style={{ marginRight: 5 }}>{flag}</span>}
+      <span>{name}</span>
+    </span>
+  );
+}
+
+// Red "Known Bad" / threat pill for malicious source IPs
+function ThreatBadge({ knownBad, abuseScore }: { knownBad?: boolean; abuseScore?: number | null }) {
+  const score = typeof abuseScore === 'number' ? abuseScore : null;
+  if (!knownBad && (score === null || score < 50)) return null;
+  const label = knownBad ? 'Known Bad' : `Abuse ${score}`;
+  return (
+    <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 'var(--text-xs)', fontWeight: 700,
+      background: 'var(--tint-danger)', color: 'var(--tint-danger-fg)', border: '1px solid var(--tint-danger)',
+      textTransform: 'uppercase', letterSpacing: '0.4px', whiteSpace: 'nowrap' }}>
+      {label}
+    </span>
+  );
+}
+
 function SevBadge({ label }: { label: string }) {
   const s: Record<string, { bg: string; color: string; border: string }> = {
     emergency: { bg: 'var(--tint-danger)',  color: 'var(--tint-danger-fg)',  border: 'var(--tint-danger)' },
@@ -75,13 +110,15 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
   const [afterHours,   setAfterHours]   = useState<any[]>([]);
   const [wirelessAuth, setWirelessAuth] = useState<any>(null);
   const [mitreCov,     setMitreCov]     = useState<any[]>([]);
+  const [targetedUsers, setTargetedUsers] = useState<any[]>([]);
+  const [failsByCountry, setFailsByCountry] = useState<any[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [activeSection, setActiveSection] = useState('overview');
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, af, bf, fw, vpn, ips, ah, wa, mc] = await Promise.all([
+      const [s, af, bf, fw, vpn, ips, ah, wa, mc, tu, fc] = await Promise.all([
         fetch(`/api/security/summary?hours=${hours}`).then(r => r.json()),
         fetch(`/api/security/auth-failures?hours=${hours}`).then(r => r.json()),
         fetch(`/api/security/brute-force?hours=${hours}`).then(r => r.json()),
@@ -91,6 +128,8 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
         fetch(`/api/security/after-hours?hours=${hours}`).then(r => r.json()),
         fetch(`/api/security/wireless-auth?hours=${hours}`).then(r => r.json()),
         fetch(`/api/stats/mitre-coverage?hours=${hours}`).then(r => r.json()),
+        fetch(`/api/security/top-targeted-users?hours=${hours}`).then(r => r.json()),
+        fetch(`/api/security/failed-logins-by-country?hours=${hours}`).then(r => r.json()),
       ]);
       setSummary(s ? {
         ...s,
@@ -100,6 +139,8 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
         vpn_events:          parseInt(s.vpn_events          || 0),
         ips_events:          parseInt(s.ips_events          || 0),
         after_hours_events:  parseInt(s.after_hours_events  || 0),
+        vpn_login_failures:  parseInt(s.vpn_login_failures  || 0),
+        known_bad_failures:  parseInt(s.known_bad_failures  || 0),
       } : null);
       setAuthFails(af.data || []);
       setBruteForce(bf.data || []);
@@ -109,6 +150,8 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
       setAfterHours(ah.data || []);
       setWirelessAuth(wa);
       setMitreCov(mc.data || []);
+      setTargetedUsers(tu.data || []);
+      setFailsByCountry(fc.data || []);
     } catch (e) { console.error(e); }
     setLoading(false);
   }, [hours]);
@@ -200,6 +243,8 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                 <StatCard value={summary.vpn_events}         label="VPN Events"          color='var(--tint-info-fg)' bg='var(--tint-info)' border='var(--tint-info)' />
                 <StatCard value={summary.ips_events}         label="IPS / Threat Events" color={summary.ips_events > 0 ? 'var(--tint-danger-fg)' : 'var(--tint-success-fg)'} bg={summary.ips_events > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'} border={summary.ips_events > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'} warn />
                 <StatCard value={summary.after_hours_events} label="After-Hours Activity" color={summary.after_hours_events > 0 ? 'var(--tint-warn-fg)' : 'var(--tint-success-fg)'} bg={summary.after_hours_events > 0 ? 'var(--tint-warn)' : 'var(--tint-success)'} border={summary.after_hours_events > 0 ? 'var(--tint-warn)' : 'var(--tint-success)'} warn />
+                <StatCard value={summary.vpn_login_failures} label="VPN Login Failures" color={summary.vpn_login_failures > 0 ? 'var(--tint-warn-fg)' : 'var(--tint-success-fg)'} bg={summary.vpn_login_failures > 0 ? 'var(--tint-warn)' : 'var(--tint-success)'} border={summary.vpn_login_failures > 0 ? 'var(--tint-warn)' : 'var(--tint-success)'} warn />
+                <StatCard value={summary.known_bad_failures} label="From Known-Bad IPs" color={summary.known_bad_failures > 0 ? 'var(--tint-danger-fg)' : 'var(--tint-success-fg)'} bg={summary.known_bad_failures > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'} border={summary.known_bad_failures > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'} warn />
               </div>
 
               {/* Critical banners */}
@@ -261,27 +306,38 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
               {authFails.length > 0 && (
                 <div style={CARD}>
                   <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Top Auth Failure Sources</div>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 12 }}>Click a row for details</div>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 12 }}>Real attacker IP and the account(s) being targeted — click a row for details</div>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
                     <thead><tr style={{ borderBottom: '2px solid var(--border-light)' }}>
-                      {['Source IP','Hostname','Vendor','Failures','First','Last','Risk'].map(h => <th key={h} style={TH}>{h}</th>)}
+                      {['Attacker IP','Country','Targeted User(s)','Failures','Last Attempt','Vendor','Risk'].map(h => <th key={h} style={TH}>{h}</th>)}
                     </tr></thead>
                     <tbody>
-                      {authFails.slice(0, 8).map((r, i) => (
-                        <tr key={i} onClick={() => setActiveSection('authfail')}
-                          style={{ borderBottom: '1px solid var(--border-light)', cursor: 'pointer',
-                            background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}
-                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f0f7ff'; }}
-                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)'; }}>
-                          <td style={{ ...TD, ...MONO, color: '#dc2626', fontWeight: 600 }}>{r.source_ip}</td>
-                          <td style={{ ...TD, ...MONO, color: 'var(--text-primary)' }}>{r.source_host || '—'}</td>
-                          <td style={{ ...TD, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{r.vendor}</td>
-                          <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 10 }}>{r.failure_count}</span></td>
-                          <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.first_attempt).toLocaleTimeString()}</td>
-                          <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.last_attempt).toLocaleTimeString()}</td>
-                          <td style={TD}><RiskBadge count={parseInt(r.failure_count)} thresholds={[5, 20]} /></td>
-                        </tr>
-                      ))}
+                      {authFails.slice(0, 8).map((r, i) => {
+                        const users: string[] = Array.isArray(r.sample_users) ? r.sample_users : [];
+                        const distinct = parseInt(r.distinct_users) || 0;
+                        const isThreat = r.is_known_bad || (typeof r.abuse_score === 'number' && r.abuse_score >= 50);
+                        return (
+                          <tr key={i} onClick={() => setActiveSection('authfail')}
+                            style={{ borderBottom: '1px solid var(--border-light)', cursor: 'pointer',
+                              background: isThreat ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--surface-subtle)'; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = isThreat ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)'; }}>
+                            <td style={{ ...TD, ...MONO, color: '#dc2626', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                              {r.source_ip}
+                              {isThreat && <span style={{ marginLeft: 6 }}><ThreatBadge knownBad={r.is_known_bad} abuseScore={r.abuse_score} /></span>}
+                            </td>
+                            <td style={TD}><CountryLabel country={r.country} code={r.country_code} /></td>
+                            <td style={{ ...TD, color: 'var(--text-primary)' }}>
+                              {users.length > 0 ? users.slice(0, 3).join(', ') : '—'}
+                              {distinct > 1 && <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 'var(--text-xs)' }}>+{distinct} accounts</span>}
+                            </td>
+                            <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 10 }}>{r.failure_count}</span></td>
+                            <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.last_attempt).toLocaleTimeString()}</td>
+                            <td style={{ ...TD, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{r.vendor}</td>
+                            <td style={TD}><RiskBadge count={parseInt(r.failure_count)} thresholds={[5, 20]} /></td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -291,37 +347,111 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
 
           {/* ── AUTH FAILURES ── */}
           {activeSection === 'authfail' && (
+            <>
             <div style={CARD}>
               <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Authentication Failures</div>
               <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
-                Failed login attempts grouped by source — from Cisco, Fortinet, and Aruba devices
+                Failed login attempts grouped by the real attacker IP, with the account(s) being targeted and source country
               </div>
               {authFails.length === 0 ? (
                 <div style={{ padding: '32px 0', textAlign: 'center', color: '#16a34a', fontSize: 'var(--text-base)', fontWeight: 500 }}>✓ No authentication failures in this period</div>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
                   <thead><tr style={{ borderBottom: '2px solid var(--border-light)' }}>
-                    {['Source IP','Hostname','Vendor','Failures','First Attempt','Last Attempt','Risk','Sample Message'].map(h => <th key={h} style={TH}>{h}</th>)}
+                    {['Attacker IP','Country','Targeted User(s)','Failures','First Attempt','Last Attempt','Risk','Vendor'].map(h => <th key={h} style={TH}>{h}</th>)}
                   </tr></thead>
                   <tbody>
-                    {authFails.map((r, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
-                        <td style={{ ...TD, ...MONO, color: '#dc2626', fontWeight: 600 }}>{r.source_ip}</td>
-                        <td style={{ ...TD, ...MONO, color: 'var(--text-primary)' }}>{r.source_host || '—'}</td>
-                        <td style={{ ...TD, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{r.vendor}</td>
-                        <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-sm)' }}>{r.failure_count}</span></td>
-                        <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.first_attempt).toLocaleString()}</td>
-                        <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.last_attempt).toLocaleString()}</td>
-                        <td style={TD}><RiskBadge count={parseInt(r.failure_count)} thresholds={[5, 20]} /></td>
-                        <td style={{ ...TD, color: 'var(--text-secondary)', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {Array.isArray(r.sample_messages) ? r.sample_messages[0] : r.sample_messages || '—'}
-                        </td>
-                      </tr>
-                    ))}
+                    {authFails.map((r, i) => {
+                      const users: string[] = Array.isArray(r.sample_users) ? r.sample_users : [];
+                      const distinct = parseInt(r.distinct_users) || 0;
+                      const isThreat = r.is_known_bad || (typeof r.abuse_score === 'number' && r.abuse_score >= 50);
+                      return (
+                        <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: isThreat ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
+                          <td style={{ ...TD, ...MONO, color: '#dc2626', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                            {r.source_ip}
+                            {isThreat && <span style={{ marginLeft: 6 }}><ThreatBadge knownBad={r.is_known_bad} abuseScore={r.abuse_score} /></span>}
+                          </td>
+                          <td style={TD}><CountryLabel country={r.country} code={r.country_code} /></td>
+                          <td style={{ ...TD, color: 'var(--text-primary)' }}>
+                            {users.length > 0 ? users.slice(0, 5).join(', ') : '—'}
+                            {distinct > 1 && <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 'var(--text-xs)' }}>+{distinct} accounts</span>}
+                          </td>
+                          <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-sm)' }}>{r.failure_count}</span></td>
+                          <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.first_attempt).toLocaleString()}</td>
+                          <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.last_attempt).toLocaleString()}</td>
+                          <td style={TD}><RiskBadge count={parseInt(r.failure_count)} thresholds={[5, 20]} /></td>
+                          <td style={{ ...TD, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{r.vendor}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
             </div>
+
+            {/* Top Targeted Usernames */}
+            <div style={CARD}>
+              <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Top Targeted Usernames</div>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
+                Accounts receiving the most failed login attempts — a single account with many failures suggests targeted password guessing
+              </div>
+              {targetedUsers.length === 0 ? (
+                <EmptyState title="No targeted accounts" message="No targeted usernames in this period." />
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
+                  <thead><tr style={{ borderBottom: '2px solid var(--border-light)' }}>
+                    {['Username','Failures','Distinct Sources','Last Attempt','Risk'].map(h => <th key={h} style={TH}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {targetedUsers.map((r, i) => {
+                      const fails = parseInt(r.failure_count) || 0;
+                      const hot = fails >= 20;
+                      return (
+                        <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: hot ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
+                          <td style={{ ...TD, ...MONO, color: 'var(--text-primary)', fontWeight: 600 }}>{r.username || '—'}</td>
+                          <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 10 }}>{fails}</span></td>
+                          <td style={{ ...TD, color: 'var(--text-secondary)' }}>{parseInt(r.distinct_sources) || 0}</td>
+                          <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{r.last_attempt ? new Date(r.last_attempt).toLocaleString() : '—'}</td>
+                          <td style={TD}><RiskBadge count={fails} thresholds={[5, 20]} /></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Failed Logins by Country */}
+            <div style={CARD}>
+              <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Failed Logins by Country</div>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
+                Geographic origin of failed login attempts (by real attacker IP)
+              </div>
+              {failsByCountry.length === 0 ? (
+                <EmptyState title="No geolocated failures" message="No failed logins with a known country in this period." />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {failsByCountry.map((r, i) => {
+                    const fails = parseInt(r.failure_count) || 0;
+                    const max = parseInt(failsByCountry[0]?.failure_count) || 1;
+                    const pct = Math.round((fails / max) * 100);
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ width: 180, fontSize: 'var(--text-sm)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <CountryLabel country={r.country} code={r.country_code} />
+                        </div>
+                        <div style={{ flex: 1, height: 14, background: 'var(--border-light)', borderRadius: 3, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${pct}%`, background: '#dc2626', borderRadius: 3 }} />
+                        </div>
+                        <div style={{ width: 70, textAlign: 'right', fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--tint-danger-fg)' }}>{fails.toLocaleString()}</div>
+                        <div style={{ width: 90, textAlign: 'right', fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{parseInt(r.distinct_sources) || 0} src</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            </>
           )}
 
           {/* ── BRUTE FORCE ── */}
@@ -452,7 +582,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
                   <thead><tr style={{ borderBottom: '2px solid var(--border-light)' }}>
-                    {['Time','Firewall','VPN Source IP','Type','Severity','Message'].map(h => <th key={h} style={TH}>{h}</th>)}
+                    {['Time','Firewall','VPN Source IP','User','Country','Type','Severity','Message'].map(h => <th key={h} style={TH}>{h}</th>)}
                   </tr></thead>
                   <tbody>
                     {vpnEvents.map((r, i) => (
@@ -461,6 +591,8 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(r.received_at).toLocaleTimeString()}</td>
                         <td style={{ ...TD, ...MONO, color: 'var(--text-primary)', fontWeight: 500 }}>{r.source_host || r.source_ip}</td>
                         <td style={{ ...TD, ...MONO, color: '#2563eb', fontSize: 'var(--text-xs)' }}>{r.vpn_src_ip || '—'}</td>
+                        <td style={{ ...TD, ...MONO, color: 'var(--text-primary)' }}>{r.username || '—'}</td>
+                        <td style={TD}><CountryLabel country={r.country} code={null} /></td>
                         <td style={TD}>
                           <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)', fontWeight: 600,
                             background: r.event_type === 'failure' ? 'var(--tint-danger)' : r.event_type === 'success' ? 'var(--tint-success)' : 'var(--tint-info)',

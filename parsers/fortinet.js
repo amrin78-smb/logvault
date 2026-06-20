@@ -58,6 +58,19 @@ function parseFortinet(raw, sourceIp) {
   // it as srcip too — without overwriting an existing srcip. Keep the original remip.
   const srcip = kv.srcip || kv.remip;
 
+  // Auth outcome for VPN / login events. FortiOS encodes it in action/logdesc/msg
+  // (e.g. action=ssl-login-fail, logdesc="SSL VPN login fail", reason=..._permission_denied).
+  // Downstream security widgets + the correlation engine detect failures via
+  // structured_data.subcategory, so derive it here. Only classify genuine auth events
+  // (vpn subtype or a login/auth blob) so traffic/UTM logs are never mislabeled.
+  let subcategory;
+  const authBlob = `${kv.action || ''} ${kv.logdesc || ''} ${kv.msg || ''} ${kv.reason || ''}`.toLowerCase();
+  const isAuthEvent = kv.subtype === 'vpn' || /\b(?:login|logon|auth)/.test(authBlob);
+  if (isAuthEvent) {
+    if (/fail|denied|reject|invalid|incorrect|permission_den/.test(authBlob)) subcategory = 'login_failed';
+    else if (/success|logged in|tunnel.?up|established/.test(authBlob)) subcategory = 'login_success';
+  }
+
   return {
     source_ip:       sourceIp,
     source_host:     kv.devname || null,
@@ -75,6 +88,7 @@ function parseFortinet(raw, sourceIp) {
       logid:    kv.logid,
       type:     kv.type,
       subtype:  kv.subtype,
+      subcategory: subcategory,
       srcip:    srcip,
       dstip:    kv.dstip,
       srcport:  kv.srcport,
