@@ -16,6 +16,25 @@ const PAN_SEV_MAP = {
   'critical': 2, 'high': 3, 'medium': 4, 'low': 5, 'informational': 6, 'info': 6,
 };
 
+// Loose IPv4 validator (4 octets, each 0-255). Used to defensively confirm a
+// CSV column actually holds an IP before we trust a schema-dependent index.
+function isIpv4(v) {
+  if (!v) return false;
+  const m = String(v).trim().match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  return m.slice(1).every((o) => Number(o) <= 255);
+}
+
+// Scan a row for the Nth (default first) column that looks like a valid IPv4.
+// Fallback for when the exact schema-version column index is uncertain.
+function findIp(cols, skip) {
+  let seen = 0;
+  for (const c of cols) {
+    if (isIpv4(c)) { if (seen >= (skip || 0)) return String(c).trim(); seen++; }
+  }
+  return undefined;
+}
+
 function parsePaloAlto(raw, sourceIp) {
   // PAN-OS LEEF or syslog-wrapped CSV
   // Quick detection: contains a PAN-OS log type token in known positions
@@ -49,21 +68,81 @@ function parsePaloAlto(raw, sourceIp) {
   let message = `PAN-OS ${logType}`;
   if (subtype) message += ` [${subtype}]`;
 
-  // For TRAFFIC logs: src/dst IPs are at known columns
+  // Normalized fields the correlation engine + UI rely on (exact keys).
+  // These are populated per log-type below and merged into structured_data.
+  // IMPORTANT: PAN-OS CSV field positions VARY by log type AND PAN-OS version
+  // (8.x/9.x/10.x/11.x add columns). The indices below are best-effort defaults
+  // and WILL need tuning against real PAN-OS samples (we have none yet). To stay
+  // robust we validate IPs (isIpv4) and fall back to scanning the row for the
+  // first valid-looking IP when the expected column is missing/short.
+  const norm = {};        // extra structured_data keys (srcip/dstip/user/...)
+  let category = 'system'; // top-level taxonomy category (default for SYSTEM/etc.)
+
+  // For TRAFFIC logs: src/dst IPs are at known columns (8.x+: src=6, dst=7).
   if (logType === 'TRAFFIC' && cols.length > 13) {
-    const srcip = cols[7]?.trim(); const dstip = cols[8]?.trim();
+    const srcip = isIpv4(cols[7]) ? cols[7].trim() : findIp(cols, 0);
+    const dstip = isIpv4(cols[8]) ? cols[8].trim() : findIp(cols, 1);
     const app   = cols[24]?.trim(); const action = cols[30]?.trim();
     if (srcip && dstip) message += `: ${srcip} -> ${dstip}`;
     if (app) message += ` app=${app}`;
     if (action) message += ` action=${action}`;
+    // Persist the real src/dst (previously only string-concatenated into message).
+    if (srcip) norm.srcip = srcip;
+    if (dstip) norm.dstip = dstip;
+    category = 'firewall';
   }
 
   if (logType === 'THREAT' && cols.length > 15) {
-    const srcip   = cols[7]?.trim(); const dstip = cols[8]?.trim();
+    const srcip   = isIpv4(cols[7]) ? cols[7].trim() : findIp(cols, 0);
+    const dstip   = isIpv4(cols[8]) ? cols[8].trim() : findIp(cols, 1);
     const threat  = cols[26]?.trim(); const action = cols[28]?.trim();
     if (srcip && dstip) message += `: ${srcip} -> ${dstip}`;
     if (threat) message += ` threat=${threat}`;
     if (action) message += ` action=${action}`;
+    if (srcip) norm.srcip = srcip;
+    if (dstip) norm.dstip = dstip;
+    norm.type = 'ips';           // intrusion-prevention signal for downstream
+    category = 'security';
+  }
+
+  // GLOBALPROTECT (VPN): the real client is the GlobalProtect public IP, NOT the
+  // syslog sender. Subtypes include gateway-auth-fail / portal-auth-fail / *-auth /
+  // login etc. PAN-OS 9.1+ GP CSV roughly: ...,public-ip(GP client),...,source-region,...,user.
+  // Column layout differs a lot across versions, so we validate + scan as a fallback.
+  if (logType === 'GLOBALPROTECT') {
+    category = 'vpn';
+    const sub = (subtype || '').toLowerCase();
+    // GP client public IP — best-effort index (10.x ~ col 8), else first valid IP.
+    const pubip = isIpv4(cols[8]) ? cols[8].trim() : findIp(cols, 0);
+    if (pubip) norm.srcip = pubip;
+    // Source region/country — best-effort index near col 9.
+    const region = cols[9]?.trim();
+    if (region && !isIpv4(region)) norm.srccountry = region;
+    // User/account — best-effort index near col 7; skip if it looks like an IP.
+    const user = cols[7]?.trim();
+    if (user && !isIpv4(user)) norm.user = user;
+    if (/auth-fail|fail|denied/.test(sub))      norm.subcategory = 'login_failed';
+    else if (/auth|login|success/.test(sub))    norm.subcategory = 'login_success';
+    if (norm.user) message += ` user=${norm.user}`;
+    if (norm.srcip) message += ` from=${norm.srcip}`;
+  }
+
+  // AUTHENTICATION: map Source IP column -> srcip, User -> user, result -> subcategory.
+  // PAN-OS auth CSV roughly: ...,source-ip,...,user,...,event(success/failure).
+  if (logType === 'AUTHENTICATION') {
+    category = 'authentication';
+    // Source IP (the attacker for inbound auth) — best-effort, else first valid IP.
+    const srcip = isIpv4(cols[8]) ? cols[8].trim() : findIp(cols, 0);
+    if (srcip) norm.srcip = srcip;
+    const user = cols[7]?.trim();
+    if (user && !isIpv4(user)) norm.user = user;
+    // Auth result: look for an explicit success/failure token anywhere in the row.
+    const joined = stripped.toLowerCase();
+    if (/\bfail|failure|denied|invalid\b/.test(joined))      norm.subcategory = 'login_failed';
+    else if (/\bsuccess|succeeded|allowed\b/.test(joined))   norm.subcategory = 'login_success';
+    else norm.subcategory = 'login_failed'; // auth events without a token: default to failed (safer for alerting)
+    if (norm.user) message += ` user=${norm.user}`;
+    if (norm.srcip) message += ` from=${norm.srcip}`;
   }
 
   return {
@@ -77,7 +156,10 @@ function parsePaloAlto(raw, sourceIp) {
     program:         `PAN-OS/${logType}`,
     message,
     raw_message:     raw,
-    structured_data: { log_type: logType, subtype, serial },
+    // Additive: keep log_type/subtype/serial; merge normalized contract keys
+    // (srcip/dstip/user/srccountry/subcategory/type) when present.
+    structured_data: { log_type: logType, subtype, serial, ...norm },
+    category,
     is_parsed:       true,
     log_timestamp:   logTimestamp,
   };

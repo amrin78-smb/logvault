@@ -16,6 +16,23 @@ const CISCO_MNEMONIC_RE = /%([A-Z0-9_\-]+)-(\d)-([A-Z0-9_]+):/;
 const CISCO_FULL_RE     = /^<(\d{1,3})>\*?(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:\s+\w+)?(?:\s+\w+)?):\s+(%[A-Z0-9_\-]+-\d-[A-Z0-9_]+:.*)/s;
 
 const EVENT_PATTERNS = [
+  // ── Auth / VPN classification (most specific first) ──────────────
+  // IOS interactive login (SSH/console/telnet) — normalized to authentication
+  { pattern: /SEC_LOGIN.*LOGIN_FAILED/,  category: 'authentication', subcategory: 'login_failed' },
+  { pattern: /SEC_LOGIN.*QUIET_MODE/,    category: 'authentication', subcategory: 'login_failed' },
+  { pattern: /SEC_LOGIN.*LOGIN_SUCCESS/, category: 'authentication', subcategory: 'login_success' },
+  // ASA/FTD AnyConnect & remote-access VPN auth → vpn
+  { pattern: /%ASA-\d-722037/,           category: 'vpn',            subcategory: 'login_failed' },  // SVC closing conn / terminated
+  { pattern: /%ASA-\d-113019/,           category: 'vpn',            subcategory: 'login_failed' },  // Group/Username disconnected
+  // ASA/FTD AAA auth (113004 success, 113005 rejected, 113015 rejected, 113021 restricted)
+  { pattern: /%ASA-\d-113004/,           category: 'authentication', subcategory: 'login_success' },
+  { pattern: /%ASA-\d-113005/,           category: 'authentication', subcategory: 'login_failed' },
+  { pattern: /%ASA-\d-113015/,           category: 'authentication', subcategory: 'login_failed' },
+  { pattern: /%ASA-\d-113021/,           category: 'authentication', subcategory: 'login_failed' },
+  // ISE / RADIUS auth (CISE prefix or explicit RADIUS auth fail mnemonics)
+  { pattern: /(?:CISE|RADIUS).*(?:Authentication failed|Auth failed|RADIUS-Reject|5400|24408)/i, category: 'authentication', subcategory: 'login_failed' },
+  { pattern: /(?:CISE|RADIUS).*(?:Authentication succeeded|Auth succeeded|Passed-Authentication|5200)/i, category: 'authentication', subcategory: 'login_success' },
+  // ── Non-auth events (unchanged) ──────────────────────────────────
   { pattern: /LINK-\d-UPDOWN/,           category: 'interface', subcategory: 'link_change' },
   { pattern: /LINEPROTO-\d-UPDOWN/,      category: 'interface', subcategory: 'protocol_change' },
   { pattern: /SPANTREE.*TOPOTRAP/,       category: 'stp',       subcategory: 'topology_change' },
@@ -28,10 +45,7 @@ const EVENT_PATTERNS = [
   { pattern: /MACFLAP_NOTIF/,            category: 'loop',      subcategory: 'mac_flap' },
   { pattern: /STORM_CONTROL.*FILTERED/,  category: 'loop',      subcategory: 'storm_control' },
   { pattern: /STORM_CONTROL.*SHUTDOWN/,  category: 'loop',      subcategory: 'storm_shutdown' },
-  { pattern: /SEC_LOGIN.*LOGIN_FAILED/,  category: 'security',  subcategory: 'login_failed' },
-  { pattern: /SEC_LOGIN.*QUIET_MODE/,    category: 'security',  subcategory: 'brute_force' },
-  { pattern: /SEC_LOGIN.*LOGIN_SUCCESS/, category: 'security',  subcategory: 'login_success' },
-  { pattern: /AAA.*AUTHEN_FAIL/,         category: 'security',  subcategory: 'auth_failed' },
+  { pattern: /AAA.*AUTHEN_FAIL/,         category: 'authentication', subcategory: 'login_failed' },
   { pattern: /SYS-\d-CONFIG_I/,          category: 'config',    subcategory: 'config_change' },
   { pattern: /SYS-\d-LOGOUT/,            category: 'config',    subcategory: 'logout' },
   { pattern: /OSPF.*ADJCHG/,             category: 'routing',   subcategory: 'ospf_neighbor' },
@@ -62,6 +76,69 @@ function extractMAC(message) {
   const m = message.match(/([0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4})/i)
          || message.match(/([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})/i);
   return m ? m[1] : null;
+}
+
+// ── Auth / VPN field extraction ──────────────────────────────────
+// Validate a dotted-quad IPv4 (each octet 0-255). Defensive: rejects
+// things like 999.1.1.1 or version strings.
+function isValidIPv4(ip) {
+  if (!ip) return false;
+  const parts = ip.split('.');
+  if (parts.length !== 4) return false;
+  return parts.every((p) => {
+    if (!/^\d{1,3}$/.test(p)) return false;
+    const n = Number(p);
+    return n >= 0 && n <= 255;
+  });
+}
+
+function firstValidIP(message, regexes) {
+  for (const re of regexes) {
+    const m = message.match(re);
+    if (m && m[1] && isValidIPv4(m[1])) return m[1];
+  }
+  return null;
+}
+
+// Extract the REAL client/source IP from Cisco auth/VPN logs.
+// NOT the syslog sender — the remote user/attacker IP.
+function extractSrcIp(message) {
+  return firstValidIP(message, [
+    /\[Source:\s*(\d{1,3}(?:\.\d{1,3}){3})\s*\]/i,   // IOS %SEC_LOGIN [Source: x]
+    /\buser\s*IP\s*=\s*(\d{1,3}(?:\.\d{1,3}){3})/i,   // ASA 113015 "user IP ="
+    /\bIP\s*=\s*(\d{1,3}(?:\.\d{1,3}){3})/i,          // ASA VPN 113019 "IP ="
+    /\bClient\s*IP\s*=?\s*(\d{1,3}(?:\.\d{1,3}){3})/i,
+    /\bCalling-Station-ID[=:\s]+(\d{1,3}(?:\.\d{1,3}){3})/i, // ISE/RADIUS
+    /\bEndpoint\s*IP[=:\s]+(\d{1,3}(?:\.\d{1,3}){3})/i,      // ISE
+  ]);
+}
+
+// Extract a destination IP when present (e.g. ASA AAA "server = x").
+function extractDstIp(message) {
+  return firstValidIP(message, [
+    /\bserver\s*=\s*(\d{1,3}(?:\.\d{1,3}){3})/i,      // ASA AAA "server ="
+    /\bDestination\s*IP[=:\s]+(\d{1,3}(?:\.\d{1,3}){3})/i,
+    /\bNAS-IP-Address[=:\s]+(\d{1,3}(?:\.\d{1,3}){3})/i, // ISE/RADIUS
+  ]);
+}
+
+// Extract the username/account from Cisco auth/VPN logs.
+function extractUser(message) {
+  const res = [
+    /\[user:\s*([^\]]+?)\s*\]/i,                  // IOS %SEC_LOGIN [user: x]
+    /\bUsername\s*=\s*"?([^",\s]+)"?/i,           // ASA VPN 113019 "Username ="
+    /\buser\s*=\s*"?([^",\s]+)"?/i,               // ASA AAA "user ="
+    /\bUser-Name[=:\s]+"?([^",\s]+)"?/i,          // ISE/RADIUS "User-Name"
+  ];
+  for (const re of res) {
+    const m = message.match(re);
+    if (m && m[1]) {
+      const u = m[1].trim();
+      // Guard against placeholder/empty values
+      if (u && u !== '*****' && u.toLowerCase() !== 'unknown') return u;
+    }
+  }
+  return null;
 }
 
 // ── Fix: Handle New Year rollover in Cisco timestamps ─────────
@@ -120,6 +197,22 @@ function parseCisco(raw, sourceIp) {
     if (/changed state to down|line protocol.*down/i.test(message)) linkState = 'down';
   }
 
+  // Auth/VPN field extraction — only attempt for auth/vpn-classified events
+  // so non-auth logs (interface/link/etc.) never pick up stray IPs/users.
+  let srcip = null, dstip = null, user = null;
+  if (category === 'authentication' || category === 'vpn') {
+    srcip = extractSrcIp(message);
+    dstip = extractDstIp(message);
+    user  = extractUser(message);
+  }
+
+  // Hand-picked literal, then strip null/undefined values so the stored
+  // structured_data stays lean (additive: all existing keys preserved).
+  const structured_data = { ios_facility: iosFacility, ios_severity: iosSeverity, mnemonic, category, subcategory, interface: iface, mac_address: mac, link_state: linkState, srcip, dstip, user };
+  for (const k of Object.keys(structured_data)) {
+    if (structured_data[k] === null || structured_data[k] === undefined) delete structured_data[k];
+  }
+
   return {
     source_ip:       sourceIp,
     source_host:     null,
@@ -131,7 +224,7 @@ function parseCisco(raw, sourceIp) {
     program:         iosFacility,
     message:         message || raw,
     raw_message:     raw,
-    structured_data: { ios_facility: iosFacility, ios_severity: iosSeverity, mnemonic, category, subcategory, interface: iface, mac_address: mac, link_state: linkState },
+    structured_data,
     is_parsed:       true,
     log_timestamp:   logTimestamp,
   };

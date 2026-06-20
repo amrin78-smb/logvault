@@ -37,6 +37,7 @@ function detectJuniper(raw) {
   if (/RT_IDP:/.test(raw))    return true;
   if (/JUNOS/i.test(raw))     return true;
   if (/\bRT_[A-Z_]+:/.test(raw)) return true;
+  if (isAuthEvent(raw))       return true;
   return false;
 }
 
@@ -50,6 +51,27 @@ function parseKV(str) {
     kv[m[1]] = m[3] !== undefined ? m[3] : m[2];
   }
   return kv;
+}
+
+// Defensive IPv4 validation (0-255 per octet). Rejects syslog noise / partial matches.
+function isValidIp(ip) {
+  if (!ip || typeof ip !== 'string') return false;
+  const m = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  return m.slice(1).every((o) => {
+    const n = parseInt(o, 10);
+    return n >= 0 && n <= 255;
+  });
+}
+
+// Detect auth / SSL-VPN / sshd / login events that need the normalized auth contract.
+function isAuthEvent(raw) {
+  if (!raw) return false;
+  if (/RT_FLOW:\s*FWAUTH_/i.test(raw)) return true;          // SRX firewall user auth
+  if (/sshd(?:\[\d+\])?:/i.test(raw)) return true;            // Junos sshd
+  if (/\blogin:\s*Login\s+(?:failed|succeeded)/i.test(raw)) return true; // Junos login
+  if (/ic_session:/i.test(raw) || /\bAUT2\d{4}\b/.test(raw)) return true; // Pulse/Ivanti Connect Secure
+  return false;
 }
 
 function sevFromPri(raw) {
@@ -76,7 +98,77 @@ function parseJuniper(raw, sourceIp) {
     let message       = raw;
     const structured  = {};
 
-    if (/RT_IDP:/.test(raw)) {
+    if (isAuthEvent(raw)) {
+      // Auth / SSL-VPN / sshd / login — emit normalized contract keys
+      const lower = raw.toLowerCase();
+
+      // Success/failure determination (default to failed for safety on auth-fail logs)
+      const looksSuccess = /accepted|login\s+succeeded|login\s+success|auth_accepted|user_auth_accepted/i.test(raw)
+                           && !/failed|fail\b/i.test(raw);
+      let subcategory = looksSuccess ? 'login_success' : 'login_failed';
+
+      let srcip = null;
+      let user  = null;
+
+      if (/RT_FLOW:\s*FWAUTH_/i.test(raw)) {
+        // SRX FWAUTH: ... username=bob source-address=203.0.113.55
+        category = 'authentication';
+        structured.event_type = 'FWAUTH';
+        const kv = parseKV(raw);
+        if (kv.username) user = kv.username;
+        const sa = kv['source-address'] || kv['src-ip'] || null;
+        if (isValidIp(sa)) srcip = sa;
+        const da = kv['destination-address'] || kv['dst-ip'] || null;
+        if (isValidIp(da)) structured.dstip = da;
+        subcategory = /ACCEPT/i.test(raw) && !/FAIL/i.test(raw) ? 'login_success' : 'login_failed';
+
+      } else if (/ic_session:/i.test(raw) || /\bAUT2\d{4}\b/.test(raw)) {
+        // Pulse / Ivanti Connect Secure SSL-VPN
+        category = 'vpn';
+        structured.event_type = 'IC_SESSION';
+        const um = raw.match(/user\s+'([^']+)'/i);
+        if (um) user = um[1];
+        const im = raw.match(/\bfrom\s+(\d{1,3}(?:\.\d{1,3}){3})/i);
+        if (im && isValidIp(im[1])) srcip = im[1];
+        subcategory = /login\s+succeeded|login\s+success/i.test(raw) ? 'login_success' : 'login_failed';
+
+      } else if (/sshd(?:\[\d+\])?:/i.test(raw)) {
+        // Junos sshd: Failed/Accepted password for [invalid user ]<user> from <ip> port .. ssh2
+        category = 'authentication';
+        structured.event_type = 'SSHD';
+        const um = raw.match(/(?:password|publickey)\s+for\s+(?:invalid\s+user\s+)?(\S+)\s+from\s+(\d{1,3}(?:\.\d{1,3}){3})/i);
+        if (um) {
+          user = um[1];
+          if (isValidIp(um[2])) srcip = um[2];
+        } else {
+          const im = raw.match(/\bfrom\s+(\d{1,3}(?:\.\d{1,3}){3})/i);
+          if (im && isValidIp(im[1])) srcip = im[1];
+        }
+        subcategory = /^.*\bAccepted\b/i.test(raw) ? 'login_success' : 'login_failed';
+
+      } else if (/\blogin:\s*Login\s+(?:failed|succeeded)/i.test(raw)) {
+        // Junos login: Login failed for user admin from host 203.0.113.55
+        category = 'authentication';
+        structured.event_type = 'LOGIN';
+        const um = raw.match(/for\s+user\s+(\S+)/i);
+        if (um) user = um[1];
+        const im = raw.match(/\bfrom\s+(?:host\s+)?(\d{1,3}(?:\.\d{1,3}){3})/i);
+        if (im && isValidIp(im[1])) srcip = im[1];
+        subcategory = /Login\s+succeeded/i.test(raw) ? 'login_success' : 'login_failed';
+      }
+
+      if (srcip) structured.srcip = srcip;
+      if (user)  structured.user  = user;
+      structured.subcategory = subcategory;
+
+      // severity: failed auth = warning, success = notice (keep pri-derived if more severe)
+      if (subcategory === 'login_failed' && severity > 4) { severity = 4; severityLabel = 'warning'; }
+
+      message = `Juniper auth ${structured.event_type || ''} ${subcategory}`.trim();
+      if (user)  message += ` user=${user}`;
+      if (srcip) message += ` from ${srcip}`;
+
+    } else if (/RT_IDP:/.test(raw)) {
       // IDS/IPS attack event
       category = 'security';
       const kv = parseKV(raw);
@@ -85,12 +177,16 @@ function parseJuniper(raw, sourceIp) {
       else { severity = 3; severityLabel = 'error'; }
 
       structured.event_type     = 'RT_IDP';
+      structured.type           = 'ips';
       structured.attack_name    = kv['attack-name'] || null;
       structured.threat_severity = kv['threat-severity'] || null;
       structured.action         = (kv.action || '').toLowerCase().includes('drop') ? 'blocked'
                                  : (kv.action ? kv.action.toLowerCase() : null);
       structured.src_ip         = kv['src-ip'] || null;
       structured.dst_ip         = kv['dst-ip'] || null;
+      // Normalized contract keys (correlation engine + UI rely on these exact keys)
+      if (isValidIp(kv['src-ip'])) structured.srcip = kv['src-ip'];
+      if (isValidIp(kv['dst-ip'])) structured.dstip = kv['dst-ip'];
       structured.src_port       = kv['src-port'] ? parseInt(kv['src-port']) : null;
       structured.dst_port       = kv['dst-port'] ? parseInt(kv['dst-port']) : null;
       structured.protocol       = kv['protocol-name'] || null;
@@ -117,6 +213,9 @@ function parseJuniper(raw, sourceIp) {
         structured.src_port = parseInt(tuple[2]);
         structured.dst_ip   = tuple[3];
         structured.dst_port = parseInt(tuple[4]);
+        // Normalized contract keys
+        if (isValidIp(tuple[1])) structured.srcip = tuple[1];
+        if (isValidIp(tuple[3])) structured.dstip = tuple[3];
       }
       structured.application = appMatch ? appMatch[1] : null;
       structured.src_zone    = zoneMatch ? zoneMatch[1] : null;
@@ -138,8 +237,6 @@ function parseJuniper(raw, sourceIp) {
         category = 'interface';
         structured.link_state = /DOWN/.test(trap) ? 'down' : 'up';
         if (structured.link_state === 'down') { severity = 4; severityLabel = 'warning'; }
-      } else if (/AUTH/i.test(raw)) {
-        category = 'authentication';
       } else if (/BGP|OSPF|RIP/i.test(raw)) {
         category = 'routing';
       }
@@ -163,6 +260,7 @@ function parseJuniper(raw, sourceIp) {
       severity,
       severity_label:  severityLabel,
       vendor:          'juniper',
+      category,
       program:         structured.event_type || 'JUNOS',
       message,
       raw_message:     raw,

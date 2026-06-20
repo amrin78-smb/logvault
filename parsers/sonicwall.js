@@ -56,6 +56,52 @@ function actionFromMsg(msg) {
   return null;
 }
 
+// Basic IPv4 validation so we never emit junk (e.g. a hostname) under srcip/dstip
+function isValidIp(ip) {
+  if (!ip || typeof ip !== 'string') return false;
+  const m = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  return m.slice(1).every(o => Number(o) <= 255);
+}
+
+/*
+ * Classify SonicWall auth / SSL-VPN events from the message ID (m=) and/or msg text.
+ * NORMALIZED CONTRACT: the correlation engine + UI key off top-level `category`
+ * ('vpn' | 'authentication') and structured_data.subcategory ('login_failed' |
+ * 'login_success'). Non-auth events keep category 'firewall'.
+ *
+ * NOTE: the specific SonicOS m= message IDs below are a best-effort starting set
+ * (SSL-VPN auth IDs cluster around 1080-1090, user login around 22-24/235-238) and
+ * SHOULD be refined against live samples. We therefore also key off msg-text
+ * keywords defensively so classification is correct even when the m= id is unknown.
+ */
+function classifyAuth(kv) {
+  const msg = (kv.msg || '').toLowerCase();
+  const mId = kv.m != null ? String(kv.m) : '';
+
+  // SSL-VPN auth message IDs (best-effort; refine against live samples)
+  const VPN_IDS = new Set(['1080', '1081', '1082', '1083', '1086', '1087', '1088']);
+  // General user-login auth message IDs (best-effort; refine against live samples)
+  const AUTH_IDS = new Set(['22', '23', '24', '235', '236', '237', '238']);
+
+  const isVpn  = VPN_IDS.has(mId) || /ssl\s*vpn|sslvpn/.test(msg);
+  const isAuth = AUTH_IDS.has(mId) || /\b(user )?login|authentication|administrator login/.test(msg);
+
+  if (!isVpn && !isAuth) return null;
+
+  // Determine success vs failure from msg keywords
+  let subcategory = null;
+  if (/denied|fail|failure|invalid|incorrect|locked|rejected|unsuccessful/.test(msg)) {
+    subcategory = 'login_failed';
+  } else if (/success|succeeded|granted|logged in|login successful/.test(msg)) {
+    subcategory = 'login_success';
+  }
+
+  // SSL-VPN events -> 'vpn'; general user/admin login -> 'authentication'
+  const category = isVpn ? 'vpn' : 'authentication';
+  return { category, subcategory };
+}
+
 function parseSonicWall(raw, sourceIp) {
   try {
     if (!detectSonicWall(raw)) return null;
@@ -80,12 +126,25 @@ function parseSonicWall(raw, sourceIp) {
     if (kv.proto) message += ` proto=${kv.proto}`;
     if (kv.rule) message += ` rule="${kv.rule}"`;
 
+    // Classify auth/SSL-VPN events so they are NOT mis-categorized as 'firewall'.
+    const auth = classifyAuth(kv);
+    // top-level category: 'vpn'/'authentication' for auth events, else 'firewall'
+    const category = auth ? auth.category : 'firewall';
+
     const structured = {
-      category:     'firewall',
+      // top-level category mirrored here; taxonomy.js honors a parser-set category first
+      category,
       action,
       serial:       kv.sn || null,
       firewall_ip:  kv.fw || null,
       msg:          kv.msg || null,
+      // NORMALIZED CONTRACT keys (correlation engine + UI rely on these exact names):
+      //   srcip = REAL client/source IP (attacker), dstip = destination IP, user = account.
+      srcip:        isValidIp(src.ip) ? src.ip : null,
+      dstip:        isValidIp(dst.ip) ? dst.ip : null,
+      user:         kv.usr || null,
+      subcategory:  auth ? auth.subcategory : null,
+      // legacy keys kept for backwards compatibility
       src_ip:       src.ip,
       src_port:     src.port,
       src_iface:    src.iface,

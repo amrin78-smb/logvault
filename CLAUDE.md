@@ -767,6 +767,17 @@ taken from `req.rbac.userId` (the `X-User-Id` header set by the proxy). Resolvin
 display name requires a join to `netvault.users.id`. Set on both the single-ack and
 bulk-ack endpoints in `api/server.js`.
 
+### Parser source-field contract (srcip/user/subcategory)
+
+Every parser MUST, for auth/VPN/failed-login events, emit:
+- `structured_data.srcip` — the **REAL client/source IP** (the remote user/attacker), **never the syslog sender** (the relaying firewall/device). For VPN/auth logs that lack a native srcip, map the remote-IP field (e.g. Fortinet `remip`) into `srcip`.
+- `structured_data.dstip` — the destination IP where available.
+- `structured_data.user` — the username from the event.
+- `structured_data.subcategory` — one of `'login_failed'` / `'login_success'` / `'auth_failed'`.
+- `category` set to `'vpn'` or `'authentication'` as appropriate.
+
+Correlation rules in `collector/correlationEngine.js` (BRUTE_FORCE_SUCCESS, VPN_BRUTE_FORCE, PORT_SCAN, IPS_REPEATED_ATTACK) are **vendor-agnostic** (not gated to any vendor) and group by `structured_data.srcip || source_ip`, so attacks attribute to the real attacker IP. Keep new/updated parsers conforming to this contract so correlation works for every vendor.
+
 ---
 
 ## NetVault Asset Enrichment

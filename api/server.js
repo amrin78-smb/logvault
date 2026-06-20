@@ -1277,6 +1277,13 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.5.0': [
+    'All vendor parsers (Cisco, Palo Alto, Windows, Juniper, SonicWall, Aruba, Check Point, Sangfor, Forcepoint, generic) now extract the real remote client IP, username, and login outcome for auth/VPN/failed-login events — previously only Fortinet did',
+    'Brute-force, VPN-brute-force, port-scan, and repeated-IPS correlation rules are now vendor-agnostic (previously Fortinet-only) and attribute alerts to the real attacker IP, not the relaying device',
+    'Windows failed logons (Event ID 4625/4771/4768/4776) are now classified and correlated for brute-force detection',
+    'Source IP, user, and login outcome are surfaced consistently as structured_data.srcip / user / subcategory across all vendors',
+    'Note: Palo Alto CSV column positions are best-effort pending live PAN-OS samples and may need tuning',
+  ],
   '2.4.0': [
     'Fortinet parser now captures the remote client IP (remip), username, source country, and failure reason for SSL-VPN / auth events (previously dropped)',
     'Log Explorer now shows the real remote source (and user/country) for VPN/auth events instead of the reporting firewall',

@@ -22,6 +22,25 @@
  *   CEF:0|Forcepoint|DLP|8.9|Incident|DLP Incident|8|act=block suser=john.doe fileType=docx reason=PII Detected cs1Label=Policy cs1=PII-Policy
  */
 
+// Validate an IPv4 address (4 octets, 0-255). Returns the IP or null.
+function validIp(ip) {
+  if (!ip || typeof ip !== 'string') return null;
+  const m = ip.trim().match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return null;
+  for (let i = 1; i <= 4; i++) { if (parseInt(m[i], 10) > 255) return null; }
+  return ip.trim();
+}
+
+// Detect login/auth events and their result from signature/name/act text.
+// Returns 'login_failed', 'login_success', or null (non-auth).
+function authSubcategory(signatureId, name, act) {
+  const t = `${signatureId || ''} ${name || ''} ${act || ''}`.toLowerCase();
+  if (!/auth|login|logon|logoff|logout|sign.?in|credential|password|account/.test(t)) return null;
+  if (/fail|failed|denied|deny|reject|invalid|incorrect|wrong|bad|lockout|locked|unauthor/.test(t)) return 'login_failed';
+  if (/success|succeed|succeeded|granted|accept|established|logged in|logon success/.test(t)) return 'login_success';
+  return null;
+}
+
 // CEF severity 0-10 → syslog severity
 function cefSeverityToSyslog(cefSev) {
   const n = parseInt(cefSev) || 5;
@@ -129,7 +148,11 @@ function parseForcepoint(raw, sourceIP) {
 
     const fields = parseCEFExtension(extension);
     const action = normalizeAction(fields.act);
-    const category = getCategory(product, signatureId, fields);
+    let category = getCategory(product, signatureId, fields);
+
+    // Auth events: classify subcategory + force category 'authentication'.
+    const subcategory = authSubcategory(signatureId, name, fields.act);
+    if (subcategory) category = 'authentication';
 
     structured = {
       // CEF header fields
@@ -144,8 +167,13 @@ function parseForcepoint(raw, sourceIP) {
       // Normalized fields
       action,
       category,
+      subcategory:   subcategory || null,
 
       // Network fields
+      // srcip = REAL client/source IP only — never the syslog sender (avoids
+      // the sender-as-attacker conflation that src_ip's sourceIP fallback has).
+      srcip:         validIp(fields.src),
+      dstip:         validIp(fields.dst),
       src_ip:        fields.src    || sourceIP || null,
       dst_ip:        fields.dst    || null,
       dst_host:      fields.dhost  || null,
@@ -206,13 +234,21 @@ function parseForcepoint(raw, sourceIP) {
     program       = `Forcepoint/${fields.product || 'Security'}`;
 
     const action   = normalizeAction(fields.action || fields.act);
-    const category = getCategory(fields.product || '', '', fields);
+    let category   = getCategory(fields.product || '', '', fields);
+
+    // Auth events: classify subcategory + force category 'authentication'.
+    const subcategory = authSubcategory(fields.signature || fields.signatureId, fields.name, fields.action || fields.act);
+    if (subcategory) category = 'authentication';
 
     structured = {
       vendor:    'Forcepoint',
       product:   fields.product || null,
       action,
       category,
+      subcategory: subcategory || null,
+      // srcip = REAL client/source IP only — never the syslog sender.
+      srcip:     validIp(fields.src || fields.source),
+      dstip:     validIp(fields.dst || fields.destination),
       src_ip:    fields.src || fields.source || sourceIP || null,
       dst_ip:    fields.dst || fields.destination || null,
       user:      fields.user || fields.suser || null,

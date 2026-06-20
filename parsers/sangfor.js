@@ -20,6 +20,32 @@ const SANGFOR_KV_RE   = /(\w+)=(?:"([^"]*)"|([\S]*))/g;
 const CEF_SEV_MAP = { 0:'debug',1:'debug',2:'debug',3:'info',4:'info',5:'notice',6:'warning',7:'warning',8:'error',9:'critical',10:'critical' };
 const CEF_SEV_NUM = { 0:7,1:7,2:7,3:6,4:6,5:5,6:4,7:4,8:3,9:2,10:2 };
 
+// Validate an IPv4 address (4 octets, 0-255). Returns the IP or null.
+function validIp(ip) {
+  if (!ip || typeof ip !== 'string') return null;
+  const m = ip.trim().match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return null;
+  for (let i = 1; i <= 4; i++) { if (parseInt(m[i], 10) > 255) return null; }
+  return ip.trim();
+}
+
+// Decide category ('vpn' / 'authentication') from auth/VPN text, else null.
+function authCategory(text) {
+  const t = (text || '').toLowerCase();
+  if (/vpn|ssl.?vpn|tunnel|ipsec|atrust/.test(t)) return 'vpn';
+  if (/auth|login|logon/.test(t)) return 'authentication';
+  return null;
+}
+
+// Decide auth subcategory ('login_failed' / 'login_success') from text, else null.
+function authSubcategory(text) {
+  const t = (text || '').toLowerCase();
+  if (!/auth|login|logon|vpn|ssl.?vpn|tunnel|ipsec|atrust/.test(t)) return null;
+  if (/fail|failed|denied|deny|reject|invalid|incorrect|wrong|error|lockout|locked/.test(t)) return 'login_failed';
+  if (/success|succeed|succeeded|granted|accept|established|logged in/.test(t)) return 'login_success';
+  return null;
+}
+
 function parseSangfor(raw, sourceIp) {
   if (!SANGFOR_CEF_RE.test(raw) && !SANGFOR_TAG_RE.test(raw)) return null;
 
@@ -58,6 +84,20 @@ function parseSangfor(raw, sourceIp) {
     sourceHost    = kv.dhost || kv.src || null;
     structuredData = { format: 'CEF', event_name: eventName, ...kv };
 
+    // Normalized contract keys (additive). srcip/dstip = real client/dest IPs.
+    const cefAuthText = `${eventName || ''} ${kv.msg || ''} ${kv.act || ''}`;
+    const cefSubcat   = authSubcategory(cefAuthText);
+    const cefCat      = authCategory(cefAuthText);
+
+    structuredData.srcip = validIp(kv.src);
+    structuredData.dstip = validIp(kv.dst);
+    structuredData.user  = kv.suser || kv.user || kv.duser || null;
+    if (cefSubcat) structuredData.subcategory = cefSubcat;
+    if (cefCat)    structuredData.category    = cefCat;
+
+    // Strip the normalized keys we just added if they came up empty (additive/opportunistic)
+    ['srcip', 'dstip', 'user'].forEach(k => (structuredData[k] == null) && delete structuredData[k]);
+
     if (kv.start) {
       try { logTimestamp = new Date(parseInt(kv.start, 10)); } catch (_) {}
     }
@@ -75,6 +115,23 @@ function parseSangfor(raw, sourceIp) {
     structuredData = { format: 'RFC3164', program: rfc[4] };
     const year = new Date().getFullYear();
     try { logTimestamp = new Date(`${rfc[2]} ${year}`); } catch (_) {}
+
+    // Opportunistic extraction for auth/VPN lines (only set when found).
+    const rfcSubcat = authSubcategory(message);
+    const rfcCat    = authCategory(message);
+    if (rfcSubcat || rfcCat) {
+      // Pull a labeled source IP token (src/sip/source/from/client/remote = a.b.c.d)
+      const ipM = message.match(/\b(?:src|sip|source|from|client|remote)(?:_?ip)?\s*[=:]\s*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/i);
+      const srcip = ipM ? validIp(ipM[1]) : null;
+      // Pull a username (user=/usr=/username=)
+      const userM = message.match(/\b(?:user|usr|username)\s*[=:]\s*("[^"]+"|\S+)/i);
+      const user  = userM ? userM[1].replace(/^"|"$/g, '') : null;
+
+      if (srcip)    structuredData.srcip = srcip;
+      if (user)     structuredData.user  = user;
+      if (rfcSubcat) structuredData.subcategory = rfcSubcat;
+      if (rfcCat)    structuredData.category    = rfcCat;
+    }
   }
 
   return {

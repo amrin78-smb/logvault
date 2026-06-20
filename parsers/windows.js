@@ -32,10 +32,48 @@ const EVENT_MAP = {
   4732: { category: 'authentication', severity: 5, label: 'notice',  desc: 'Member added to local group' },
   4740: { category: 'authentication', severity: 4, label: 'warning', desc: 'Account locked out' },
   4756: { category: 'authentication', severity: 5, label: 'notice',  desc: 'Member added to universal group' },
+  // Kerberos / NTLM auth events — also brute-force / credential-attack signals
+  4768: { category: 'authentication', severity: 5, label: 'notice',  desc: 'Kerberos TGT requested' },
+  4771: { category: 'authentication', severity: 4, label: 'warning', desc: 'Kerberos pre-authentication failed' },
+  4776: { category: 'authentication', severity: 4, label: 'warning', desc: 'NTLM credential validation' },
   7034: { category: 'system',         severity: 3, label: 'error',   desc: 'Service crashed' },
   7036: { category: 'system',         severity: 6, label: 'info',    desc: 'Service state change' },
   7045: { category: 'configuration',  severity: 4, label: 'warning', desc: 'New service installed' },
 };
+
+// Validate an IPv4/IPv6 address string. Rejects '-', empty, hostnames, ::1-as-noise.
+function isValidIp(ip) {
+  if (!ip || typeof ip !== 'string') return false;
+  const v = ip.trim();
+  if (!v || v === '-' || v === '::') return false;
+  // IPv4 with octet range check
+  const v4 = v.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) return v4.slice(1).every(o => Number(o) <= 255);
+  // IPv6 (loose but reasonable): hex groups + colons, optional :: compression
+  if (/^[0-9a-fA-F:]+$/.test(v) && v.includes(':')) return true;
+  return false;
+}
+
+// event_id → normalized-contract subcategory.
+// 4776 (NTLM) resolves to success/failure at parse time based on result fields.
+function subcategoryFor(eventId, fields) {
+  switch (eventId) {
+    case 4624: return 'login_success';
+    case 4625: return 'login_failed';
+    case 4740: return 'account_lockout';
+    case 4768: // Kerberos TGT request (a failure here is an auth failure)
+    case 4771: // Kerberos pre-auth failed
+      return 'login_failed';
+    case 4776: {
+      // NTLM: a non-zero/non-'0x0' status means validation failed.
+      const status = (fields && (fields.failure_reason || fields.status)) || '';
+      const s = String(status).trim().toLowerCase();
+      const success = s === '' || s === '0x0' || s === '0' || s === 'success';
+      return success ? 'login_success' : 'login_failed';
+    }
+    default: return null;
+  }
+}
 
 function detectWindows(raw) {
   if (!raw) return false;
@@ -59,11 +97,14 @@ function parseCEFExt(ext) {
 
 function buildSummary(eventId, fields) {
   const user  = fields.user || null;
-  const ip    = fields.src_ip || null;
+  const ip    = fields.srcip || fields.src_ip || null;
   const type  = fields.logon_type || null;
   switch (eventId) {
-    case 4625: return `Failed logon for ${user || 'unknown'}${ip ? ` from ${ip}` : ''}${type ? ` (Type ${type})` : ''}`;
+    case 4625: return `Failed logon (login failed) for ${user || 'unknown'}${ip ? ` from ${ip}` : ''}${type ? ` (Type ${type})` : ''}`;
     case 4624: return `Successful logon for ${user || 'unknown'}${ip ? ` from ${ip}` : ''}`;
+    case 4771:
+    case 4768: return `Kerberos login failed for ${user || 'unknown'}${ip ? ` from ${ip}` : ''}`;
+    case 4776: return `NTLM credential validation for ${user || 'unknown'}${ip ? ` from ${ip}` : ''}`;
     case 4740: return `Account ${user || 'unknown'} locked out`;
     case 4720: return `User account ${user || 'unknown'} created`;
     case 4724: return `Password reset for ${user || 'unknown'}`;
@@ -97,9 +138,13 @@ function parseWindows(raw, sourceIp) {
         const ed  = wl.event_data || {};
         fields.user       = ed.TargetUserName || ed.SubjectUserName || null;
         fields.logon_type = ed.LogonType || null;
-        fields.src_ip     = (ed.IpAddress && ed.IpAddress !== '-') ? ed.IpAddress : null;
+        // 4768/4771 (Kerberos) carry the client IP in IpAddress too; some shippers use ClientAddress.
+        {
+          const ipCand = ed.IpAddress || ed.ClientAddress || ed.Workstation || null;
+          fields.src_ip = isValidIp(ipCand) ? String(ipCand).trim() : null;
+        }
         fields.process_name = ed.ProcessName || ed.ServiceName || null;
-        fields.failure_reason = ed.FailureReason || ed.Status || null;
+        fields.failure_reason = ed.FailureReason || ed.Status || ed.SubStatus || null;
       } catch (_) {}
     }
 
@@ -110,7 +155,11 @@ function parseWindows(raw, sourceIp) {
         eventId = parseInt(cef[5]);
         const ext = parseCEFExt(cef[8]);
         fields.user       = ext.suser || ext.duser || null;
-        fields.src_ip     = ext.src || null;
+        {
+          // CEF: src is the real client/source IP (attacker). Validate before use.
+          const ipCand = ext.src || ext.shost || null;
+          fields.src_ip = isValidIp(ipCand) ? String(ipCand).trim() : null;
+        }
         fields.logon_type = ext.cs1 || null;
         fields.process_name = ext.deviceProcessName || ext.dproc || null;
         if (ext.msg) fields.failure_reason = ext.msg;
@@ -127,25 +176,31 @@ function parseWindows(raw, sourceIp) {
         else eventId = parseInt(m[1]);
       }
       const userM = raw.match(/(?:TargetUserName|Account Name|suser)["\s:=]+([^\s,"]+)/i);
-      const ipM   = raw.match(/(?:IpAddress|Source Network Address|src)["\s:=]+(\d{1,3}(?:\.\d{1,3}){3})/i);
+      const ipM   = raw.match(/(?:IpAddress|Source Network Address|Client Address|ClientAddress|src)["\s:=]+(\d{1,3}(?:\.\d{1,3}){3})/i);
       const ltM   = raw.match(/Logon Type["\s:=]+(\d+)/i);
-      if (userM && !fields.user)       fields.user = userM[1];
-      if (ipM && !fields.src_ip)       fields.src_ip = ipM[1];
-      if (ltM && !fields.logon_type)   fields.logon_type = ltM[1];
+      if (userM && !fields.user)                       fields.user = userM[1];
+      if (ipM && !fields.src_ip && isValidIp(ipM[1]))  fields.src_ip = ipM[1];
+      if (ltM && !fields.logon_type)                   fields.logon_type = ltM[1];
     }
 
     if (eventId == null || isNaN(eventId)) return null;
 
     const info = EVENT_MAP[eventId] || { category: 'system', severity: 6, label: 'info', desc: `Windows Event ${eventId}` };
 
+    const subcategory = subcategoryFor(eventId, fields);
+
     const structured = {
       category:       info.category,
       event_id:       eventId,
+      // Normalized contract: subcategory drives auth correlation (login_failed/success/account_lockout).
+      subcategory:    subcategory || null,
       channel:        channel || null,
       computer_name:  computer || null,
       user:           fields.user || null,
       logon_type:     fields.logon_type || null,
-      src_ip:         fields.src_ip || null,
+      // Normalized contract: `srcip` = real client/source IP (attacker), spelled per contract.
+      srcip:          fields.src_ip || null,
+      src_ip:         fields.src_ip || null,  // kept for back-compat
       failure_reason: fields.failure_reason || null,
       process_name:   fields.process_name || null,
     };

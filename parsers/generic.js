@@ -39,11 +39,58 @@ const RFC3164_RE = /^<(\d{1,3})>(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+(\S+)\s+
  */
 const RFC5424_RE = /^<(\d{1,3})>(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.*)/s;
 
+// --- Opportunistic token-extraction regexes (run on the parsed message) ---
+// REAL client/source IP found in the message (NOT the syslog sender).
+const SRCIP_LABELED_RE = /\b(?:src(?:ip)?|source(?:[ _-]?ip)?|remip|client(?:[ _-]?ip)?|from(?:\s+ip)?)\s*[=:]?\s*(\d{1,3}(?:\.\d{1,3}){3})/i;
+const SRCIP_FROM_RE    = /\bfrom\s+(\d{1,3}(?:\.\d{1,3}){3})\b/i;
+// account/username found in the message
+const USER_RE          = /\b(?:user(?:name)?|usr|account|login)\s*[=:]\s*"?([^\s",;]+)/i;
+// auth-outcome subcategory
+const LOGIN_FAILED_RE  = /login\s*fail|authentication\s*fail|failed\s*(?:login|logon|password|auth)|auth.*denied|access\s*denied/i;
+const LOGIN_SUCCESS_RE = /login\s*success|authenticated successfully|accepted password/i;
+
+// Every octet of a dotted-quad must be 0-255.
+function isValidIPv4(ip) {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return false;
+  for (let i = 0; i < 4; i++) {
+    const n = Number(parts[i]);
+    if (!Number.isInteger(n) || n < 0 || n > 255) return false;
+  }
+  return true;
+}
+
+/**
+ * Light, additive enrichment for the fallback parser. Mutates `sd` (the
+ * existing structured_data object — preserving its `rfc` key) by adding
+ * srcip / user / subcategory ONLY when a regex confidently matches (and,
+ * for IPs, every octet validates). Pure, synchronous, regex-only.
+ */
+function enrichStructuredData(sd, message) {
+  if (!message || typeof message !== 'string') return sd;
+
+  // srcip: prefer a labeled source token, fall back to "from <ip>".
+  let ipMatch = SRCIP_LABELED_RE.exec(message);
+  if (!ipMatch) ipMatch = SRCIP_FROM_RE.exec(message);
+  if (ipMatch && isValidIPv4(ipMatch[1])) sd.srcip = ipMatch[1];
+
+  // user
+  const userMatch = USER_RE.exec(message);
+  if (userMatch) sd.user = userMatch[1];
+
+  // subcategory (auth outcome) — failure takes precedence over success.
+  if (LOGIN_FAILED_RE.test(message)) sd.subcategory = 'login_failed';
+  else if (LOGIN_SUCCESS_RE.test(message)) sd.subcategory = 'login_success';
+
+  return sd;
+}
+
 function parseGeneric(raw, sourceIp) {
   // Try RFC 5424 first (has version number after PRI)
   let m = RFC5424_RE.exec(raw);
   if (m) {
     const pri = decodePRI(m[1]);
+    const message = m[8].trim();
     return {
       source_ip:       sourceIp,
       source_host:     m[4] !== '-' ? m[4] : null,
@@ -51,9 +98,9 @@ function parseGeneric(raw, sourceIp) {
       vendor:          'generic',
       program:         m[5] !== '-' ? m[5] : null,
       pid:             m[6] !== '-' ? parseInt(m[6]) : null,
-      message:         m[8].trim(),
+      message:         message,
       raw_message:     raw,
-      structured_data: { rfc: '5424', msgid: m[7] !== '-' ? m[7] : null },
+      structured_data: enrichStructuredData({ rfc: '5424', msgid: m[7] !== '-' ? m[7] : null }, message),
       is_parsed:       true,
       log_timestamp:   m[3] !== '-' ? new Date(m[3]) : null,
     };
@@ -64,6 +111,7 @@ function parseGeneric(raw, sourceIp) {
   if (m) {
     const pri = decodePRI(m[1]);
     const year = new Date().getFullYear();
+    const message = m[6].trim();
     return {
       source_ip:       sourceIp,
       source_host:     m[3] || null,
@@ -71,9 +119,9 @@ function parseGeneric(raw, sourceIp) {
       vendor:          'generic',
       program:         m[4] || null,
       pid:             m[5] ? parseInt(m[5]) : null,
-      message:         m[6].trim(),
+      message:         message,
       raw_message:     raw,
-      structured_data: { rfc: '3164' },
+      structured_data: enrichStructuredData({ rfc: '3164' }, message),
       is_parsed:       true,
       log_timestamp:   new Date(`${m[2]} ${year}`),
     };
@@ -83,15 +131,16 @@ function parseGeneric(raw, sourceIp) {
   const bare = /^<(\d{1,3})>(.*)/.exec(raw);
   if (bare) {
     const pri = decodePRI(bare[1]);
+    const message = bare[2].trim();
     return {
       source_ip:       sourceIp,
       source_host:     null,
       ...pri,
       vendor:          'generic',
       program:         null,
-      message:         bare[2].trim(),
+      message:         message,
       raw_message:     raw,
-      structured_data: { rfc: 'bare' },
+      structured_data: enrichStructuredData({ rfc: 'bare' }, message),
       is_parsed:       true,
       log_timestamp:   null,
     };
@@ -109,7 +158,7 @@ function parseGeneric(raw, sourceIp) {
     program:         null,
     message:         raw,
     raw_message:     raw,
-    structured_data: { rfc: 'none' },
+    structured_data: enrichStructuredData({ rfc: 'none' }, raw),
     is_parsed:       false,
     log_timestamp:   null,
   };

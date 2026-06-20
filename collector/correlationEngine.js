@@ -32,7 +32,11 @@ const MITRE_BY_RULE = {
 const CORRELATION_RULES = [
 
   // ── 1. Brute Force Success ──────────────────────────────────
-  // 3+ failed logins from same source IP followed by a success within 10 min
+  // 3+ failed logins from same source IP followed by a success within 10 min.
+  // VENDOR-AGNOSTIC: matches the normalized contract (structured_data.subcategory)
+  // OR a strong failed/success message regex for any vendor (cisco still works,
+  // but vendor==='cisco' is no longer required). Both phases group by the REAL
+  // attacker IP (structured_data.srcip || source_ip), not the relaying device.
   {
     id:          'BRUTE_FORCE_SUCCESS',
     name:        'Brute Force Login Success',
@@ -44,32 +48,36 @@ const CORRELATION_RULES = [
         name:      'failures',
         minCount:  3,
         match:     (e) => (
-          (e.vendor === 'cisco' && ['login_failed','auth_failed'].includes(e.structured_data?.subcategory)) ||
-          (e.message && /login failed|authentication fail/i.test(e.message))
+          ['login_failed','auth_failed'].includes(e.structured_data?.subcategory) ||
+          (e.message && /login failed|authentication fail|failed (?:login|logon|password|auth)/i.test(e.message))
         ),
-        groupBy:   (e) => e.source_ip,
+        groupBy:   (e) => e.structured_data?.srcip || e.source_ip,
       },
       {
         name:      'success',
         minCount:  1,
         mustFollow: 'failures',
         match:     (e) => (
-          (e.vendor === 'cisco' && e.structured_data?.subcategory === 'login_success') ||
-          (e.message && /login success|authenticated successfully/i.test(e.message))
+          e.structured_data?.subcategory === 'login_success' ||
+          (e.message && /login success|authenticated successfully|accepted password/i.test(e.message))
         ),
-        groupBy:   (e) => e.source_ip,
+        groupBy:   (e) => e.structured_data?.srcip || e.source_ip,
       },
     ],
     buildAlert: (groups, entry) => ({
-      source_ip:      entry.source_ip,
+      source_ip:      entry.structured_data?.srcip || entry.source_ip,
       source_host:    entry.source_host,
       match_count:    groups.failures?.length || 0,
-      sample_message: `Brute force success: ${groups.failures?.length || 0} failures then login succeeded from ${entry.source_ip}`,
+      sample_message: `Brute force success: ${groups.failures?.length || 0} failures then login succeeded from ${entry.structured_data?.srcip || entry.source_ip}`,
     }),
   },
 
   // ── 2. Port Scan Detection ──────────────────────────────────
-  // Same source IP hitting 8+ unique destinations denied within 3 min
+  // Same source IP hitting 8+ unique destinations denied within 3 min.
+  // VENDOR-AGNOSTIC: no longer gated on vendor==='fortinet'. Matches any vendor
+  // emitting a denied/blocked action (tolerant of vendor action spellings) with a
+  // destination present. Groups by the REAL attacker IP (structured_data.srcip ||
+  // source_ip). Vendors that don't emit a denied action simply won't match.
   {
     id:          'PORT_SCAN',
     name:        'Port Scan Detected',
@@ -82,9 +90,8 @@ const CORRELATION_RULES = [
         minCount: 8,
         uniqueKey: (e) => e.structured_data?.dstip, // count unique destinations
         match:    (e) => (
-          e.vendor === 'fortinet' &&
-          e.structured_data?.action === 'deny' &&
-          e.structured_data?.srcip
+          /deny|drop|block|reject/i.test(e.structured_data?.action || '') &&
+          (e.structured_data?.dstip || e.structured_data?.dst)
         ),
         groupBy:  (e) => e.structured_data?.srcip || e.source_ip,
       },
@@ -213,7 +220,11 @@ const CORRELATION_RULES = [
   },
 
   // ── 7. Repeated IPS Hits from Same Source ──────────────────
-  // Same source IP triggering IPS 5+ times in 5 min
+  // Same source IP triggering IPS 5+ times in 5 min.
+  // VENDOR-AGNOSTIC: no longer gated on vendor==='fortinet' + type==='utm'.
+  // Matches the normalized IPS/threat signal — structured_data.type === 'ips'
+  // OR top-level category === 'security'. Groups by the REAL attacker IP
+  // (structured_data.srcip || source_ip).
   {
     id:          'IPS_REPEATED_ATTACK',
     name:        'Repeated IPS Triggers',
@@ -225,9 +236,8 @@ const CORRELATION_RULES = [
         name:     'ipshits',
         minCount: 5,
         match:    (e) => (
-          e.vendor === 'fortinet' &&
-          e.structured_data?.type === 'utm' &&
-          e.structured_data?.srcip
+          e.structured_data?.type === 'ips' ||
+          e.category === 'security'
         ),
         groupBy:  (e) => e.structured_data?.srcip || e.source_ip,
       },
@@ -241,7 +251,12 @@ const CORRELATION_RULES = [
   },
 
   // ── 8. VPN Credential Stuffing ─────────────────────────────
-  // 5+ VPN login failures in 5 min
+  // 5+ VPN login failures in 5 min.
+  // VENDOR-AGNOSTIC: no longer gated on vendor==='fortinet'. Matches any vendor
+  // whose event is a VPN auth event (top-level category === 'vpn' OR
+  // structured_data.subtype === 'vpn') AND is a failed auth (normalized
+  // subcategory login_failed/auth_failed OR strong failed-auth message regex).
+  // Groups by the REAL attacker IP (structured_data.srcip || source_ip).
   {
     id:          'VPN_BRUTE_FORCE',
     name:        'VPN Brute Force Attempt',
@@ -253,9 +268,11 @@ const CORRELATION_RULES = [
         name:     'vpnfails',
         minCount: 5,
         match:    (e) => (
-          e.vendor === 'fortinet' &&
-          (e.structured_data?.subtype === 'vpn' || /vpn/i.test(e.message || '')) &&
-          /fail|error/i.test(e.message || '')
+          (e.category === 'vpn' || e.structured_data?.subtype === 'vpn') &&
+          (
+            ['login_failed','auth_failed'].includes(e.structured_data?.subcategory) ||
+            (e.message && /login failed|authentication fail|failed (?:login|logon|password|auth)/i.test(e.message))
+          )
         ),
         groupBy:  (e) => e.structured_data?.srcip || e.source_ip,
       },

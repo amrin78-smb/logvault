@@ -44,6 +44,7 @@ function normalizeAction(act) {
 function productToCategory(product) {
   const p = (product || '').toLowerCase();
   if (p.includes('vpn-1') || p.includes('vpn'))            return 'vpn';
+  if (p.includes('mobile access') || p.includes('mobile')) return 'vpn';
   if (p.includes('smartdefense') || p.includes('ips'))     return 'security';
   if (p.includes('application control') || p.includes('app')) return 'application';
   if (p.includes('identity awareness') || p.includes('identity')) return 'authentication';
@@ -54,6 +55,33 @@ function productToCategory(product) {
 function severityForAction(act) {
   const lower = (act || '').toLowerCase();
   return CP_ACTION_SEV[lower] || { severity: 5, label: 'notice' };
+}
+
+// Validate an IPv4 address (4 octets, 0-255). Returns the IP or null.
+function validIp(ip) {
+  if (!ip || typeof ip !== 'string') return null;
+  const m = ip.trim().match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return null;
+  for (let i = 1; i <= 4; i++) { if (parseInt(m[i], 10) > 255) return null; }
+  return ip.trim();
+}
+
+// Derive auth subcategory for Mobile Access / VPN / Identity Awareness events.
+// Returns 'login_failed', 'login_success', or null (non-auth / unknown).
+function authSubcategory(category, rawAction, kv, eventName) {
+  if (category !== 'vpn' && category !== 'authentication') return null;
+  const action = (rawAction || '').toLowerCase();
+  const status = (kv.auth_status || kv.authentication_status || '').toLowerCase();
+  const reason = `${kv.fw_message || ''} ${kv.reason || ''} ${eventName || ''}`.toLowerCase();
+
+  const failHints = /fail|failed|reject|deny|denied|block|drop|invalid|incorrect|wrong|bad|lockout|locked/;
+  const okHints   = /success|succeed|succeeded|accept|accepted|granted|logon|logged in|authenticated|established/;
+
+  if (status.includes('fail') || /reject|block|drop/.test(action)) return 'login_failed';
+  if (status.includes('success') || status.includes('accept')) return 'login_success';
+  if (failHints.test(reason)) return 'login_failed';
+  if (/accept|allow|encrypt|decrypt/.test(action) || okHints.test(reason)) return 'login_success';
+  return null;
 }
 
 // Parse key=value (LEA / CEF extension) and key=value; (kernel header) pairs
@@ -81,6 +109,9 @@ function detectCheckPoint(raw) {
   if (!raw) return false;
   if (/product=VPN-1/i.test(raw))       return true;
   if (/product=FireWall-1/i.test(raw))  return true;
+  // Check Point auth/VPN products (Mobile Access, VPN, Identity Awareness)
+  if (/product=(?:"?\s*)?(?:Mobile Access|VPN|Identity Awareness)\b/i.test(raw)) return true;
+  if (/\bauth_status=/i.test(raw))      return true;
   if (/CEF:\d+\|Check Point\|/i.test(raw)) return true;
   if (/fw_message=/i.test(raw))         return true;
   if (/\[fw4_0\]/i.test(raw))           return true;
@@ -116,21 +147,30 @@ function parseCheckPoint(raw, sourceIp) {
     const sev       = severityForAction(rawAction);
     const action    = normalizeAction(rawAction);
     const category  = productToCategory(product);
+    const subcategory = authSubcategory(category, rawAction, kv, eventName);
+
+    // Auth result/reason text — helps the message-regex fallback in correlation
+    const authReason = kv.auth_status || kv.authentication_status || kv.fw_message || kv.reason || null;
 
     let message = 'Check Point';
     if (product)        message += ` ${product}`;
     if (rawAction)      message += `: ${rawAction}`;
     if (kv.src && kv.dst) message += ` ${kv.src} -> ${kv.dst}`;
+    if (kv.user)        message += ` user=${kv.user}`;
     if (kv.service || kv.dport) message += ` svc=${kv.service || kv.dport}`;
-    if (eventName)      message += ` | ${eventName}`;
+    if (authReason)     message += ` | ${authReason}`;
+    if (eventName && eventName !== authReason) message += ` | ${eventName}`;
 
     const structured = {
       category,
+      subcategory: subcategory || null,
       action,
       cp_action:   rawAction || null,
       product:     product || null,
       src_ip:      kv.src || null,
       dst_ip:      kv.dst || null,
+      srcip:       validIp(kv.src),
+      dstip:       validIp(kv.dst),
       src_port:    kv.sport ? parseInt(kv.sport) : null,
       dst_port:    kv.dport ? parseInt(kv.dport) : null,
       protocol:    kv.proto || null,
