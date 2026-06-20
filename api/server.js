@@ -496,7 +496,7 @@ app.get('/api/logs', asyncHandler(async (req, res) => {
   const params = [hours];
   let p = 2;
 
-  if (q)        { conditions.push(`to_tsvector('english', se.message) @@ plainto_tsquery('english', $${p++})`); params.push(q); }
+  if (q)        { const qp = p++; conditions.push(`(to_tsvector('english', se.message) @@ plainto_tsquery('english', $${qp}) OR se.message ILIKE '%'||$${qp}||'%' OR se.structured_data->>'user' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'srccountry' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'service' ILIKE '%'||$${qp}||'%')`); params.push(q); }
   if (vendor)   { conditions.push(`se.vendor = $${p++}`);                        params.push(vendor); }
   if (category) { conditions.push(`se.category = $${p++}`);                      params.push(category); }
   // MITRE ATT&CK technique filter — JSONB containment on structured_data.mitre,
@@ -780,7 +780,7 @@ app.get('/api/logs/export', asyncHandler(async (req, res) => {
   const params = [hours];
   let p = 2;
 
-  if (q)        { conditions.push(`to_tsvector('english', se.message) @@ plainto_tsquery('english', $${p++})`); params.push(q); }
+  if (q)        { const qp = p++; conditions.push(`(to_tsvector('english', se.message) @@ plainto_tsquery('english', $${qp}) OR se.message ILIKE '%'||$${qp}||'%' OR se.structured_data->>'user' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'srccountry' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'service' ILIKE '%'||$${qp}||'%')`); params.push(q); }
   if (vendor)   { conditions.push(`se.vendor = $${p++}`);                   params.push(vendor); }
   if (category) { conditions.push(`se.category = $${p++}`);                 params.push(category); }
   if (severity) {
@@ -1746,6 +1746,9 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.12.3': [
+    'Fix: Log Explorer search (and the dashboard "What\'s New / Changed" account/country/service drills) now also match the parsed username, source country, and service fields — not just the message text — so drilling by an account or country returns its events instead of an empty result.',
+  ],
   '2.12.2': [
     'Fix: clicking a "Threat Summary" card in the Security tab now opens the Log Explorer filtered to that specific threat and shows its events (new `threat` filter matching the parsed threat identity), instead of landing on an empty result.',
   ],
