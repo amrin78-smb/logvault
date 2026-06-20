@@ -292,9 +292,78 @@ const CORRELATION_RULES = [
 const cooldowns = new Map();
 const COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes between same-rule same-group alerts
 
+// ── Adaptive thresholds (Phase 2) — SAFE DIRECTION ONLY ───────
+// A per-entity learned-volume cache, loaded from entity_baselines (written by
+// the Phase 2 baselineBuilder). It is refreshed on the same TTL the rest of the
+// codebase uses for cached settings (5 min), and is used ONLY to RAISE a noisy
+// entity's effective minCount — never to lower it. So:
+//   - When a baseline exists for an entity, the effective minCount for a group
+//     becomes max(staticMinCount, ceil(learnedAvg + 3*learnedStddev)). This can
+//     only make a rule HARDER to trip for a chronically-noisy entity (no new
+//     false negatives beyond what the operator already tolerates as "normal").
+//   - When NO baseline exists, the static threshold is used UNCHANGED. Until
+//     baselines accumulate this is a complete NO-OP — zero behavior change, zero
+//     regression risk. The whole feature degrades gracefully: any load error
+//     leaves the cache empty, which is exactly the no-op path.
+//
+// Cache shape: Map<entityValue, { avg, stddev }> using the MAX learned
+// (avg + 3*stddev) across all dow/hour slots for that entity, so the raised
+// floor reflects the entity's busiest normal hour (conservative — least likely
+// to suppress a genuine burst). Keyed by entity_value only (device host/ip or
+// user) so it matches correlation group keys, which are srcip/source_ip/host.
+let baselineCache = new Map();
+let baselineCacheLoadedAt = 0;
+const BASELINE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes (matches settings cache)
+
+async function refreshBaselineCache(pool) {
+  const now = Date.now();
+  if (now - baselineCacheLoadedAt < BASELINE_CACHE_TTL) return;
+  // Mark attempted up-front so a failing/empty DB doesn't hammer every event.
+  baselineCacheLoadedAt = now;
+  try {
+    // Pull the per-entity worst-case learned ceiling. We key on entity_value
+    // only (collapsing device+user) because correlation group keys are plain
+    // ip/host/user strings; collisions only ever RAISE the floor, still safe.
+    const { rows } = await pool.query(`
+      SELECT entity_value,
+             MAX(avg_count + 3 * COALESCE(stddev_count, 0)) AS learned_ceiling
+      FROM entity_baselines
+      WHERE avg_count IS NOT NULL
+      GROUP BY entity_value
+    `);
+    const next = new Map();
+    for (const r of rows) {
+      const ceiling = Number(r.learned_ceiling);
+      if (Number.isFinite(ceiling) && ceiling > 0) {
+        next.set(String(r.entity_value), Math.ceil(ceiling));
+      }
+    }
+    baselineCache = next;
+  } catch (_) {
+    // entity_baselines may not exist yet (pre-deploy) or DB blip — leave the
+    // cache as-is (empty = no-op). Never throw on the correlation hot path.
+  }
+}
+
+// Effective minCount for a phase given a group key. Returns the static minCount
+// unchanged unless a learned ceiling exists for this entity, in which case it
+// can only be RAISED (never lowered). Pure + synchronous (reads the cache only).
+function effectiveMinCount(staticMinCount, groupKey) {
+  if (groupKey == null) return staticMinCount;
+  const learnedCeiling = baselineCache.get(String(groupKey));
+  if (!learnedCeiling) return staticMinCount; // no baseline → unchanged (no-op)
+  return Math.max(staticMinCount, learnedCeiling);
+}
+
 // ── Main evaluation function ─────────────────────────────────
 async function evaluateCorrelation(entry, pool) {
   const now = Date.now();
+
+  // Best-effort, non-blocking refresh of the adaptive-threshold cache (5-min
+  // TTL). Fire-and-forget so it never adds latency to the ingest hot path; the
+  // CURRENT event still evaluates against whatever the cache already holds
+  // (empty = static thresholds, the safe no-op default).
+  refreshBaselineCache(pool).catch(() => {});
 
   for (const rule of CORRELATION_RULES) {
     // Initialize buffer for this rule
@@ -343,7 +412,13 @@ async function evaluateCorrelation(entry, pool) {
           countToCheck = uniqueVals.size;
         }
 
-        if (countToCheck < phase.minCount) { allPhasesHaveData = false; break; }
+        // Adaptive threshold (SAFE direction only): for a chronically-noisy
+        // entity with a learned baseline, RAISE the required count to
+        // max(static, ceil(avg + 3*stddev)). With no baseline this returns the
+        // static minCount unchanged — a complete no-op (no regression risk).
+        const requiredCount = effectiveMinCount(phase.minCount, groupKey);
+
+        if (countToCheck < requiredCount) { allPhasesHaveData = false; break; }
 
         // Check mustFollow constraint
         if (phase.mustFollow) {

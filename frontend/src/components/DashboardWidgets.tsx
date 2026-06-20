@@ -641,3 +641,108 @@ export function WhatsChanged({ openExplorer }: { openExplorer?: (filter: Explore
     </div>
   );
 }
+
+// ── Riskiest Entities (UEBA) ──────────────────────────────────
+// Reads /api/ueba/top — the top entities by behavioural risk score (0-100).
+// Each row drills into the Log Explorer via the entity→filter mapping:
+// device/srcip → host filter; user → free-text q. An optional onNavigate jumps
+// to the Intelligence tab. Defensive against empty/missing data.
+interface RiskEntity {
+  entity_type?: string;
+  entity_value?: string;
+  source_ip?: string;
+  risk_score?: number;
+  factors?: unknown;
+  event_count?: number;
+  anomaly_count?: number;
+  last_activity?: string;
+}
+
+// Risk band → adaptive tint tokens (bg + matching fg), so the badge survives dark mode.
+function riskBand(score: number): { label: string; bg: string; fg: string } {
+  if (score >= 81) return { label: 'Critical', bg: 'var(--tint-danger)', fg: 'var(--tint-danger-fg)' };
+  if (score >= 61) return { label: 'High',     bg: 'var(--tint-warn)',   fg: 'var(--tint-warn-fg)' };
+  if (score >= 31) return { label: 'Medium',   bg: 'var(--tint-info)',   fg: 'var(--tint-info-fg)' };
+  return { label: 'Low', bg: 'var(--surface-subtle)', fg: 'var(--text-secondary)' };
+}
+
+export function RiskiestEntities({ openExplorer, onNavigate }:
+  { openExplorer?: (filter: ExplorerFilter) => void; onNavigate?: () => void }) {
+  const [data, setData] = useState<RiskEntity[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch('/api/ueba/top?limit=5')
+      .then(r => r.json())
+      .then(d => { setData(Array.isArray(d?.data) ? d.data : []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  // entity_type → Log Explorer filter (same mapping as the Intelligence console).
+  const drill = (row: RiskEntity) => {
+    if (!openExplorer) return;
+    const value = row.entity_value;
+    if (!value) return;
+    const type = (row.entity_type || '').toLowerCase();
+    if (type === 'device' || type === 'srcip') openExplorer({ host: value });
+    else if (type === 'user') openExplorer({ q: value });
+  };
+
+  return (
+    <div style={{ ...CARD, height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      cursor: onNavigate ? 'pointer' : 'default' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}
+        onClick={onNavigate ? () => onNavigate() : undefined}
+        title={onNavigate ? 'Click to open Intelligence tab' : undefined}>
+        <div style={TITLE}>Riskiest Entities</div>
+        {onNavigate && (
+          <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
+            <polyline points="4,2 8,6 4,10" stroke="var(--text-muted)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+          </svg>
+        )}
+      </div>
+      <div style={{ ...SUB, flexShrink: 0 }}>Behavioural risk score (UEBA) · Click an entity to investigate</div>
+      {loading ? (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>Loading...</div>
+      ) : data.length === 0 ? (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+          color: 'var(--text-muted)', fontSize: 'var(--text-sm)', padding: '0 12px' }}>
+          No entity risk yet — populates after deploy as events are scored.
+        </div>
+      ) : (
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {data.slice(0, 5).map((row, i) => {
+            const score = Number(row.risk_score) || 0;
+            const band  = riskBand(score);
+            const value = row.entity_value || '—';
+            const type  = row.entity_type || 'entity';
+            const events   = Number(row.event_count) || 0;
+            const anomalies = Number(row.anomaly_count) || 0;
+            const canDrill = Boolean(openExplorer && row.entity_value);
+            return (
+              <div key={i} onClick={(e) => { e.stopPropagation(); drill(row); }}
+                title={`${type}: ${value} — risk ${score} · ${events.toLocaleString()} events · ${anomalies.toLocaleString()} anomalies`}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                  padding: '7px 8px', background: 'var(--surface-subtle)', borderRadius: 6,
+                  cursor: canDrill ? 'pointer' : 'default' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                  <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', fontWeight: 600,
+                    fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {value}
+                  </span>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+                    <span style={{ textTransform: 'capitalize' }}>{type}</span> · {events.toLocaleString()} events · {anomalies.toLocaleString()} anomalies
+                  </span>
+                </div>
+                <span style={{ flexShrink: 0, fontSize: 'var(--text-xs)', fontWeight: 700, padding: '3px 8px',
+                  borderRadius: 6, background: band.bg, color: band.fg }}
+                  title={`${band.label} risk`}>
+                  {score}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

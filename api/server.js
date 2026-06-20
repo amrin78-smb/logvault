@@ -1426,6 +1426,234 @@ app.get('/api/security/failed-logins-by-country', asyncHandler(async (req, res) 
   res.json({ data: rows });
 }));
 
+// ── ANOMALY DETECTION & UEBA (Phase 2 — anomaly_events / entity_risk) ──
+// These read the Phase 2 tables created in scripts/schema.sql. RBAC site filter
+// is applied on the entity's source_ip, BUT rows with a NULL source_ip (user /
+// global entities, which have no IP) are ALSO kept so they aren't hidden from
+// site-scoped users. anomalySiteFilter() wraps getSiteFilter to add that
+// null-allowance: it strips the leading "AND " from the strict clause, ORs in
+// "<alias>.source_ip IS NULL", and re-prefixes "AND ". For super_admin the
+// strict clause is empty → no restriction at all (and no null OR-term needed).
+function anomalySiteFilter(rbac, startParamIndex, tableAlias) {
+  const sf = getSiteFilter(rbac, startParamIndex, tableAlias);
+  if (!sf.clause) return sf; // admin / super_admin — no restriction
+  const inner = sf.clause.replace(/^AND\s+/i, '');
+  return {
+    clause: `AND (${inner} OR ${tableAlias}.source_ip IS NULL)`,
+    params: sf.params,
+    nextParamIndex: sf.nextParamIndex,
+  };
+}
+
+// 1) Anomaly events list — filters: hours (window), anomaly_type, severity,
+//    acknowledged ('true'/'false'). RBAC-with-null-allowance on ae.source_ip.
+app.get('/api/anomalies', asyncHandler(async (req, res) => {
+  const hours = safeHours(req.query.hours || '168', 720);
+  const { type, severity } = req.query;
+  const conditions = [`ae.detected_at > NOW() - make_interval(hours => $1)`];
+  const params = [hours];
+  let p = 2;
+
+  if (type)     { conditions.push(`ae.anomaly_type = $${p++}`); params.push(type); }
+  if (severity) { conditions.push(`ae.severity = $${p++}`);     params.push(severity); }
+  if (req.query.acknowledged === 'true' || req.query.acknowledged === 'false') {
+    conditions.push(`ae.acknowledged = $${p++}`);
+    params.push(req.query.acknowledged === 'true');
+  }
+
+  const sf = anomalySiteFilter(req.rbac, p, 'ae');
+  if (sf.clause) { conditions.push(sf.clause.replace(/^AND\s+/i, '')); params.push(...sf.params); p = sf.nextParamIndex; }
+
+  const { rows } = await pool.query(`
+    SELECT ae.id, ae.detected_at, ae.entity_type, ae.entity_value,
+      ae.source_ip::TEXT, ae.anomaly_type, ae.severity, ae.score, ae.title,
+      ae.detail, ae.acknowledged, ae.acknowledged_at, ae.acknowledged_by
+    FROM anomaly_events ae
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY ae.detected_at DESC
+    LIMIT 200
+  `, params);
+  res.json({ data: rows });
+}));
+
+// 2) Anomaly summary — 24h totals, unacknowledged count, by-type and
+//    by-severity breakdowns. Same RBAC-with-null-allowance on ae.source_ip.
+app.get('/api/anomalies/summary', asyncHandler(async (req, res) => {
+  // One shared site filter at $1 (no other params), reused across the queries.
+  const sf = anomalySiteFilter(req.rbac, 1, 'ae');
+  const window = `ae.detected_at > NOW() - make_interval(hours => 24)`;
+  const [totals, byType, bySeverity] = await Promise.all([
+    pool.query(`
+      SELECT COUNT(*) AS total_24h,
+             COUNT(*) FILTER (WHERE ae.acknowledged = FALSE) AS unacknowledged
+      FROM anomaly_events ae
+      WHERE ${window}
+      ${sf.clause}
+    `, sf.params),
+    pool.query(`
+      SELECT ae.anomaly_type, COUNT(*) AS count
+      FROM anomaly_events ae
+      WHERE ${window}
+      ${sf.clause}
+      GROUP BY ae.anomaly_type
+      ORDER BY count DESC
+    `, sf.params),
+    pool.query(`
+      SELECT ae.severity, COUNT(*) AS count
+      FROM anomaly_events ae
+      WHERE ${window}
+      ${sf.clause}
+      GROUP BY ae.severity
+      ORDER BY count DESC
+    `, sf.params),
+  ]);
+  res.json({
+    total_24h:      parseInt(totals.rows[0].total_24h),
+    unacknowledged: parseInt(totals.rows[0].unacknowledged),
+    by_type:        byType.rows,
+    by_severity:    bySeverity.rows,
+  });
+}));
+
+// 3) Acknowledge a single anomaly. Mirrors /api/alerts/events/:id/acknowledge.
+app.patch('/api/anomalies/:id/acknowledge', asyncHandler(async (req, res) => {
+  const ackBy = (req.rbac && req.rbac.userId) ? String(req.rbac.userId) : null;
+  await pool.query(
+    'UPDATE anomaly_events SET acknowledged=TRUE, acknowledged_at=NOW(), acknowledged_by=$2 WHERE id=$1',
+    [req.params.id, ackBy]
+  );
+  await writeAudit(pool, req, 'anomaly.acknowledge', { target: req.params.id });
+  res.json({ ok: true });
+}));
+
+// 4) Bulk-acknowledge anomalies. Mirrors /api/alerts/events/acknowledge-all.
+app.patch('/api/anomalies/acknowledge-all', asyncHandler(async (req, res) => {
+  const { ids } = req.body;
+  const ackBy = (req.rbac && req.rbac.userId) ? String(req.rbac.userId) : null;
+  let auditTarget;
+  if (ids && Array.isArray(ids) && ids.length > 0) {
+    await pool.query(
+      'UPDATE anomaly_events SET acknowledged=TRUE, acknowledged_at=NOW(), acknowledged_by=$2 WHERE id = ANY($1::int[])',
+      [ids, ackBy]
+    );
+    auditTarget = ids.join(',');
+  } else {
+    await pool.query(
+      'UPDATE anomaly_events SET acknowledged=TRUE, acknowledged_at=NOW(), acknowledged_by=$1 WHERE acknowledged=FALSE',
+      [ackBy]
+    );
+    auditTarget = 'all-open';
+  }
+  await writeAudit(pool, req, 'anomaly.acknowledge', { target: auditTarget });
+  res.json({ ok: true });
+}));
+
+// 5) UEBA top entities by risk score. Optional entity_type filter. RBAC-with-
+//    null-allowance on er.source_ip (user entities have NULL source_ip).
+app.get('/api/ueba/top', asyncHandler(async (req, res) => {
+  const limit = safeInt(req.query.limit, 20, 100);
+  const { type } = req.query;
+  const conditions = [`TRUE`];
+  const params = [];
+  let p = 1;
+
+  if (type) { conditions.push(`er.entity_type = $${p++}`); params.push(type); }
+
+  const sf = anomalySiteFilter(req.rbac, p, 'er');
+  if (sf.clause) { conditions.push(sf.clause.replace(/^AND\s+/i, '')); params.push(...sf.params); p = sf.nextParamIndex; }
+
+  params.push(limit);
+  const { rows } = await pool.query(`
+    SELECT er.entity_type, er.entity_value, er.source_ip::TEXT, er.risk_score,
+      er.factors, er.event_count, er.anomaly_count, er.last_activity, er.updated_at
+    FROM entity_risk er
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY er.risk_score DESC
+    LIMIT $${p++}
+  `, params);
+  res.json({ data: rows });
+}));
+
+// 6) UEBA entity drill-down — risk row, recent anomalies, and a 7-day
+//    syslog_entries activity summary for the entity. :type ∈ {device,user,srcip}.
+//    The syslog aggregation is RBAC site-filtered (strict getSiteFilter on se).
+app.get('/api/ueba/entity/:type/:value', asyncHandler(async (req, res) => {
+  const { type, value } = req.params;
+  if (!['device', 'user', 'srcip'].includes(type)) {
+    return res.status(400).json({ error: 'Invalid entity type' });
+  }
+
+  // risk + recent anomalies keyed by (entity_type, entity_value).
+  const [risk, anomalies] = await Promise.all([
+    pool.query(`
+      SELECT entity_type, entity_value, source_ip::TEXT, risk_score, factors,
+        event_count, anomaly_count, last_activity, updated_at
+      FROM entity_risk
+      WHERE entity_type = $1 AND entity_value = $2
+    `, [type, value]),
+    pool.query(`
+      SELECT id, detected_at, entity_type, entity_value, source_ip::TEXT,
+        anomaly_type, severity, score, title, detail,
+        acknowledged, acknowledged_at, acknowledged_by
+      FROM anomaly_events
+      WHERE entity_type = $1 AND entity_value = $2
+      ORDER BY detected_at DESC
+      LIMIT 20
+    `, [type, value]),
+  ]);
+
+  // 7-day syslog activity summary for this entity. The per-type entity match is
+  // a single reused placeholder ($2 = value); $1 is the entity value used by the
+  // device/srcip IP comparison too — keep value as a single param reused across
+  // the OR terms. RBAC site filter (strict) on se appended after.
+  let entityMatch;
+  const params = [value];
+  let p = 2;
+  if (type === 'device') {
+    entityMatch = `(se.source_host = $1 OR se.source_ip::text = $1)`;
+  } else if (type === 'srcip') {
+    entityMatch = `(se.structured_data->>'srcip' = $1 OR se.source_ip::text = $1)`;
+  } else { // user
+    entityMatch = `se.structured_data->>'user' = $1`;
+  }
+
+  const sf = getSiteFilter(req.rbac, p, 'se');
+
+  const summaryRes = await pool.query(`
+    SELECT
+      COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE se.structured_data->>'subcategory' IN ('login_failed','auth_failed')) AS failed_logins,
+      MAX(se.received_at) AS last_seen
+    FROM syslog_entries se
+    WHERE se.received_at > NOW() - make_interval(days => 7)
+      AND ${entityMatch}
+    ${sf.clause}
+  `, [...params, ...sf.params]);
+
+  const byCategoryRes = await pool.query(`
+    SELECT COALESCE(se.category, 'uncategorized') AS category, COUNT(*) AS count
+    FROM syslog_entries se
+    WHERE se.received_at > NOW() - make_interval(days => 7)
+      AND ${entityMatch}
+    ${sf.clause}
+    GROUP BY se.category
+    ORDER BY count DESC
+  `, [...params, ...sf.params]);
+
+  const s = summaryRes.rows[0];
+  res.json({
+    entity: { type, value },
+    risk: risk.rows[0] || null,
+    recent_anomalies: anomalies.rows,
+    events_summary: {
+      total:         parseInt(s.total),
+      by_category:   byCategoryRes.rows,
+      failed_logins: parseInt(s.failed_logins),
+      last_seen:     s.last_seen,
+    },
+  });
+}));
+
 // ── ADVANCED ANALYTICS (computed on the fly — no new tables) ──
 // All four endpoints below are READ-ONLY and RBAC site-filtered on syslog_entries
 // via getSiteFilter, matching every other /api/stats and /api/security route.
@@ -1746,6 +1974,13 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.13.0': [
+    'Phase 2 intelligence engine (fully on-prem, no external calls): behavioral baselining of normal activity per device and user (hour-of-week), statistical anomaly detection (volume spike/drop, silent device, new source country / new service), and UEBA rolling entity-risk scoring.',
+    'New "Intelligence" tab: an anomalies console (filter, acknowledge, drill to the Log Explorer) and a "Riskiest Entities" (UEBA) ranking with a per-entity slide-in showing the risk-factor breakdown, recent anomalies, and an events summary.',
+    'New dashboard "Riskiest Entities" widget.',
+    'Correlation thresholds are now adaptive — they auto-relax for chronically noisy entities (fewer false positives) and never become more sensitive; they fall back to the existing static thresholds until baselines are learned.',
+    'Note: anomalies and baselines populate as history accumulates (roughly 1-2 weeks); entity-risk scores populate within minutes of deploy.',
+  ],
   '2.12.3': [
     'Fix: Log Explorer search (and the dashboard "What\'s New / Changed" account/country/service drills) now also match the parsed username, source country, and service fields — not just the message text — so drilling by an account or country returns its events instead of an empty result.',
   ],

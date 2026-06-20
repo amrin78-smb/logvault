@@ -472,3 +472,68 @@ REVOKE UPDATE, DELETE ON syslog_entries FROM logvault_user;
 -- Note: alert_events is intentionally left writable — the API legitimately
 -- UPDATEs it for acknowledgements. Only syslog_entries + audit_log are
 -- locked down to append-only.
+
+-- ============================================================
+-- PHASE 2 — BEHAVIORAL BASELINING / ANOMALY DETECTION / UEBA
+-- (on-prem intelligence engine — pure SQL/JS, no external calls)
+-- Written by collector/analytics/{baselineBuilder,anomalyDetector,uebaRollup}.js.
+-- All idempotent (CREATE TABLE IF NOT EXISTS) — this file is auto-applied on deploy.
+-- ============================================================
+
+-- Per-entity hour×day-of-week event-volume baselines.
+-- entity_type is 'device' (entity_value = source_host || source_ip::text) or
+-- 'user' (entity_value = structured_data->>'user'). avg/stddev are the AVG and
+-- STDDEV_SAMP of per-hour event counts over the trailing baseline window.
+CREATE TABLE IF NOT EXISTS entity_baselines (
+  entity_type   TEXT        NOT NULL,
+  entity_value  TEXT        NOT NULL,
+  dow           SMALLINT    NOT NULL,             -- 0=Sunday .. 6=Saturday (EXTRACT(DOW))
+  hour          SMALLINT    NOT NULL,             -- 0..23 (EXTRACT(HOUR))
+  avg_count     REAL,
+  stddev_count  REAL,
+  sample_count  INT,
+  updated_at    TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (entity_type, entity_value, dow, hour)
+);
+
+-- Detected behavioral / security anomalies (volume spikes, silent entities,
+-- new geo, new service). Written by the anomaly detector with 1-hour dedup.
+CREATE TABLE IF NOT EXISTS anomaly_events (
+  id              BIGSERIAL PRIMARY KEY,
+  detected_at     TIMESTAMPTZ DEFAULT NOW(),
+  entity_type     TEXT,
+  entity_value    TEXT,
+  source_ip       INET,                            -- the entity's IP for device/IP entities; NULL for users
+  anomaly_type    TEXT,                            -- 'volume_spike','silent','new_geo','new_service'
+  severity        TEXT,                            -- 'info','warning','critical'
+  score           REAL,
+  title           TEXT,
+  detail          JSONB,
+  acknowledged    BOOLEAN     DEFAULT FALSE,
+  acknowledged_at TIMESTAMPTZ,
+  acknowledged_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_anomaly_events_detected ON anomaly_events (detected_at DESC);
+CREATE INDEX IF NOT EXISTS idx_anomaly_events_ack      ON anomaly_events (acknowledged);
+CREATE INDEX IF NOT EXISTS idx_anomaly_events_entity   ON anomaly_events (entity_value);
+
+-- Rolling per-entity UEBA risk (0-100, EWMA-smoothed). One row per entity.
+-- factors is a jsonb array of {label, contribution} explaining the score.
+CREATE TABLE IF NOT EXISTS entity_risk (
+  entity_type   TEXT        NOT NULL,
+  entity_value  TEXT        NOT NULL,
+  source_ip     INET,
+  risk_score    REAL,
+  factors       JSONB,
+  event_count   INT,
+  anomaly_count INT,
+  last_activity TIMESTAMPTZ,
+  updated_at    TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (entity_type, entity_value)
+);
+CREATE INDEX IF NOT EXISTS idx_entity_risk_score ON entity_risk (risk_score DESC);
+
+-- Re-grant so the app role owns the new Phase 2 tables/sequences on existing
+-- installs (idempotent; harmless on fresh installs where the GRANT ran above).
+GRANT ALL ON ALL TABLES IN SCHEMA public TO logvault_user;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO logvault_user;

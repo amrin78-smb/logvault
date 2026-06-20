@@ -35,6 +35,10 @@ const { mapTechniques }  = require('./mitreMapper');
 const { evaluateCorrelation } = require('./correlationEngine');
 const { syncFromNetVault }    = require('./netvaultSync');
 const { runCleanup }          = require('../scripts/cleanup');
+// Phase 2 — behavioral baselining + anomaly detection + UEBA (on-prem, pure SQL/JS).
+const { buildBaselines }      = require('./analytics/baselineBuilder');
+const { detectAnomalies }     = require('./analytics/anomalyDetector');
+const { rollupEntityRisk }    = require('./analytics/uebaRollup');
 const { enrichIP, configureDNS } = require('./dnsLookup');
 const { enrichExternalIP, isPrivateIP } = require('./geoEnrich');
 const { sendAlertEmail }         = require('./emailer');
@@ -985,6 +989,40 @@ async function main() {
   setInterval(() => {
     runCleanup(pool).catch(err => console.error('[Cleanup] error:', err.message));
   }, DAILY_MS);
+
+  // ── Phase 2 intelligence jobs — in-process, reuse the pool, never exit on
+  // error (same scheduled-job pattern as runCleanup/syncFromNetVault above).
+  //  * buildBaselines    — rebuild hour×dow volume baselines every 24h
+  //  * detectAnomalies   — volume/silent/new-geo/new-service checks every 30m
+  //  * rollupEntityRisk  — UEBA per-entity risk rollup every 15m
+  // Each call is wrapped so a failure logs and never kills the collector.
+  const HALF_HOUR_MS    = 30 * 60 * 1000;
+  const QUARTER_HOUR_MS = 15 * 60 * 1000;
+
+  // Baselines: first run ~90s after startup (let ingestion settle), then every 24h.
+  setTimeout(() => {
+    buildBaselines(pool).catch(err => console.error('[Baseline] error:', err.message));
+  }, 90 * 1000);
+  setInterval(() => {
+    buildBaselines(pool).catch(err => console.error('[Baseline] error:', err.message));
+  }, DAILY_MS);
+
+  // Anomaly detection: first run ~120s after startup (after a baseline pass had a
+  // chance to write), then every 30m.
+  setTimeout(() => {
+    detectAnomalies(pool).catch(err => console.error('[Anomaly] error:', err.message));
+  }, 120 * 1000);
+  setInterval(() => {
+    detectAnomalies(pool).catch(err => console.error('[Anomaly] error:', err.message));
+  }, HALF_HOUR_MS);
+
+  // UEBA risk rollup: first run ~150s after startup, then every 15m.
+  setTimeout(() => {
+    rollupEntityRisk(pool).catch(err => console.error('[UEBA] error:', err.message));
+  }, 150 * 1000);
+  setInterval(() => {
+    rollupEntityRisk(pool).catch(err => console.error('[UEBA] error:', err.message));
+  }, QUARTER_HOUR_MS);
 
   console.log('LogVault Collector running. Listening on ports 514 and 1514 (UDP+TCP).');
   console.log('[Correlation] Engine loaded with 8 rules');
