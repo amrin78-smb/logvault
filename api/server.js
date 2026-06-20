@@ -511,8 +511,12 @@ app.get('/api/logs', asyncHandler(async (req, res) => {
     if (sevs.length) { conditions.push(`se.severity = ANY($${p++}::int[])`);     params.push(sevs); }
   }
   if (host)     {
-    conditions.push(`(se.source_host ILIKE $${p++} OR kh.hostname ILIKE $${p++} OR se.source_ip::TEXT ILIKE $${p++})`);
-    params.push(`%${host}%`, `%${host}%`, `%${host}%`);
+    // Match the host/IP against the syslog sender AND the parsed source/dest IPs
+    // (structured_data.srcip/dstip/remip), so drilling by a real client/attacker IP
+    // — not just the reporting device — finds its events. One placeholder, reused.
+    const hp = p++;
+    conditions.push(`(se.source_host ILIKE $${hp} OR kh.hostname ILIKE $${hp} OR se.source_ip::TEXT ILIKE $${hp} OR se.structured_data->>'srcip' ILIKE $${hp} OR se.structured_data->>'dstip' ILIKE $${hp} OR se.structured_data->>'remip' ILIKE $${hp})`);
+    params.push(`%${host}%`);
   }
   if (ip)       { conditions.push(`se.source_ip::TEXT ILIKE $${p++}`);           params.push(`%${ip}%`); }
 
@@ -777,8 +781,12 @@ app.get('/api/logs/export', asyncHandler(async (req, res) => {
     if (sevs.length) { conditions.push(`se.severity = ANY($${p++}::int[])`); params.push(sevs); }
   }
   if (host) {
-    conditions.push(`(se.source_host ILIKE $${p++} OR kh.hostname ILIKE $${p++} OR se.source_ip::TEXT ILIKE $${p++})`);
-    params.push(`%${host}%`, `%${host}%`, `%${host}%`);
+    // Match the host/IP against the syslog sender AND the parsed source/dest IPs
+    // (structured_data.srcip/dstip/remip), so drilling by a real client/attacker IP
+    // — not just the reporting device — finds its events. One placeholder, reused.
+    const hp = p++;
+    conditions.push(`(se.source_host ILIKE $${hp} OR kh.hostname ILIKE $${hp} OR se.source_ip::TEXT ILIKE $${hp} OR se.structured_data->>'srcip' ILIKE $${hp} OR se.structured_data->>'dstip' ILIKE $${hp} OR se.structured_data->>'remip' ILIKE $${hp})`);
+    params.push(`%${host}%`);
   }
   if (ip) { conditions.push(`se.source_ip::TEXT ILIKE $${p++}`); params.push(`%${ip}%`); }
 
@@ -1725,6 +1733,9 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.12.1': [
+    'Fix: drilling from a Security-tab row (IPS/Threats, blocked destinations, threat summary, etc.) into the Log Explorer by IP now returns results — the host filter now also matches the parsed source/destination IPs (structured_data.srcip/dstip/remip), not just the reporting device. Previously, drilling by an internal/client IP showed "No logs found".',
+  ],
   '2.12.0': [
     'Risk scores are now explainable — each event records its contributing factors, and the log detail panel shows a "Why this score?" breakdown.',
     'MITRE ATT&CK badges now carry plain-language explanations (what the technique means and why it matters) in a hover popover.',
