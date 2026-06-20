@@ -1277,6 +1277,12 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.3.1': [
+    "Launcher 'Log Sources' KPI now counts distinct source_host instead of source_ip (correct when devices send via syslog relays)",
+    'In production, devices forward syslog through relays, so source_ip collapses to the relay IP and undercounts the real number of log-emitting devices',
+    'source_host preserves each device’s true identity, so the metric now reflects how many distinct devices are actually sending logs',
+    'No schema or ingestion change — this only corrects the public /api/stats summary counter surfaced on the launcher',
+  ],
   '2.3.0': [
     'The Security tab now has its own time-range picker (and auto-refresh control), matching the Dashboard and Network Health — you can change the window without leaving the page',
   ],
@@ -1718,7 +1724,7 @@ app.get('/api/stats', async (req, res) => {
   try {
     const [logsToday, sources, alerts] = await Promise.all([
       pool.query(`SELECT COUNT(*) AS c FROM syslog_entries WHERE received_at > NOW() - INTERVAL '24 hours'`),
-      pool.query(`SELECT COUNT(DISTINCT source_ip) AS c FROM syslog_entries WHERE received_at > NOW() - INTERVAL '24 hours'`),
+      pool.query(`SELECT COUNT(DISTINCT source_host) AS c FROM syslog_entries WHERE received_at > NOW() - INTERVAL '24 hours'`),
       pool.query(`SELECT COUNT(*) AS c FROM alert_events WHERE acknowledged = FALSE`),
     ]);
     res.json({
