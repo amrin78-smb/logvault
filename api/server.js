@@ -690,6 +690,76 @@ app.get('/api/alerts/events/recent-unacked', asyncHandler(async (req, res) => {
   res.json({ data: rows });
 }));
 
+// Correlation-rule → look-back window (minutes) used to gather the underlying
+// syslog entries behind a fired alert. Mirrors the windows in
+// collector/correlationEngine.js. Anything not listed falls back to DEFAULT.
+const ALERT_LOG_WINDOW_MINUTES = {
+  'Brute Force Login Success':        10,
+  'Port Scan Detected':                3,
+  'Interface Flapping Detected':      10,
+  'Network Loop Detected':             2,
+  'After-Hours Configuration Change':  1,
+  'STP Instability Detected':          5,
+  'Repeated IPS Triggers':             5,
+  'VPN Brute Force Attempt':           5,
+};
+const ALERT_LOG_WINDOW_DEFAULT = 30;
+
+// Underlying syslog entries that triggered a given alert event — powers the
+// "logs behind this alert" UI detail panel. RBAC: same getSiteFilter pattern as
+// the other /api/alerts routes, applied to BOTH the alert lookup (ae) and the
+// syslog query (se), so a user only ever sees alerts/logs for their sites.
+app.get('/api/alerts/events/:id/logs', asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id) || id < 1) return res.status(400).json({ error: 'Invalid alert id' });
+
+  // 1) Look up the alert (RBAC site-filtered on ae.source_ip).
+  const af = getSiteFilter(req.rbac, 2, 'ae');
+  const alertResult = await pool.query(`
+    SELECT ae.*, ar.name AS rule_name, ar.mitre_techniques
+    FROM alert_events ae
+    LEFT JOIN alert_rules ar ON ar.id = ae.rule_id
+    WHERE ae.id = $1
+    ${af.clause}
+  `, [id, ...af.params]);
+  if (!alertResult.rows.length) return res.status(404).json({ error: 'Alert not found' });
+  const alert = alertResult.rows[0];
+
+  // 2) Determine the correlation look-back window (minutes) from the rule name.
+  const windowMinutes = ALERT_LOG_WINDOW_MINUTES[alert.rule_name] || ALERT_LOG_WINDOW_DEFAULT;
+
+  // 3) Fetch matching logs around fired_at from the same source. The
+  //    host(alert.source_ip) cast is only safe when source_ip is present, so the
+  //    srcip OR-term is added conditionally.
+  const params = [windowMinutes, alert.fired_at, alert.source_ip, alert.source_host];
+  let p = 5;
+  const srcMatch = [
+    `se.source_ip = $3`,
+    `se.source_host = $4`,
+  ];
+  if (alert.source_ip != null) {
+    srcMatch.push(`se.structured_data->>'srcip' = host($3::inet)`);
+  }
+
+  const sf = getSiteFilter(req.rbac, p, 'se');
+
+  const logsResult = await pool.query(`
+    SELECT se.id, se.received_at, se.log_timestamp, se.severity_label, se.vendor,
+           se.category, se.risk_score, se.source_ip::text, se.source_host,
+           se.message, se.structured_data
+    FROM syslog_entries se
+    WHERE se.received_at BETWEEN ($2::timestamptz - make_interval(mins => $1))
+                            AND ($2::timestamptz + interval '1 minute')
+      AND (${srcMatch.join(' OR ')})
+    ${sf.clause}
+    ORDER BY se.received_at DESC
+    LIMIT 200
+  `, [...params, ...sf.params]);
+
+  // 4) Respond.
+  res.json({ alert, window_minutes: windowMinutes, logs: logsResult.rows });
+}));
+
 // CSV export
 app.get('/api/logs/export', asyncHandler(async (req, res) => {
   const { q, vendor, severity, host, ip, category } = req.query;
@@ -1397,6 +1467,11 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.10.0': [
+    'Alerts are now clickable: a detail slide-in shows the alert\'s rule, severity, MITRE techniques, source, match count, detection window, and acknowledgement status.',
+    'The panel lists the actual underlying logs that triggered the alert (by source within the rule\'s time window), each drillable into the full log detail view.',
+    'New API: GET /api/alerts/events/:id/logs returns an alert plus its triggering log entries (RBAC-filtered).',
+  ],
   '2.9.0': [
     'Applied the deep field-capture & correctness pass (previously done for Fortinet) to ALL vendor parsers: Cisco, Palo Alto, Check Point, SonicWall, Juniper, Windows, Aruba, Sangfor, Forcepoint, and the generic fallback',
     'Every parser now emits the normalized contract (real remote source IP, dest IP, ports, username, login outcome) and the correct category, so cross-vendor brute-force/scan/IPS correlation and the Security tab work for all brands',

@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useToast } from '@/components/Toast';
 import { PageHeader, TableSkeleton, EmptyState } from './ui';
 import { MitreBadges } from './mitre';
+import AlertDetailPanel from './AlertDetailPanel';
 
 function formatInterval(val: any): string {
   if (!val) return '-';
@@ -70,6 +71,7 @@ export default function AlertEvents() {
   const [expanded,    setExpanded]    = useState<Set<string>>(new Set());
   const [selected,    setSelected]    = useState<Set<number>>(new Set());
   const [loading,     setLoading]     = useState(false);
+  const [detailAlert, setDetailAlert] = useState<AlertEvent | null>(null);
 
   const correlationNames = new Set(CORRELATION_RULES.map(r => r.name));
 
@@ -114,6 +116,7 @@ export default function AlertEvents() {
     await fetch(`/api/alerts/events/${id}/acknowledge`, { method: 'PATCH' });
     setEvents(prev => prev.map(e => e.id === id ? { ...e, acknowledged: true } : e));
     setSelected(prev => { const s = new Set(prev); s.delete(id); return s; });
+    setDetailAlert(prev => prev && prev.id === id ? { ...prev, acknowledged: true } : prev);
     toast('Alert acknowledged', 'success');
   };
 
@@ -281,10 +284,12 @@ export default function AlertEvents() {
                   </thead>
                   <tbody>
                     {displayEvents.map((evt, i) => (
-                      <tr key={evt.id} style={{ borderBottom: '1px solid var(--border-light)',
+                      <tr key={evt.id} onClick={() => setDetailAlert(evt)}
+                        title="View alert details and triggering logs"
+                        style={{ borderBottom: '1px solid var(--border-light)', cursor: 'pointer',
                         background: evt.acknowledged ? 'var(--bg-primary)' : i % 2 === 0 ? 'var(--bg-card)' : 'var(--surface-subtle)',
-                        opacity: evt.acknowledged ? 0.6 : 1 }}>
-                        <td style={{ ...TD, width: 36 }}>
+                        opacity: evt.acknowledged ? 0.6 : 1, transition: 'background 0.12s' }}>
+                        <td style={{ ...TD, width: 36 }} onClick={(e) => e.stopPropagation()}>
                           {!evt.acknowledged && (
                             <input type="checkbox" checked={selected.has(evt.id)}
                               onChange={() => toggleSelect(evt.id)} style={{ cursor: 'pointer' }} />
@@ -304,7 +309,7 @@ export default function AlertEvents() {
                           {evt.acknowledged ? (
                             <span style={{ color: '#16a34a', fontSize: 'var(--text-xs)', fontWeight: 600 }}>✓ Acked</span>
                           ) : (
-                            <button onClick={() => acknowledge(evt.id)}
+                            <button onClick={(e) => { e.stopPropagation(); acknowledge(evt.id); }}
                               style={{ padding: '3px 10px', borderRadius: 5, border: '1px solid var(--border)',
                                 cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--surface-subtle)', color: 'var(--text-secondary)', fontWeight: 500 }}>
                               Acknowledge
@@ -491,6 +496,15 @@ export default function AlertEvents() {
             })}
           </div>
         </div>
+      )}
+
+      {/* Alert detail slide-in — opens on row click */}
+      {detailAlert && (
+        <AlertDetailPanel
+          alert={detailAlert}
+          onClose={() => setDetailAlert(null)}
+          onAcknowledge={acknowledge}
+        />
       )}
     </div>
   );
