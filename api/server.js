@@ -2000,6 +2000,11 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.15.1': [
+    'Fix: default alert rules were being duplicated on every deploy (the seed had no unique constraint to conflict on), accumulating dozens of copies that each fired their own alert. De-duplicated to one of each rule, preserved all existing fired-alert history, and added a UNIQUE(name) constraint so it can never recur.',
+    'Fix: the built-in "Auth Failures" alert rule had no match filter, so it fired on unrelated traffic (e.g. IPsec tunnel-negotiation noise) — which is why an "Auth Failures" alert could appear while the Security > Auth Failures tab was correctly empty. It is now scoped to genuine authentication-failure messages.',
+    'Note: the Security tab panels (auth failures, brute force, firewall denies, IPS/threats) only populate when the firewall forwards those log types. If a device is sending mostly allowed-traffic and VPN session logs, those panels are correctly empty.',
+  ],
   '2.15.0': [
     'Fix (attacker attribution sweep): several places were attributing activity to the syslog relay/forwarding firewall instead of the real actor (the parsed source IP). The dashboard "Top Talkers" widget now ranks by the actual source/attacker IP with per-actor geo and known-bad enrichment — previously, with a relay, it collapsed to a single row (the firewall) for all traffic.',
     'Fix: threshold-based alerts (e.g. Auth Failures, Critical Threshold) now record, suppress, and de-duplicate per real attacker IP, and the alert email shows the attacker — not the forwarding firewall. (Correlation alerts already did this.)',

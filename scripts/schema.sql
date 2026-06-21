@@ -299,12 +299,44 @@ CREATE TABLE IF NOT EXISTS known_hosts (
 -- ============================================================
 -- SEED: DEFAULT ALERT RULES
 -- ============================================================
-INSERT INTO alert_rules (name, description, match_severity, threshold_count, threshold_window)
+-- De-duplicate first. Historically this seed used `ON CONFLICT DO NOTHING` but
+-- alert_rules had no UNIQUE(name), so the no-op conflict never triggered and every
+-- deploy re-inserted the three default rules — accumulating dozens of duplicates
+-- (each firing its own copy of every alert). The block below repoints fired alerts
+-- onto the lowest-id rule of each name (alert_events.rule_id is ON DELETE CASCADE,
+-- so we must re-parent BEFORE deleting to avoid dropping history), removes the
+-- duplicate rules, then adds the UNIQUE(name) constraint so the seed can never
+-- duplicate again. All steps are idempotent (no-ops once the DB is clean).
+UPDATE alert_events ae
+SET rule_id = canon.keep_id
+FROM (SELECT id, MIN(id) OVER (PARTITION BY name) AS keep_id FROM alert_rules) canon
+WHERE ae.rule_id = canon.id AND canon.id <> canon.keep_id;
+
+DELETE FROM alert_rules a
+USING (SELECT name, MIN(id) AS keep_id FROM alert_rules GROUP BY name) k
+WHERE a.name = k.name AND a.id <> k.keep_id;
+
+DO $$ BEGIN
+  ALTER TABLE alert_rules ADD CONSTRAINT alert_rules_name_key UNIQUE (name);
+EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
+END $$;
+
+INSERT INTO alert_rules (name, description, match_severity, match_pattern, threshold_count, threshold_window)
 VALUES
-    ('Emergency Events',    'Any emergency-level syslog event',            ARRAY[0],       1,  '1 minute'),
-    ('Critical Threshold',  'Critical severity events from any device',     ARRAY[0,1,2],   5,  '5 minutes'),
-    ('Auth Failures',       'Repeated authentication failure messages',     NULL,           10, '5 minutes')
-ON CONFLICT DO NOTHING;
+    ('Emergency Events',    'Any emergency-level syslog event',            ARRAY[0],       NULL, 1,  '1 minute'),
+    ('Critical Threshold',  'Critical severity events from any device',     ARRAY[0,1,2],   NULL, 5,  '5 minutes'),
+    ('Auth Failures',       'Repeated authentication failure messages',     NULL,
+        'login fail|authentication fail|failed login|failed authentication|ssl-login-fail|logon fail', 10, '5 minutes')
+ON CONFLICT (name) DO NOTHING;
+
+-- Scope the (previously unfiltered) Auth Failures rule to real auth-failure
+-- messages. Without a match_pattern it fired on ANY events — e.g. IPsec phase-1
+-- negotiation noise — which contradicted the (correctly empty) Security > Auth
+-- Failures tab. Only set it when still NULL so an operator's customisation sticks.
+UPDATE alert_rules
+SET match_pattern = 'login fail|authentication fail|failed login|failed authentication|ssl-login-fail|logon fail',
+    updated_at = NOW()
+WHERE name = 'Auth Failures' AND match_pattern IS NULL;
 
 -- ============================================================
 -- USEFUL VIEWS
