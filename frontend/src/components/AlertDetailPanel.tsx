@@ -148,7 +148,12 @@ export default function AlertDetailPanel({ alert, onClose, onAcknowledge }: Prop
         ? { color: 'var(--tint-warn-fg)', bg: 'var(--tint-warn)' }
         : { color: 'var(--tint-info-fg)', bg: 'var(--tint-info)' };
 
-  const sourceDisplay = [sourceHost, cleanIp].filter(Boolean).join(' · ') || '—';
+  // source_ip carries the real actor (attacker srcip for security rules, device IP
+  // for operational rules); source_host is the reporting/relay device. Show the
+  // actor as "Source" and the device separately, so a relayed alert no longer reads
+  // as "FGT200E_TUS · <attacker>" (implying the firewall is the actor).
+  const sourceDisplay = cleanIp || sourceHost || '—';
+  const showReportingDevice = sourceHost && sourceHost !== cleanIp;
 
   return (
     <>
@@ -215,6 +220,7 @@ export default function AlertDetailPanel({ alert, onClose, onAcknowledge }: Prop
               borderRadius: 8, padding: '0 12px' }}>
               <Field label="Fired at"   value={firedAt ? new Date(firedAt).toLocaleString() : ''} />
               <Field label="Source"     value={sourceDisplay} mono />
+              {showReportingDevice && <Field label="Reporting device" value={sourceHost} mono />}
               <Field label="Match count" value={String(matchCount ?? '—')} />
               <Field label="Window"
                 value={windowMin != null ? `${windowMin} min` : '—'} />

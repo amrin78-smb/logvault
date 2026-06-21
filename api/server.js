@@ -184,22 +184,29 @@ app.get('/api/stats/top-talkers', asyncHandler(async (req, res) => {
   const sf = getStatsSiteFilter(req.rbac, 3, 'se');
   const cacheKey = `top-talkers:${hours}:${limit}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 30000, async () => {
+    // Group by the REAL actor (structured_data.srcip), falling back to the syslog
+    // sender only when no srcip was parsed. Joining/grouping on source_ip alone
+    // collapses every relayed log to the single forwarding device (the firewall),
+    // so the geo/known-bad enrichment is attributed to the relay, not the actor.
     const { rows } = await pool.query(`
       SELECT
-        COALESCE(kh.hostname, se.source_host, host(se.source_ip)) AS host,
-        host(se.source_ip) AS source_ip,
-        COALESCE(kh.vendor, se.vendor) AS vendor,
+        COALESCE(kh.hostname, src.actor) AS host,
+        src.actor AS source_ip,
+        COALESCE(kh.vendor, MAX(src.vendor)) AS vendor,
         kh.country_code, kh.country_name, kh.asn_org,
         kh.abuse_score, kh.is_known_bad, kh.is_external,
         COUNT(*) AS log_count,
-        MAX(se.received_at) AS last_seen
-      FROM syslog_entries se
-      LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
-      WHERE se.received_at > NOW() - make_interval(hours => $1)
-      ${sf.clause}
-      GROUP BY se.source_host, se.source_ip, kh.hostname, kh.vendor, se.vendor,
-        kh.country_code, kh.country_name, kh.asn_org,
-        kh.abuse_score, kh.is_known_bad, kh.is_external
+        MAX(src.received_at) AS last_seen
+      FROM (
+        SELECT COALESCE(NULLIF(btrim(se.structured_data->>'srcip'), ''), host(se.source_ip)) AS actor,
+               se.vendor, se.received_at, se.source_ip
+        FROM syslog_entries se
+        WHERE se.received_at > NOW() - make_interval(hours => $1)
+        ${sf.clause}
+      ) src
+      LEFT JOIN known_hosts kh ON src.actor ~ '^[0-9.]+$' AND host(kh.ip_address) = src.actor
+      GROUP BY src.actor, kh.hostname, kh.vendor, kh.country_code, kh.country_name,
+        kh.asn_org, kh.abuse_score, kh.is_known_bad, kh.is_external
       ORDER BY log_count DESC
       LIMIT $2
     `, [hours, limit, ...sf.params]);
@@ -739,18 +746,24 @@ app.get('/api/alerts/events/:id/logs', asyncHandler(async (req, res) => {
   // 2) Determine the correlation look-back window (minutes) from the rule name.
   const windowMinutes = ALERT_LOG_WINDOW_MINUTES[alert.rule_name] || ALERT_LOG_WINDOW_DEFAULT;
 
-  // 3) Fetch matching logs around fired_at from the same source. The
-  //    host(alert.source_ip) cast is only safe when source_ip is present, so the
-  //    srcip OR-term is added conditionally.
-  const params = [windowMinutes, alert.fired_at, alert.source_ip, alert.source_host];
-  let p = 5;
-  const srcMatch = [
-    `se.source_ip = $3`,
-    `se.source_host = $4`,
-  ];
+  // 3) Fetch matching logs around fired_at from the SAME ACTOR. alert.source_ip
+  //    holds the real actor (the attacker's structured_data.srcip for security
+  //    rules, or the device IP for operational rules), so match on the parsed
+  //    srcip first and the sender source_ip as a fallback. We deliberately do NOT
+  //    match broadly on source_host — in a relay deployment every log shares the
+  //    forwarding device's hostname, which would return every log in the window.
+  const params = [windowMinutes, alert.fired_at];
+  let p = 3;
+  const srcMatch = [];
   if (alert.source_ip != null) {
-    srcMatch.push(`se.structured_data->>'srcip' = host($3::inet)`);
+    const ipIdx = p++; params.push(alert.source_ip);
+    srcMatch.push(`se.structured_data->>'srcip' = host($${ipIdx}::inet)`);
+    srcMatch.push(`se.source_ip = $${ipIdx}`);
+  } else if (alert.source_host != null) {
+    const hostIdx = p++; params.push(alert.source_host);
+    srcMatch.push(`se.source_host = $${hostIdx}`);
   }
+  if (!srcMatch.length) srcMatch.push('FALSE');
 
   const sf = getSiteFilter(req.rbac, p, 'se');
 
@@ -967,7 +980,11 @@ app.get('/api/threats/known-bad', asyncHandler(async (req, res) => {
       COALESCE((
         SELECT COUNT(*)
         FROM syslog_entries se
-        WHERE se.source_ip = kh.ip_address
+        WHERE (
+              se.structured_data->>'srcip' = host(kh.ip_address)
+           OR se.structured_data->>'dstip' = host(kh.ip_address)
+           OR se.source_ip = kh.ip_address
+        )
           AND se.received_at > NOW() - INTERVAL '24 hours'
           ${sf.clause}
       ), 0) AS total_hits
@@ -1983,6 +2000,13 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.15.0': [
+    'Fix (attacker attribution sweep): several places were attributing activity to the syslog relay/forwarding firewall instead of the real actor (the parsed source IP). The dashboard "Top Talkers" widget now ranks by the actual source/attacker IP with per-actor geo and known-bad enrichment — previously, with a relay, it collapsed to a single row (the firewall) for all traffic.',
+    'Fix: threshold-based alerts (e.g. Auth Failures, Critical Threshold) now record, suppress, and de-duplicate per real attacker IP, and the alert email shows the attacker — not the forwarding firewall. (Correlation alerts already did this.)',
+    'Fix: the alert detail "triggering logs" drill now returns the specific actor\'s events instead of every log from the relay device in the time window; the alert detail panel shows the attacker as "Source" with the relay listed separately as "Reporting device".',
+    'Fix: the Known-Bad Sources hit counter now matches the flagged IP against the parsed source/destination IPs, so genuine external threats are counted instead of always reading zero.',
+    'Attacker source IPs are now GeoIP/threat-enriched (in addition to destination IPs), so country/ASN/known-bad data is available for the real actor across Top Talkers, Known-Bad Sources, and UEBA risk scoring.',
+  ],
   '2.14.0': [
     'Fix: the UEBA "Riskiest Entities" ranking no longer lists the log-source/relay device itself (e.g. the forwarding firewall). Because every log arrives through the relay, it always won on raw volume — which is meaningless. UEBA now scores only real actors (users, external source IPs, monitored assets); relay hosts are excluded from device baselines, anomaly detection, and entity-risk, and any previously-recorded relay entity is cleaned up automatically. Configurable via the UEBA_RELAY_HOSTS environment variable.',
     'Improved the dashboard "What\'s New / Changed" widget: instead of one long scrolling list, it now shows four at-a-glance count tiles (New Sources / Accounts / Services / Countries) that double as a selector, with a compact top-5 list and a "+N more" expander for the chosen dimension. Each item still drills into the Log Explorer.',

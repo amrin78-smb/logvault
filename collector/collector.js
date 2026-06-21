@@ -766,6 +766,21 @@ function processMessage(rawMsg, sourceIp) {
     }).catch(() => {});
   }
 
+  // The real ATTACKER/CLIENT is structured_data.srcip (source_ip is the relay).
+  // Enrich it too so country/ASN/threat data exists in known_hosts for the actor —
+  // the consumers that group/score by srcip (top-talkers, known-bad hit counts,
+  // UEBA known-bad factor) join known_hosts on this IP. Same fire-and-forget path.
+  const srcIP = sd.srcip || sd.src_ip;
+  if (srcIP && !isPrivateIP(srcIP) && !seenIPs.has(srcIP)) {
+    seenIPs.add(srcIP);
+    if (seenIPs.size > 10000) seenIPs.clear();
+    getDNSSettings().then(s => {
+      enrichExternalIP(srcIP, s.abuseKey)
+        .then(data => { if (data) return upsertGeoEnrichment(srcIP, data); })
+        .catch(() => {});
+    }).catch(() => {});
+  }
+
   // Run alert rules for medium+ severity
   if (entry.severity <= 4) {
     checkAlertRules(entry).catch(err => console.error('[Alert] Rule check error:', err.message));
@@ -832,15 +847,20 @@ async function checkAlertRules(entry) {
     recentEvents.set(key, fresh);
 
     if (fresh.length >= rule.threshold_count) {
-      // Check suppression — don't re-fire same rule for same source within suppression window
-      const sourceKey     = `${rule.id}__${entry.source_ip || 'any'}`;
+      // The actor is the real attacker (structured_data.srcip) for security events,
+      // falling back to the syslog sender for operational/device events that carry
+      // no srcip. Suppress + record per-actor, NOT per relay — otherwise every
+      // relayed event collapses to the one forwarding device and the alert is
+      // attributed to the firewall itself.
+      const actorIp       = entry.structured_data?.srcip || entry.source_ip;
+      const sourceKey     = `${rule.id}__${actorIp || 'any'}`;
       const lastFired     = suppressionMap.get(sourceKey) || 0;
       if (now - lastFired < THRESHOLD_SUPPRESSION_MS) {
-        console.log(`[Alert] Rule "${rule.name}" suppressed for ${entry.source_ip} (cooldown active)`);
+        console.log(`[Alert] Rule "${rule.name}" suppressed for ${actorIp} (cooldown active)`);
         continue;
       }
       suppressionMap.set(sourceKey, now);
-      await fireAlert(rule, entry, fresh.length);
+      await fireAlert(rule, entry, fresh.length, actorIp);
     }
   }
 }
@@ -860,9 +880,14 @@ function parseIntervalMs(interval) {
   return 300000;
 }
 
-async function fireAlert(rule, entry, matchCount) {
+async function fireAlert(rule, entry, matchCount, actorIp) {
   try {
-    // Check if there's already an open (unacknowledged) alert for this rule + source
+    // actorIp = the real attacker (structured_data.srcip) or the sender fallback.
+    // source_host stays the reporting device label; source_ip carries the actor so
+    // the alert (and its email + log drill-down) attribute to who actually did it,
+    // mirroring how the correlation engine writes alert_events.
+    const alertIp = actorIp || entry.structured_data?.srcip || entry.source_ip;
+    // Check if there's already an open (unacknowledged) alert for this rule + actor
     const existing = await pool.query(`
       SELECT id, match_count FROM alert_events
       WHERE rule_id = $1
@@ -871,7 +896,7 @@ async function fireAlert(rule, entry, matchCount) {
         AND fired_at > NOW() - INTERVAL '2 hours'
       ORDER BY fired_at DESC
       LIMIT 1
-    `, [rule.id, entry.source_ip]);
+    `, [rule.id, alertIp]);
 
     if (existing.rows.length > 0) {
       // Update existing alert — increment count, update sample message
@@ -882,14 +907,14 @@ async function fireAlert(rule, entry, matchCount) {
             fired_at       = NOW()
         WHERE id = $3
       `, [matchCount, entry.message.substring(0, 500), existing.rows[0].id]);
-      console.log(`[Alert] Rule "${rule.name}" updated existing alert — ${entry.source_host || entry.source_ip}`);
+      console.log(`[Alert] Rule "${rule.name}" updated existing alert — ${alertIp || entry.source_host}`);
     } else {
       // Insert new alert
       await pool.query(`
         INSERT INTO alert_events (rule_id, source_host, source_ip, match_count, sample_message)
         VALUES ($1, $2, $3, $4, $5)
-      `, [rule.id, entry.source_host || null, entry.source_ip, matchCount, entry.message.substring(0, 500)]);
-      console.log(`[Alert] Rule "${rule.name}" fired — ${entry.source_host || entry.source_ip}`);
+      `, [rule.id, entry.source_host || null, alertIp, matchCount, entry.message.substring(0, 500)]);
+      console.log(`[Alert] Rule "${rule.name}" fired — ${alertIp || entry.source_host}`);
     }
 
     // Send email notification (best-effort — never blocks alert firing).

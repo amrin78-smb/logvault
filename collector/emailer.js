@@ -190,8 +190,11 @@ function buildAlertHtml(rule, entry, matchCount) {
   const url        = appUrl();
   const ruleName   = escapeHtml(rule.name);
   const severity   = escapeHtml(entry.severity_label || String(entry.severity));
-  const sourceIp   = escapeHtml(entry.source_ip || 'unknown');
-  const hostname   = escapeHtml(entry.source_host || entry.source_ip || 'unknown');
+  // The real actor (attacker) is structured_data.srcip; source_ip is the syslog
+  // sender (the relay/firewall). Show + link the actor, with the sender as fallback.
+  const actorIp    = (entry.structured_data && entry.structured_data.srcip) || entry.source_ip;
+  const sourceIp   = escapeHtml(actorIp || 'unknown');
+  const hostname   = escapeHtml(entry.source_host || actorIp || 'unknown');
   const sampleMsg  = escapeHtml((entry.message || '').substring(0, 500));
   const timestamp  = escapeHtml((entry.received_at instanceof Date ? entry.received_at : new Date()).toISOString());
   const count      = escapeHtml(String(matchCount != null ? matchCount : ''));
@@ -200,7 +203,7 @@ function buildAlertHtml(rule, entry, matchCount) {
   const category   = entry.category || (entry.structured_data && entry.structured_data.category);
   const vendor     = entry.vendor;
 
-  const explorerUrl = `${url}/?source_ip=${encodeURIComponent(entry.source_ip || '')}#logs`;
+  const explorerUrl = `${url}/?host=${encodeURIComponent(actorIp || '')}#logs`;
 
   const pill = (text, bg, color) =>
     `<span style="display:inline-block;background:${bg};color:${color};font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;margin:0 6px 6px 0;">${text}</span>`;
