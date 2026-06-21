@@ -27,6 +27,8 @@
  * Exports: { detectAnomalies, recordAnomaly }
  */
 
+const { RELAY_HOSTS } = require('./relayHosts');
+
 const MIN_BASELINE_AVG = 10;  // ignore baselines quieter than this (absolute floor)
 const SILENT_MIN_AVG   = 50;  // only flag 'silent' when the entity is normally busy
 const K_WARNING        = 3;   // z-score for 'warning'
@@ -111,17 +113,23 @@ async function recordAnomaly(pool, a) {
 async function detectVolume(pool, summary) {
   const variants = [
     {
-      entityType: 'device',
-      entityExpr: `COALESCE(source_host, source_ip::text)`,
-      ipExpr:     `max(source_ip)::text`,
-      filter:     ``,
+      entityType:  'device',
+      entityExpr:  `COALESCE(source_host, source_ip::text)`,
+      ipExpr:      `max(source_ip)::text`,
+      filter:      ``,
+      // exclude the relay/log-source from the driving baseline set (defence in
+      // depth: relay baselines are also removed at build + cleanup time)
+      relayClause: `AND lower(b.entity_value) <> ALL($3::text[])`,
+      relay:       true,
     },
     {
-      entityType: 'user',
-      entityExpr: `structured_data->>'user'`,
-      ipExpr:     `NULL::text`,
-      filter:     `AND structured_data->>'user' IS NOT NULL
+      entityType:  'user',
+      entityExpr:  `structured_data->>'user'`,
+      ipExpr:      `NULL::text`,
+      filter:      `AND structured_data->>'user' IS NOT NULL
                    AND btrim(structured_data->>'user') NOT IN ('', 'N/A')`,
+      relayClause: ``,
+      relay:       false,
     },
   ];
 
@@ -151,8 +159,11 @@ async function detectVolume(pool, summary) {
           AND b.dow  = EXTRACT(DOW  FROM now())::int
           AND b.hour = EXTRACT(HOUR FROM now())::int
           AND b.avg_count >= $2
+          ${v.relayClause}
       `;
-      const { rows } = await pool.query(sql, [v.entityType, MIN_BASELINE_AVG]);
+      const params = [v.entityType, MIN_BASELINE_AVG];
+      if (v.relay) params.push(RELAY_HOSTS);
+      const { rows } = await pool.query(sql, params);
 
       for (const r of rows) {
         const observed = Number(r.observed);
@@ -224,7 +235,9 @@ async function detectNewField(pool, summary, field, anomalyType, label) {
       entityExpr:      `COALESCE(source_host, source_ip::text)`,
       priorEntityExpr: `COALESCE(p.source_host, p.source_ip::text)`,
       ipExpr:          `source_ip::text`,
-      filter:          ``,
+      // exclude the relay/log-source so it never produces new_geo/new_service
+      filter:          `AND lower(COALESCE(source_host, source_ip::text)) <> ALL($1::text[])`,
+      relay:           true,
     },
     {
       entityType:      'user',
@@ -233,6 +246,7 @@ async function detectNewField(pool, summary, field, anomalyType, label) {
       ipExpr:          `NULL::text`,
       filter:          `AND structured_data->>'user' IS NOT NULL
                         AND btrim(structured_data->>'user') NOT IN ('', 'N/A')`,
+      relay:           false,
     },
   ];
 
@@ -262,7 +276,7 @@ async function detectNewField(pool, summary, field, anomalyType, label) {
           )
         LIMIT 500
       `;
-      const { rows } = await pool.query(sql);
+      const { rows } = await pool.query(sql, v.relay ? [RELAY_HOSTS] : []);
       for (const r of rows) {
         const res = await recordAnomaly(pool, {
           entityType:  v.entityType,

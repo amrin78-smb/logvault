@@ -23,6 +23,8 @@
  * Exports: { buildBaselines }
  */
 
+const { RELAY_HOSTS } = require('./relayHosts');
+
 const BASELINE_DAYS = 21;     // trailing window for baseline history
 const TOP_N_ENTITIES = 2500;  // cap entities per type (scales at ~2,500 devices)
 const MIN_SAMPLES = 3;        // require >= N distinct hours of history per dow/hour slot
@@ -35,7 +37,9 @@ function log(m) {
 // for a given entity-selection SQL fragment. `entityExpr` must be a SQL scalar
 // expression yielding the entity_value; `entityFilter` is an extra WHERE clause
 // (may be empty). Both are STATIC strings (no user input) — safe to interpolate.
-async function aggregate(pool, entityExpr, entityFilter) {
+// `extraParams` supplies any bind values referenced by entityFilter (starting at
+// $4, since $1..$3 are reserved for BASELINE_DAYS / TOP_N_ENTITIES / MIN_SAMPLES).
+async function aggregate(pool, entityExpr, entityFilter, extraParams = []) {
   const sql = `
     WITH hourly AS (
       SELECT ${entityExpr} AS entity_value,
@@ -66,7 +70,7 @@ async function aggregate(pool, entityExpr, entityFilter) {
     GROUP BY 1, 2, 3
     HAVING COUNT(*) >= $3
   `;
-  const { rows } = await pool.query(sql, [BASELINE_DAYS, TOP_N_ENTITIES, MIN_SAMPLES]);
+  const { rows } = await pool.query(sql, [BASELINE_DAYS, TOP_N_ENTITIES, MIN_SAMPLES, ...extraParams]);
   return rows;
 }
 
@@ -96,9 +100,14 @@ async function upsert(pool, entityType, r) {
 async function buildBaselines(pool) {
   let upserted = 0;
 
-  // ── Devices: source_host, fallback to source_ip::text ──
+  // ── Devices: source_host, fallback to source_ip::text (excluding relays) ──
   try {
-    const rows = await aggregate(pool, `COALESCE(source_host, source_ip::text)`, ``);
+    const rows = await aggregate(
+      pool,
+      `COALESCE(source_host, source_ip::text)`,
+      `AND lower(COALESCE(source_host, source_ip::text)) <> ALL($4::text[])`,
+      [RELAY_HOSTS]
+    );
     for (const r of rows) {
       try { await upsert(pool, 'device', r); upserted++; }
       catch (e) { log('device upsert failed (' + r.entity_value + '): ' + e.message); }

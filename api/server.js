@@ -1861,8 +1861,10 @@ app.get('/api/stats/whats-changed', asyncHandler(async (req, res) => {
     function buildAntiJoin(expr, extraRecent) {
       const sfR = getSiteFilter(req.rbac, 2, 'r');
       const sfB = getSiteFilter(req.rbac, 2 + sfR.params.length, 'b');
+      // COUNT(*) OVER() = total distinct NEW values after the anti-join but before
+      // LIMIT, so the UI can show an honest "+N more" / tile total beyond the top 15.
       const sql = `
-        SELECT v AS value, cnt AS count FROM (
+        SELECT v AS value, cnt AS count, COUNT(*) OVER()::bigint AS total FROM (
           SELECT ${expr.replace(/\bse\./g, 'r.')} AS v, COUNT(*)::bigint AS cnt
           FROM syslog_entries r
           WHERE r.received_at > NOW() - make_interval(days => $1)
@@ -1901,12 +1903,19 @@ app.get('/api/stats/whats-changed', asyncHandler(async (req, res) => {
     ]);
 
     const shape = (r) => r.rows.map(x => ({ value: x.value, count: parseInt(x.count, 10) || 0 }));
+    const total = (r) => (r.rows.length ? (parseInt(r.rows[0].total, 10) || r.rows.length) : 0);
     return {
       window_days:   days,
       new_countries: shape(countries),
       new_users:     shape(users),
       new_sources:   shape(sources),
       new_services:  shape(services),
+      totals: {
+        new_countries: total(countries),
+        new_users:     total(users),
+        new_sources:   total(sources),
+        new_services:  total(services),
+      },
     };
   });
   res.json(data);
@@ -1974,6 +1983,11 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.14.0': [
+    'Fix: the UEBA "Riskiest Entities" ranking no longer lists the log-source/relay device itself (e.g. the forwarding firewall). Because every log arrives through the relay, it always won on raw volume — which is meaningless. UEBA now scores only real actors (users, external source IPs, monitored assets); relay hosts are excluded from device baselines, anomaly detection, and entity-risk, and any previously-recorded relay entity is cleaned up automatically. Configurable via the UEBA_RELAY_HOSTS environment variable.',
+    'Improved the dashboard "What\'s New / Changed" widget: instead of one long scrolling list, it now shows four at-a-glance count tiles (New Sources / Accounts / Services / Countries) that double as a selector, with a compact top-5 list and a "+N more" expander for the chosen dimension. Each item still drills into the Log Explorer.',
+    'The /api/stats/whats-changed endpoint now also returns the true total count per dimension, so the tile numbers and "+N more" reflect everything new, not just the displayed rows.',
+  ],
   '2.13.0': [
     'Phase 2 intelligence engine (fully on-prem, no external calls): behavioral baselining of normal activity per device and user (hour-of-week), statistical anomaly detection (volume spike/drop, silent device, new source country / new service), and UEBA rolling entity-risk scoring.',
     'New "Intelligence" tab: an anomalies console (filter, acknowledge, drill to the Log Explorer) and a "Riskiest Entities" (UEBA) ranking with a per-entity slide-in showing the risk-factor breakdown, recent anomalies, and an events summary.',

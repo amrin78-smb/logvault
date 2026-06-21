@@ -569,41 +569,33 @@ interface WhatsChangedData {
   new_users?: ChangeRow[];
   new_sources?: ChangeRow[];
   new_services?: ChangeRow[];
+  totals?: {
+    new_countries?: number;
+    new_users?: number;
+    new_sources?: number;
+    new_services?: number;
+  };
 }
 
-function ChangeSection({ title, rows, drill }:
-  { title: string; rows: ChangeRow[]; drill?: (value: string) => void }) {
-  const list = Array.isArray(rows) ? rows : [];
+type ChangeDimKey = 'sources' | 'users' | 'services' | 'countries';
+
+// One drillable "value — count" row, reused for the active dimension's list.
+function ChangeItemRow({ row, drill }: { row: ChangeRow; drill?: (value: string) => void }) {
+  const value = row?.value ?? '—';
+  const count = Number(row?.count) || 0;
   return (
-    <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-        {title}
-      </div>
-      {list.length === 0 ? (
-        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontStyle: 'italic' }}>nothing new</div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {list.slice(0, 8).map((row, i) => {
-            const value = row?.value ?? '—';
-            const count = Number(row?.count) || 0;
-            return (
-              <div key={i} onClick={() => { if (drill && row?.value) drill(row.value); }}
-                title={`${value} — ${count.toLocaleString()} events`}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-                  padding: '3px 6px', background: 'var(--surface-subtle)', borderRadius: 5,
-                  cursor: drill && row?.value ? 'pointer' : 'default' }}>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 500,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-                  {value}
-                </span>
-                <span style={{ flexShrink: 0, fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--tint-info-fg)' }}>
-                  {count.toLocaleString()}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+    <div onClick={() => { if (drill && row?.value) drill(row.value); }}
+      title={`${value} — ${count.toLocaleString()} events`}
+      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+        padding: '4px 8px', background: 'var(--surface-subtle)', borderRadius: 5,
+        cursor: drill && row?.value ? 'pointer' : 'default' }}>
+      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 500,
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+        {value}
+      </span>
+      <span style={{ flexShrink: 0, fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--tint-info-fg)' }}>
+        {count.toLocaleString()}
+      </span>
     </div>
   );
 }
@@ -611,6 +603,8 @@ function ChangeSection({ title, rows, drill }:
 export function WhatsChanged({ openExplorer }: { openExplorer?: (filter: ExplorerFilter) => void }) {
   const [data, setData] = useState<WhatsChangedData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [active, setActive] = useState<ChangeDimKey>('sources');
+  const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     fetch('/api/stats/whats-changed?days=1')
       .then(r => r.json())
@@ -619,6 +613,23 @@ export function WhatsChanged({ openExplorer }: { openExplorer?: (filter: Explore
   }, []);
 
   const windowDays = Number(data?.window_days) || 1;
+
+  // Per-dimension config: label, rows, total count, and the Explorer drill mapping
+  // (new source → host filter; users/services/countries → free-text q).
+  const DIMS: {
+    key: ChangeDimKey; label: string; rows: ChangeRow[]; total: number;
+    drill?: (v: string) => void;
+  }[] = [
+    { key: 'sources',   label: 'New Sources',   rows: data?.new_sources   || [], total: Number(data?.totals?.new_sources   ?? (data?.new_sources   || []).length) || 0, drill: openExplorer ? (v) => openExplorer({ host: v }) : undefined },
+    { key: 'users',     label: 'New Accounts',  rows: data?.new_users     || [], total: Number(data?.totals?.new_users     ?? (data?.new_users     || []).length) || 0, drill: openExplorer ? (v) => openExplorer({ q: v })    : undefined },
+    { key: 'services',  label: 'New Services',  rows: data?.new_services  || [], total: Number(data?.totals?.new_services  ?? (data?.new_services  || []).length) || 0, drill: openExplorer ? (v) => openExplorer({ q: v })    : undefined },
+    { key: 'countries', label: 'New Countries', rows: data?.new_countries || [], total: Number(data?.totals?.new_countries ?? (data?.new_countries || []).length) || 0, drill: openExplorer ? (v) => openExplorer({ q: v })    : undefined },
+  ];
+  const cur = DIMS.find(d => d.key === active) || DIMS[0];
+  const COLLAPSED = 5;
+  const visible = expanded ? cur.rows : cur.rows.slice(0, COLLAPSED);
+  const hidden = cur.total - visible.length;
+
   return (
     <div style={{ ...CARD, height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ ...TITLE, flexShrink: 0 }}>What&apos;s New / Changed</div>
@@ -626,17 +637,49 @@ export function WhatsChanged({ openExplorer }: { openExplorer?: (filter: Explore
       {loading ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>Loading...</div>
       ) : (
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4,
-          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', alignContent: 'start' }}>
-          <ChangeSection title="New Countries" rows={data?.new_countries || []}
-            drill={openExplorer ? (v) => openExplorer({ q: v }) : undefined} />
-          <ChangeSection title="New Accounts" rows={data?.new_users || []}
-            drill={openExplorer ? (v) => openExplorer({ q: v }) : undefined} />
-          <ChangeSection title="New Sources" rows={data?.new_sources || []}
-            drill={openExplorer ? (v) => openExplorer({ host: v }) : undefined} />
-          <ChangeSection title="New Services" rows={data?.new_services || []}
-            drill={openExplorer ? (v) => openExplorer({ q: v }) : undefined} />
-        </div>
+        <>
+          {/* Summary tiles — at-a-glance totals that double as the dimension selector */}
+          <div style={{ flexShrink: 0, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginTop: 10, marginBottom: 10 }}>
+            {DIMS.map(d => {
+              const on = d.key === active;
+              return (
+                <div key={d.key}
+                  onClick={() => { setActive(d.key); setExpanded(false); }}
+                  style={{ cursor: 'pointer', padding: '7px 9px', borderRadius: 8,
+                    background: on ? 'var(--tint-info)' : 'var(--surface-subtle)',
+                    border: `1px solid ${on ? 'var(--tint-info-fg)' : 'var(--border)'}`,
+                    transition: 'background 0.15s, border-color 0.15s' }}>
+                  <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, textTransform: 'uppercase',
+                    letterSpacing: '0.3px', color: 'var(--text-muted)', whiteSpace: 'nowrap',
+                    overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.label}</div>
+                  <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, lineHeight: 1.2,
+                    color: d.total > 0 ? 'var(--tint-info-fg)' : 'var(--text-muted)' }}>{d.total}</div>
+                </div>
+              );
+            })}
+          </div>
+          {/* Top-N (capped) list for the active dimension — no scroll unless expanded */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 3,
+            overflowY: expanded ? 'auto' : 'hidden', paddingRight: expanded ? 4 : 0 }}>
+            {cur.rows.length === 0 ? (
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                nothing new in {cur.label.toLowerCase()}
+              </div>
+            ) : (
+              visible.map((row, i) => <ChangeItemRow key={i} row={row} drill={cur.drill} />)
+            )}
+          </div>
+          {/* Footer: expand to the full returned set, or collapse back */}
+          {cur.rows.length > COLLAPSED && (
+            <div onClick={() => setExpanded(e => !e)}
+              style={{ flexShrink: 0, marginTop: 6, fontSize: 'var(--text-xs)', fontWeight: 600,
+                color: 'var(--tint-info-fg)', cursor: 'pointer', textAlign: 'center' }}>
+              {expanded
+                ? 'show less'
+                : `+${hidden} more${cur.total > cur.rows.length ? ` (top ${cur.rows.length})` : ''}`}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

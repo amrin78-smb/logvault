@@ -20,6 +20,8 @@
  * Exports: { rollupEntityRisk }
  */
 
+const { RELAY_HOSTS, purgeRelayEntities } = require('./relayHosts');
+
 const EWMA_ALPHA = 0.4;   // weight of the fresh score vs. the previous risk
 const LOOKBACK   = '24 hours';
 
@@ -120,6 +122,14 @@ async function upsertRisk(pool, entityType, r) {
 async function rollupEntityRisk(pool) {
   let processed = 0;
 
+  // Remove any stale relay/log-source rows written before the exclusion existed.
+  try {
+    const purged = await purgeRelayEntities(pool);
+    if (purged > 0) log('purged ' + purged + ' stale relay entity rows');
+  } catch (e) {
+    log('relay purge failed: ' + e.message);
+  }
+
   // ── Devices ──
   try {
     const { rows } = await pool.query(
@@ -144,8 +154,9 @@ async function rollupEntityRisk(pool) {
          GROUP BY entity_value
        ) a ON a.entity_value = COALESCE(s.source_host, s.source_ip::text)
        WHERE s.received_at > now() - ($1)::interval
+         AND lower(COALESCE(s.source_host, s.source_ip::text)) <> ALL($2::text[])
        GROUP BY 1, a.anomaly_count, a.anomaly_weighted`,
-      [LOOKBACK]
+      [LOOKBACK, RELAY_HOSTS]
     );
     for (const r of rows) {
       try { await upsertRisk(pool, 'device', r); processed++; }
