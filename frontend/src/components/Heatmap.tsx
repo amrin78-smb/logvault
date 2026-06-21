@@ -26,7 +26,7 @@ function pad2(n: number): string {
   return n < 10 ? `0${n}` : String(n);
 }
 
-export function Heatmap({ data, title }: { data: HeatmapCell[]; title?: string }) {
+export function Heatmap({ data, title, cellHeight = 18 }: { data: HeatmapCell[]; title?: string; cellHeight?: number }) {
   // Build a 7×24 grid of counts.
   const grid: number[][] = Array.from({ length: 7 }, () => new Array(24).fill(0));
   let max = 0;
@@ -84,7 +84,7 @@ export function Heatmap({ data, title }: { data: HeatmapCell[]; title?: string }
             {row.map((count, h) => (
               <div key={h}
                 title={`${DAY_LABELS[d]} ${pad2(h)}:00 — ${count} event${count === 1 ? '' : 's'}`}
-                style={{ aspectRatio: '1 / 1', minWidth: 0, borderRadius: 2,
+                style={{ height: cellHeight, minWidth: 0, borderRadius: 2,
                   background: cellBg(count), border: '1px solid var(--border-light)' }} />
             ))}
           </div>

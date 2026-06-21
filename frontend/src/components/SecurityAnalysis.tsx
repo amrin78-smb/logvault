@@ -104,14 +104,14 @@ function StatCard({ value, label, color, bg, border, warn = false }: {
   value: number; label: string; color: string; bg: string; border: string; warn?: boolean;
 }) {
   return (
-    <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 8, padding: '16px 18px',
+    <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 8, padding: '10px 13px',
       position: 'relative', overflow: 'hidden' }}>
       {warn && value > 0 && (
-        <div style={{ position: 'absolute', top: 8, right: 10, fontSize: 'var(--text-lg)' }}>⚠️</div>
+        <div style={{ position: 'absolute', top: 7, right: 9, fontSize: 'var(--text-base)' }}>⚠️</div>
       )}
-      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 6, fontWeight: 600,
-        textTransform: 'uppercase', letterSpacing: '0.8px' }}>{label}</div>
-      <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color, lineHeight: 1 }}>{(value || 0).toLocaleString()}</div>
+      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 3, fontWeight: 600,
+        textTransform: 'uppercase', letterSpacing: '0.6px' }}>{label}</div>
+      <div style={{ fontSize: 'var(--text-xl)', fontWeight: 700, color, lineHeight: 1 }}>{(value || 0).toLocaleString()}</div>
     </div>
   );
 }
@@ -288,7 +288,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
           )}
           {activeSection === 'overview' && summary && (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 16 }}>
                 <StatCard value={summary.auth_failures}      label="Auth Failures"       color={summary.auth_failures > 0 ? 'var(--tint-danger-fg)' : 'var(--tint-success-fg)'}  bg={summary.auth_failures > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'} border={summary.auth_failures > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'} warn />
                 <StatCard value={summary.brute_force_success} label="Brute Force Success" color={summary.brute_force_success > 0 ? 'var(--tint-purple-fg)' : 'var(--tint-success-fg)'} bg={summary.brute_force_success > 0 ? 'var(--tint-purple)' : 'var(--tint-success)'} border={summary.brute_force_success > 0 ? 'var(--tint-purple)' : 'var(--tint-success)'} warn />
                 <StatCard value={summary.firewall_denies}    label="Firewall Denies"     color='var(--tint-warn-fg)' bg='var(--tint-warn)' border='var(--tint-warn)' />
@@ -400,7 +400,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
               {/* Activity by Hour of Week heatmap */}
               <div style={CARD}>
                 <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Activity by Hour of Week</div>
-                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 10 }}>
                   Total log volume by day of week and hour — darker cells indicate busier periods
                 </div>
                 <Heatmap data={heatmapAllCells} />

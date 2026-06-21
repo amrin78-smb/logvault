@@ -2000,6 +2000,9 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.15.3': [
+    'Made the Security tab more compact: the Overview KPI cards are now a tighter 4-across layout (8 cards in 2 rows instead of 3) with reduced padding, and the "Activity by Hour of Week" heatmap uses shorter cells so it takes far less vertical space. No data or behavior changes.',
+  ],
   '2.15.2': [
     'Cleanup: removed the historical false-positive "Auth Failures" alerts that were created while the rule was unfiltered (they were ordinary traffic — e.g. "Connection Failed" / DNS connections and IPsec tunnel negotiation — wrongly labelled as authentication failures). Genuine auth-failure alerts are preserved. Combined with the v2.15.1 rule fix, the Alerts list is now accurate.',
   ],
