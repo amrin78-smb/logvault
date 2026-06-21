@@ -2000,6 +2000,9 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.15.2': [
+    'Cleanup: removed the historical false-positive "Auth Failures" alerts that were created while the rule was unfiltered (they were ordinary traffic — e.g. "Connection Failed" / DNS connections and IPsec tunnel negotiation — wrongly labelled as authentication failures). Genuine auth-failure alerts are preserved. Combined with the v2.15.1 rule fix, the Alerts list is now accurate.',
+  ],
   '2.15.1': [
     'Fix: default alert rules were being duplicated on every deploy (the seed had no unique constraint to conflict on), accumulating dozens of copies that each fired their own alert. De-duplicated to one of each rule, preserved all existing fired-alert history, and added a UNIQUE(name) constraint so it can never recur.',
     'Fix: the built-in "Auth Failures" alert rule had no match filter, so it fired on unrelated traffic (e.g. IPsec tunnel-negotiation noise) — which is why an "Auth Failures" alert could appear while the Security > Auth Failures tab was correctly empty. It is now scoped to genuine authentication-failure messages.',

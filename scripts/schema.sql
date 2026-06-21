@@ -338,6 +338,19 @@ SET match_pattern = 'login fail|authentication fail|failed login|failed authenti
     updated_at = NOW()
 WHERE name = 'Auth Failures' AND match_pattern IS NULL;
 
+-- Remove historical FALSE-POSITIVE "Auth Failures" alerts created while the rule
+-- was unfiltered — it fired on ordinary traffic (e.g. action=ip-conn "Connection
+-- Failed", DNS) and IPsec negotiation, none of which are authentication failures.
+-- Only rows whose message is NOT a genuine auth failure are removed, so any real
+-- auth-failure alerts are always preserved. Idempotent: once the rule is scoped
+-- (above), no new such rows are created, so subsequent runs match nothing.
+DELETE FROM alert_events ae
+USING alert_rules ar
+WHERE ae.rule_id = ar.id
+  AND ar.name = 'Auth Failures'
+  AND (ae.sample_message IS NULL
+       OR ae.sample_message !~* 'login fail|authentication fail|failed login|failed authentication|ssl-login-fail|logon fail');
+
 -- ============================================================
 -- USEFUL VIEWS
 -- ============================================================
