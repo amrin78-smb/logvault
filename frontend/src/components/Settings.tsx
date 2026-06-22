@@ -403,7 +403,9 @@ export default function Settings() {
   useEffect(() => {
     fetch('/api/threats/known-bad')
       .then(r => r.json())
-      .then((d: unknown) => setKnownBadCount(Array.isArray(d) ? d.length : 0))
+      // The endpoint returns { data: [...] } — read the array off .data, not the
+      // envelope itself (the bare-array check always saw 0).
+      .then((d: { data?: unknown[] }) => setKnownBadCount(Array.isArray(d?.data) ? d.data.length : 0))
       .catch(() => setKnownBadCount(null));
   }, []);
 

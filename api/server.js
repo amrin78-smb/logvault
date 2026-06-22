@@ -215,6 +215,49 @@ app.get('/api/stats/top-talkers', asyncHandler(async (req, res) => {
   res.json(data);
 }));
 
+// Top Destinations (outbound) — mirrors top-talkers but on the DESTINATION IP
+// (structured_data.dstip), the external side of firewall logs. Surfaces outbound
+// C2/exfil signal. Geo/threat enrichment is joined from known_hosts on the dstip
+// (the collector enriches BOTH source and destination external IPs), exactly like
+// top-blocked/top-failures. Efficient on the big partitioned table: the inner
+// scan is bounded by received_at (the partition key) and only touches the dstip
+// JSONB field; the geo join is a LEFT JOIN on a shape-guarded text key.
+app.get('/api/stats/top-destinations', asyncHandler(async (req, res) => {
+  const hours = safeHours(req.query.hours);
+  const limit = safeInt(req.query.limit, 10, 50);
+  const sf = getStatsSiteFilter(req.rbac, 3, 'se');
+  const cacheKey = `top-destinations:${hours}:${limit}:${rbacCacheKey(req.rbac)}`;
+  const data = await getCached(cacheKey, 30000, async () => {
+    const { rows } = await pool.query(`
+      SELECT
+        COALESCE(kh.hostname, dst.dstip) AS host,
+        dst.dstip AS dst_ip,
+        kh.country_code, kh.country_name, kh.asn_org,
+        kh.abuse_score, kh.is_known_bad, kh.is_external,
+        COUNT(*) AS log_count,
+        MAX(dst.received_at) AS last_seen
+      FROM (
+        SELECT btrim(se.structured_data->>'dstip') AS dstip, se.received_at
+        FROM syslog_entries se
+        WHERE se.received_at > NOW() - make_interval(hours => $1)
+          AND se.structured_data->>'dstip' ~ '^[0-9.]+$'
+        ${sf.clause}
+      ) dst
+      -- Join geo/threat on the destination IP (the external side). host() strips
+      -- the /32 that known_hosts.ip_address (INET) renders. LEFT JOIN keeps rows
+      -- with no enrichment (geo cols NULL).
+      LEFT JOIN known_hosts kh ON host(kh.ip_address) = dst.dstip
+      WHERE dst.dstip IS NOT NULL AND dst.dstip <> ''
+      GROUP BY dst.dstip, kh.hostname, kh.country_code, kh.country_name,
+        kh.asn_org, kh.abuse_score, kh.is_known_bad, kh.is_external
+      ORDER BY log_count DESC
+      LIMIT $2
+    `, [hours, limit, ...sf.params]);
+    return { hours, data: rows };
+  });
+  res.json(data);
+}));
+
 app.get('/api/stats/by-vendor', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const { rows } = await pool.query(`
@@ -995,7 +1038,17 @@ app.get('/api/threats/known-bad', asyncHandler(async (req, res) => {
     LIMIT $${limitIdx}
   `, params);
 
-  res.json({ data: rows });
+  // Whether an AbuseIPDB key is configured — lets the widget show a "paste a key"
+  // empty state vs. a clean "no threats" state. Boolean only; the key is never sent.
+  let keyConfigured = false;
+  try {
+    const k = await pool.query(
+      `SELECT value FROM app_settings WHERE key = 'abuseipdb_api_key'`
+    );
+    keyConfigured = !!(k.rows[0] && String(k.rows[0].value || '').trim());
+  } catch (_) { /* best-effort; default false */ }
+
+  res.json({ data: rows, keyConfigured });
 }));
 
 // ── NETWORK HEALTH ───────────────────────────────────────────
@@ -1671,6 +1724,58 @@ app.get('/api/ueba/entity/:type/:value', asyncHandler(async (req, res) => {
   });
 }));
 
+// 7) UEBA baseline warm-up status — how "ready" anomaly detection is. Reads
+//    entity_baselines (how many entities/slots are learned + last rebuild) plus
+//    the earliest syslog_entries timestamp to express coverage as "X of N days".
+//    Baselines are collector-wide (not per-site), so this is an unfiltered
+//    readiness indicator for any authenticated user. Read-only; never 500s.
+const BASELINE_TARGET_DAYS = 7;
+app.get('/api/ueba/baseline-status', asyncHandler(async (req, res) => {
+  const data = await getCached(`baseline-status`, 60000, async () => {
+    // Baseline coverage: distinct entities + total hour×dow slots, by type, and
+    // the most recent rebuild time. One pass over the small entity_baselines table.
+    const cov = await pool.query(`
+      SELECT
+        COUNT(DISTINCT entity_value)                                              AS entities,
+        COUNT(*)                                                                  AS slots,
+        COUNT(DISTINCT entity_value) FILTER (WHERE entity_type = 'device')        AS device_entities,
+        COUNT(DISTINCT entity_value) FILTER (WHERE entity_type = 'user')          AS user_entities,
+        MAX(updated_at)                                                           AS last_update
+      FROM entity_baselines
+    `);
+
+    // Earliest log we have — drives days-of-data accumulated. Cheap MIN over the
+    // partition key (planner uses the per-partition received_at index).
+    const span = await pool.query(`SELECT MIN(received_at) AS earliest FROM syslog_entries`);
+
+    const c = cov.rows[0] || {};
+    const earliest = span.rows[0] && span.rows[0].earliest ? new Date(span.rows[0].earliest) : null;
+    let daysAccumulated = 0;
+    if (earliest && !isNaN(earliest.getTime())) {
+      daysAccumulated = Math.max(0, (Date.now() - earliest.getTime()) / 86400000);
+    }
+    // Round down to whole days for display, capped at the target.
+    const daysWhole = Math.min(BASELINE_TARGET_DAYS, Math.floor(daysAccumulated));
+    const entities = parseInt(c.entities || 0, 10);
+
+    return {
+      target_days:      BASELINE_TARGET_DAYS,
+      days_accumulated: daysWhole,
+      // raw (uncapped) days, 1dp, so the UI can show partial-day progress finely
+      days_raw:         Math.round(daysAccumulated * 10) / 10,
+      entities,
+      device_entities:  parseInt(c.device_entities || 0, 10),
+      user_entities:    parseInt(c.user_entities || 0, 10),
+      slots:            parseInt(c.slots || 0, 10),
+      last_update:      c.last_update || null,
+      earliest_log:     earliest ? earliest.toISOString() : null,
+      // "ready" once we have at least the target days of data AND some baselines built.
+      ready:            daysAccumulated >= BASELINE_TARGET_DAYS && entities > 0,
+    };
+  });
+  res.json(data);
+}));
+
 // ── ADVANCED ANALYTICS (computed on the fly — no new tables) ──
 // All four endpoints below are READ-ONLY and RBAC site-filtered on syslog_entries
 // via getSiteFilter, matching every other /api/stats and /api/security route.
@@ -2000,6 +2105,11 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.16.0': [
+    'New dashboard "Top Destinations" widget: outbound-callout analysis ranking the external destination IPs your network reaches out to (the destination side of firewall logs), with country/ASN enrichment and known-bad flagging — surfaces possible C2/exfil channels alongside the existing source-side Top Talkers.',
+    'New UEBA "Baseline Status" panel on the Intelligence console: shows anomaly-detection readiness — days of data accumulated toward the 7-day learning window ("X of 7 days"), how many devices/users have learned baselines, and when baselines were last rebuilt.',
+    'AbuseIPDB threat scoring is now fully wired end-to-end: paste a free AbuseIPDB API key in Settings (masked, super-admin only) and the collector scores external IPs into known_hosts (abuse score / known-bad / threat tags) feeding the Known-Bad Sources widget and badges. With no key configured, the widget shows a clear "not configured" prompt instead of a misleading all-clear.',
+  ],
   '2.15.3': [
     'Made the Security tab more compact: the Overview KPI cards are now a tighter 4-across layout (8 cards in 2 rows instead of 3) with reduced padding, and the "Activity by Hour of Week" heatmap uses shorter cells so it takes far less vertical space. No data or behavior changes.',
   ],
@@ -2454,10 +2564,12 @@ app.post('/api/system/update', requireSuperAdmin, asyncHandler(async (req, res) 
 app.get('/api/settings', asyncHandler(async (req, res) => {
   const { rows } = await pool.query('SELECT key, value FROM app_settings');
   const data = Object.fromEntries(rows.map(r => [r.key, r.value]));
-  // Never expose the SMTP password to anyone but a super_admin (only role that
-  // can edit it). Settings writes are already super_admin-gated.
+  // Never expose secrets (SMTP password, AbuseIPDB API key) to anyone but a
+  // super_admin (the only role that can edit them). Settings writes are already
+  // super_admin-gated.
   if (!req.rbac || !req.rbac.isSuperAdmin) {
     delete data.smtp_pass;
+    delete data.abuseipdb_api_key;
   }
   res.json({ data });
 }));
@@ -2468,7 +2580,8 @@ app.post('/api/settings', requireSuperAdmin, asyncHandler(async (req, res) => {
     'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'smtp_enabled',
     'email_notify_enabled', 'email_notify_severities', 'email_notify_categories',
     'email_notify_vendors', 'email_notify_min_risk', 'email_notify_digest_mode',
-    'email_notify_digest_hour', 'email_notify_recipients', 'email_notify_cooldown_mins'];
+    'email_notify_digest_hour', 'email_notify_recipients', 'email_notify_cooldown_mins',
+    'abuseipdb_api_key'];
   const changedKeys = [];
   for (const key of allowed) {
     if (req.body[key] !== undefined) {

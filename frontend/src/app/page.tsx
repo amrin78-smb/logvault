@@ -5,6 +5,7 @@ import { useSession }  from 'next-auth/react';
 import SeverityChart   from '@/components/SeverityChart';
 import TimelineChart   from '@/components/TimelineChart';
 import TopTalkers      from '@/components/TopTalkers';
+import TopDestinations from '@/components/TopDestinations';
 import VendorBreakdown from '@/components/VendorBreakdown';
 import { TopSecurityEvents, TopBlockedDestinations, TopConnectionFailures, VPNStatus, ActiveAlertsSummary, InterfaceEventsSummary, FirewallActions, CapacityIngestionHealth, WhatsChanged, RiskiestEntities } from '@/components/DashboardWidgets';
 import { KnownBadSources } from '@/components/ThreatIntel';
@@ -374,14 +375,20 @@ export default function Home() {
                 ))}
               </div>
 
-              {/* Row 5: Timeline + Top Talkers + Vendor Breakdown — 3 equal columns */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+              {/* Row 5: Timeline + Top Talkers (source) + Top Destinations (outbound) + Vendor Breakdown */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
                 {[
                   <ErrorBoundary name="Timeline Chart">
                     <TimelineChart hours={hours} compact />
                   </ErrorBoundary>,
                   <ErrorBoundary name="Top Talkers">
                     <TopTalkers hours={hours} onHostClick={(host) => openExplorer({ host })} compact />
+                  </ErrorBoundary>,
+                  <ErrorBoundary name="Top Destinations">
+                    {/* Drill into the destination IP via the existing host filter — it
+                        already matches structured_data.dstip, so this mirrors Top Talkers'
+                        source drill-down without a separate (riskier) dst filter path. */}
+                    <TopDestinations hours={hours} onHostClick={(host) => openExplorer({ host })} />
                   </ErrorBoundary>,
                   <ErrorBoundary name="Vendor Breakdown">
                     <VendorBreakdown hours={hours} onVendorClick={(vendor) => openExplorer({ vendor })} compact />

@@ -110,6 +110,7 @@ function fmtRelative(iso?: string | null): string {
 // Module-level component (never defined inside another).
 export function KnownBadSources({ onNavigate }: { onNavigate?: (ip: string) => void }) {
   const [rows, setRows] = useState<KnownBadRow[]>([]);
+  const [keyConfigured, setKeyConfigured] = useState(true);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -117,9 +118,13 @@ export function KnownBadSources({ onNavigate }: { onNavigate?: (ip: string) => v
     const load = () => {
       fetch('/api/threats/known-bad')
         .then(r => r.json())
-        .then((d: unknown) => {
+        // The endpoint returns { data: [...], keyConfigured }. The previous code
+        // checked Array.isArray(d) on the envelope, so rows were ALWAYS empty even
+        // when threats existed — read the array off .data.
+        .then((d: { data?: KnownBadRow[]; keyConfigured?: boolean }) => {
           if (!active) return;
-          setRows(Array.isArray(d) ? (d as KnownBadRow[]) : []);
+          setRows(Array.isArray(d?.data) ? d.data : []);
+          setKeyConfigured(d?.keyConfigured !== false);
           setLoaded(true);
         })
         .catch(() => { if (active) setLoaded(true); });
@@ -152,9 +157,18 @@ export function KnownBadSources({ onNavigate }: { onNavigate?: (ip: string) => v
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
           Loading...
         </div>
+      ) : rows.length === 0 && !keyConfigured ? (
+        // No AbuseIPDB key configured — scoring is inactive. Guide the operator
+        // rather than implying the network is clean.
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          gap: 4, color: 'var(--text-muted)', fontSize: 'var(--text-sm)', textAlign: 'center', padding: '0 12px' }}>
+          <span style={{ fontSize: 'var(--text-md)' }}>🛈</span>
+          <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Threat scoring not configured</span>
+          <span style={{ fontSize: 'var(--text-xs)' }}>Add an AbuseIPDB API key in Settings to score external IPs.</span>
+        </div>
       ) : rows.length === 0 ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: '#16a34a', fontSize: 'var(--text-sm)', fontWeight: 500, textAlign: 'center', padding: '0 12px' }}>
+          color: 'var(--tint-success-fg)', fontSize: 'var(--text-sm)', fontWeight: 500, textAlign: 'center', padding: '0 12px' }}>
           ✓ No known-bad external sources detected.
         </div>
       ) : (

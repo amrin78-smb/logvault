@@ -103,6 +103,111 @@ function StatCard({ value, label, danger = false }: { value: number; label: stri
   );
 }
 
+// ── UEBA baseline warm-up status panel ──
+// Read-only readiness indicator: how many days of data we've accumulated toward
+// the 7-day target, how many entities have learned baselines, and when the
+// baselines were last rebuilt. Sourced from /api/ueba/baseline-status.
+interface BaselineShape {
+  target_days?: number;
+  days_accumulated?: number;
+  days_raw?: number;
+  entities?: number;
+  device_entities?: number;
+  user_entities?: number;
+  slots?: number;
+  last_update?: string | null;
+  earliest_log?: string | null;
+  ready?: boolean;
+}
+
+function BaselineStatus() {
+  const [data, setData] = useState<BaselineShape | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/ueba/baseline-status')
+      .then(r => r.json())
+      .then((d: BaselineShape) => { if (active) { setData(d || null); setLoaded(true); } })
+      .catch(() => { if (active) setLoaded(true); });
+    return () => { active = false; };
+  }, []);
+
+  const target = Number(data?.target_days) || 7;
+  const daysWhole = Math.max(0, Number(data?.days_accumulated) || 0);
+  const daysRaw = Math.max(0, Number(data?.days_raw) || 0);
+  const entities = Number(data?.entities) || 0;
+  const ready = !!data?.ready;
+  // Progress toward the target, by the finer raw days so the bar moves daily.
+  const pct = Math.min(100, Math.round((daysRaw / target) * 100));
+
+  const barColor = ready ? 'var(--tint-success-fg)' : 'var(--primary)';
+  const statusLabel = !loaded ? 'Loading…'
+    : ready ? 'Ready — baselines active'
+    : entities > 0 ? 'Warming up — learning normal patterns'
+    : 'Collecting data — baselines not built yet';
+  const statusColor = ready ? 'var(--tint-success-fg)' : 'var(--text-secondary)';
+
+  return (
+    <div style={{ ...CARD, marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 2 }}>
+        <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)' }}>UEBA Baseline Status</div>
+        <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: statusColor }}>{statusLabel}</span>
+      </div>
+      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 14 }}>
+        Anomaly detection learns each entity&rsquo;s normal hourly/day-of-week activity over a {target}-day window before flagging deviations.
+      </div>
+
+      {/* Days-of-data progress toward the target */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
+          <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 600 }}>Data accumulated</span>
+          <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
+            {daysWhole} of {target} days
+          </span>
+        </div>
+        <div style={{ height: 8, background: 'var(--border-light)', borderRadius: 4, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 4, transition: 'width 0.3s ease' }} />
+        </div>
+      </div>
+
+      {/* Stat row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
+        <BaselineStat label="Entities with baselines" value={entities.toLocaleString()} />
+        <BaselineStat label="Devices" value={(Number(data?.device_entities) || 0).toLocaleString()} />
+        <BaselineStat label="Users" value={(Number(data?.user_entities) || 0).toLocaleString()} />
+        <BaselineStat
+          label="Last rebuild"
+          value={data?.last_update ? fmtBaselineTime(data.last_update) : '—'} mono />
+      </div>
+    </div>
+  );
+}
+
+// Small labeled stat tile for the baseline panel.
+function BaselineStat({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 4, fontWeight: 600,
+        textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</div>
+      <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--text-primary)',
+        ...(mono ? { fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)' } : {}) }}>{value}</div>
+    </div>
+  );
+}
+
+// Compact "time ago" for the last baseline rebuild.
+function fmtBaselineTime(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (isNaN(t)) return '—';
+  const mins = Math.floor((Date.now() - t) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
 // Build a short human summary from an anomaly's detail jsonb object.
 function detailSummary(detail: any): string {
   if (!detail || typeof detail !== 'object') return '';
@@ -610,6 +715,8 @@ export default function IntelligenceConsole({ openExplorer, hours }: {
 
       {/* ── RISKIEST ENTITIES VIEW ── */}
       {activeTab === 'entities' && (
+        <>
+        <BaselineStatus />
         <div style={CARD}>
           <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Riskiest Entities</div>
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
@@ -666,6 +773,7 @@ export default function IntelligenceConsole({ openExplorer, hours }: {
             </table>
           )}
         </div>
+        </>
       )}
 
       {/* Entity slide-in panel */}
