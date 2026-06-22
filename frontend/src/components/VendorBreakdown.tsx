@@ -20,7 +20,15 @@ export default function VendorBreakdown({ hours, onVendorClick, compact }: {
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
       padding: '16px 20px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
       <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 1, flexShrink: 0 }}>Logs by Vendor</div>
-      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 8, flexShrink: 0 }}>Distribution — {hours}h</div>
+      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 4, flexShrink: 0 }}>Distribution — {hours}h</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 8, flexShrink: 0 }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ width: 7, height: 7, borderRadius: 2, background: 'var(--tint-danger)', border: '1px solid var(--tint-danger-fg)' }} />c = critical
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ width: 7, height: 7, borderRadius: 2, background: 'var(--tint-warn)', border: '1px solid var(--tint-warn-fg)' }} />e = error
+        </span>
+      </div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7, justifyContent: 'space-evenly' }}>
         {data.map(row => {
           const count = parseInt(row.log_count); const pct = Math.round((count / total) * 100);
@@ -36,9 +44,9 @@ export default function VendorBreakdown({ hours, onVendorClick, compact }: {
                   <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{pct}%</span>
                 </div>
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                  {crit > 0 && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', padding: '1px 4px', borderRadius: 6, fontWeight: 600 }}>{crit}c</span>}
-                  {err  > 0 && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--tint-warn-fg)', background: 'var(--tint-warn)', border: '1px solid var(--tint-warn)', padding: '1px 4px', borderRadius: 6, fontWeight: 600 }}>{err}e</span>}
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 700 }}>{count.toLocaleString()}</span>
+                  {crit > 0 && <span title={`${crit.toLocaleString()} critical`} style={{ fontSize: 'var(--text-xs)', color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', padding: '1px 4px', borderRadius: 6, fontWeight: 600 }}>{crit}c</span>}
+                  {err  > 0 && <span title={`${err.toLocaleString()} error${err === 1 ? '' : 's'}`} style={{ fontSize: 'var(--text-xs)', color: 'var(--tint-warn-fg)', background: 'var(--tint-warn)', border: '1px solid var(--tint-warn)', padding: '1px 4px', borderRadius: 6, fontWeight: 600 }}>{err}e</span>}
+                  <span title={`${count.toLocaleString()} total logs`} style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 700 }}>{count.toLocaleString()}</span>
                 </div>
               </div>
               <div style={{ height: 4, background: 'var(--border-light)', borderRadius: 2, overflow: 'hidden' }}>

@@ -2105,6 +2105,9 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.16.2': [
+    'Made the "Logs by Vendor" widget\'s severity badges self-explaining: the compact "c"/"e" badges now have hover tooltips ("N critical" / "N error(s)") and the total shows "N total logs", plus a tiny one-line legend (c = critical · e = error) under the sub-header so the meaning is clear at a glance.',
+  ],
   '2.16.1': [
     'Compacted the dashboard "Top Destinations" card — the country · ASN now sits inline on the same row as the destination IP (matching Top Connection Failures / Top Blocked) instead of wrapping to a second line.',
     'Rebalanced the dashboard into two even rows of three: Top Blocked · Top Connection Failures · Top Destinations, then Log Volume · Top Talkers · Logs by Vendor.',
