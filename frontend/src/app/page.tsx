@@ -358,15 +358,21 @@ export default function Home() {
                 </ErrorBoundary>
               </div>
 
-              {/* Row 4: Top Blocked + Top Connection Failures — 2 wide containers so the
-                  destination IP + flag/country/ASN/known-bad badge have room to breathe */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+              {/* Row 4: Top Blocked + Top Connection Failures + Top Destinations — 3 equal,
+                  all single-line IP + flag/country/ASN/known-bad widgets */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                 {[
                   <ErrorBoundary name="Top Blocked">
                     <TopBlockedDestinations hours={hours} onNavigate={() => setTab('security')} />
                   </ErrorBoundary>,
                   <ErrorBoundary name="Top Connection Failures">
                     <TopConnectionFailures hours={hours} />
+                  </ErrorBoundary>,
+                  <ErrorBoundary name="Top Destinations">
+                    {/* Drill into the destination IP via the existing host filter — it
+                        already matches structured_data.dstip, so this mirrors Top Talkers'
+                        source drill-down without a separate (riskier) dst filter path. */}
+                    <TopDestinations hours={hours} onHostClick={(host) => openExplorer({ host })} />
                   </ErrorBoundary>,
                 ].map((widget, i) => (
                   <div key={i} style={{ height: 220, overflow: 'hidden' }}>
@@ -375,20 +381,14 @@ export default function Home() {
                 ))}
               </div>
 
-              {/* Row 5: Timeline + Top Talkers (source) + Top Destinations (outbound) + Vendor Breakdown */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+              {/* Row 5: Timeline + Top Talkers (source) + Vendor Breakdown — 3 equal */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
                 {[
                   <ErrorBoundary name="Timeline Chart">
                     <TimelineChart hours={hours} compact />
                   </ErrorBoundary>,
                   <ErrorBoundary name="Top Talkers">
                     <TopTalkers hours={hours} onHostClick={(host) => openExplorer({ host })} compact />
-                  </ErrorBoundary>,
-                  <ErrorBoundary name="Top Destinations">
-                    {/* Drill into the destination IP via the existing host filter — it
-                        already matches structured_data.dstip, so this mirrors Top Talkers'
-                        source drill-down without a separate (riskier) dst filter path. */}
-                    <TopDestinations hours={hours} onHostClick={(host) => openExplorer({ host })} />
                   </ErrorBoundary>,
                   <ErrorBoundary name="Vendor Breakdown">
                     <VendorBreakdown hours={hours} onVendorClick={(vendor) => openExplorer({ vendor })} compact />

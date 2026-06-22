@@ -34,24 +34,19 @@ export default function TopDestinations({ hours, onHostClick }: {
               style={{ cursor: onHostClick ? 'pointer' : 'default',
                 borderLeft: `3px solid ${knownBad ? 'var(--primary)' : 'transparent'}`,
                 paddingLeft: 7 }}>
-              {/* Row 1: flag + host, count on the right */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, gap: 6 }}>
+              {/* Single line: flag + host + country·ASN (inline, muted) + known-bad, count right */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3, gap: 6 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                   {flag && <span style={{ flexShrink: 0, fontSize: 'var(--text-xs)' }}>{flag}</span>}
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.host}</span>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 500, whiteSpace: 'nowrap', flexShrink: 0 }}>{row.host}</span>
+                  {geoText && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{geoText}</span>}
+                  {knownBad && <KnownBadBadge score={row.abuse_score} compact />}
                 </div>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 600, flexShrink: 0 }}>{parseInt(row.log_count).toLocaleString()}</span>
               </div>
               <div style={{ height: 4, background: 'var(--border-light)', borderRadius: 2, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 2 }} />
               </div>
-              {/* Row 2: country · ASN org, with known-bad badge */}
-              {(geoText || knownBad) && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginTop: 3 }}>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{geoText}</span>
-                  {knownBad && <KnownBadBadge score={row.abuse_score} compact />}
-                </div>
-              )}
             </div>
           );
         })}

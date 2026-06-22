@@ -2105,6 +2105,10 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.16.1': [
+    'Compacted the dashboard "Top Destinations" card — the country · ASN now sits inline on the same row as the destination IP (matching Top Connection Failures / Top Blocked) instead of wrapping to a second line.',
+    'Rebalanced the dashboard into two even rows of three: Top Blocked · Top Connection Failures · Top Destinations, then Log Volume · Top Talkers · Logs by Vendor.',
+  ],
   '2.16.0': [
     'New dashboard "Top Destinations" widget: outbound-callout analysis ranking the external destination IPs your network reaches out to (the destination side of firewall logs), with country/ASN enrichment and known-bad flagging — surfaces possible C2/exfil channels alongside the existing source-side Top Talkers.',
     'New UEBA "Baseline Status" panel on the Intelligence console: shows anomaly-detection readiness — days of data accumulated toward the 7-day learning window ("X of 7 days"), how many devices/users have learned baselines, and when baselines were last rebuilt.',
