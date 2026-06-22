@@ -1,6 +1,6 @@
 # ============================================================
 # LogVault Update Script
-# Run this after pulling changes from GitHub via Codespaces
+# Run this after pulling changes from GitHub
 # Usage: .\Update-LogVault.ps1
 # ============================================================
 

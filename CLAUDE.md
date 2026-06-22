@@ -127,24 +127,17 @@ C:\Apps\logvault\                    ← repo root = app root
 ## Development Workflow — ALWAYS FOLLOW THIS
 
 ```
-1. Make ALL changes in GitHub Codespaces
-2. Upload files to temp/ folder in Codespaces if coming from Claude chat
-3. Copy files to correct paths: cp temp/file.tsx frontend/src/components/file.tsx
-4. Run: cd frontend && npm run build  (verify no build errors)
-5. If build passes: cd .. && git add -A
-6. git commit -m "descriptive message"
-7. git push origin main
-8. On Windows Server: & "C:\Apps\logvault\installer\Update-LogVault.ps1" -InstallDir "C:\Apps\logvault"
+1. Make ALL changes here in Claude Code
+2. Run: cd frontend && npm run build  (verify no build errors)
+3. If build passes: cd .. && git add -A
+4. git commit -m "descriptive message"
+5. git push origin main
+6. On Windows Server: & "C:\Apps\logvault\installer\Update-LogVault.ps1" -InstallDir "C:\Apps\logvault"
 ```
 
 **NEVER edit files directly on the Windows Server.**  
 **NEVER commit broken code.**  
 **ALWAYS fix build errors before committing.**
-
-### temp/ folder
-- Used to stage files uploaded from Claude chat to Codespaces
-- Listed in `.gitignore` — never committed
-- Copy pattern: `cp temp/filename destination/path`
 
 ---
 
@@ -232,7 +225,7 @@ $env:PGPASSWORD = "<set-in-NSSM-env>"
 - Every `ALTER TABLE`, `CREATE TABLE`, `CREATE INDEX` run manually on the server **MUST** also be added to `schema.sql`
 - Use `IF NOT EXISTS` everywhere — schema must be idempotent (safe to run multiple times)
 - New `app_settings` keys must use: `INSERT INTO app_settings (key, value) VALUES ('key', 'default') ON CONFLICT (key) DO NOTHING;`
-- After any manual schema change on server, immediately update `schema.sql` in Codespaces and commit
+- After any manual schema change on server, immediately update `schema.sql` in Claude Code and commit
 
 ### Tables
 ```sql
