@@ -121,7 +121,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
   onHoursChange: (hours: number) => void;
   refreshInterval: number;
   onRefreshChange: (seconds: number) => void;
-  onTechnique?: (technique: string) => void;
+  onTechnique?: (technique: string, info: { events: number; alerts: number }) => void;
   onDrill?: (filter: { host?: string; q?: string; category?: string; technique?: string; threat?: string; severity?: string; vendor?: string }) => void;
 }) {
   const [summary,      setSummary]      = useState<any>(null);
@@ -220,7 +220,13 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
 
   // ── MITRE ATT&CK coverage matrix data ──
   const covMap: Record<string, number> = {};
-  mitreCov.forEach((r: any) => { covMap[r.technique] = parseInt(r.count) || 0; });
+  const covEvents: Record<string, number> = {};
+  const covAlerts: Record<string, number> = {};
+  mitreCov.forEach((r: any) => {
+    covMap[r.technique]    = parseInt(r.count)  || 0;
+    covEvents[r.technique] = parseInt(r.events) || 0;
+    covAlerts[r.technique] = parseInt(r.alerts) || 0;
+  });
   const byTactic: Record<string, string[]> = {};
   Object.keys(MITRE_TECHNIQUES).forEach(id => {
     const tac = MITRE_TECHNIQUES[id].tactic;
@@ -882,10 +888,12 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 6 }}>
                         {byTactic[tac].map(id => {
                           const c = covMap[id] || 0;
+                          const ev = covEvents[id] || 0;
+                          const al = covAlerts[id] || 0;
                           const active = c > 0;
                           return (
-                            <button key={id} onClick={() => active && onTechnique?.(id)} disabled={!active || !onTechnique}
-                              title={`${id} · ${MITRE_TECHNIQUES[id].name}${active ? ` — ${c.toLocaleString()} events (click to view)` : ' — no activity in window'}`}
+                            <button key={id} onClick={() => active && onTechnique?.(id, { events: ev, alerts: al })} disabled={!active || !onTechnique}
+                              title={`${id} · ${MITRE_TECHNIQUES[id].name}${active ? ` — ${ev.toLocaleString()} logs · ${al.toLocaleString()} alerts (click to view)` : ' — no activity in window'}`}
                               style={{ textAlign: 'left', cursor: active && onTechnique ? 'pointer' : 'default',
                                 border: `1px solid ${active ? 'var(--tint-purple)' : 'var(--border-light)'}`,
                                 background: active ? 'var(--tint-purple)' : 'var(--bg-primary)', borderRadius: 6,

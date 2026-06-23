@@ -433,7 +433,7 @@ app.get('/api/stats/mitre-coverage', asyncHandler(async (req, res) => {
     const { rows } = await pool.query(`
       WITH event_tech AS (
         -- Event-level tags written at ingest by collector/mitreMapper.js.
-        SELECT t.technique AS technique, COUNT(*)::bigint AS count
+        SELECT t.technique AS technique, COUNT(*)::bigint AS events
         FROM syslog_entries se,
              LATERAL jsonb_array_elements_text(
                CASE WHEN jsonb_typeof(se.structured_data->'mitre') = 'array'
@@ -449,7 +449,7 @@ app.get('/api/stats/mitre-coverage', asyncHandler(async (req, res) => {
         -- rules (correlationEngine.js persists MITRE_BY_RULE onto that column), so a
         -- technique that only ever surfaces at the correlation altitude still lights up
         -- the coverage matrix. Counts fired alerts.
-        SELECT tech AS technique, COUNT(*)::bigint AS count
+        SELECT tech AS technique, COUNT(*)::bigint AS alerts
         FROM alert_events ae
         JOIN alert_rules ar ON ar.id = ae.rule_id,
              LATERAL unnest(ar.mitre_techniques) AS tech
@@ -458,9 +458,12 @@ app.get('/api/stats/mitre-coverage', asyncHandler(async (req, res) => {
         ${sfAlerts.clause}
         GROUP BY tech
       )
-      SELECT technique, SUM(count)::bigint AS count
-      FROM (SELECT * FROM event_tech UNION ALL SELECT * FROM alert_tech) u
-      GROUP BY technique
+      SELECT COALESCE(e.technique, a.technique) AS technique,
+             COALESCE(e.events, 0)::bigint AS events,
+             COALESCE(a.alerts, 0)::bigint AS alerts,
+             (COALESCE(e.events, 0) + COALESCE(a.alerts, 0))::bigint AS count
+      FROM event_tech e
+      FULL OUTER JOIN alert_tech a ON a.technique = e.technique
       ORDER BY count DESC
     `, [hours, ...sfEvents.params, ...sfAlerts.params]);
     return { hours, data: rows };
@@ -2127,6 +2130,10 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.16.4': [
+    'ATT&CK Coverage drill-down now lands on the right evidence: clicking an alert-derived technique (e.g. T1046 Port Scan, T1190) opens the Alerts view filtered to that technique instead of an empty log search; purely event-tagged techniques still open the Log Explorer',
+    'Coverage tiles now show the events/alerts split in the tooltip (N logs · M alerts), and the Alerts view can be filtered by ATT&CK technique',
+  ],
   '2.16.3': [
     'ATT&CK Coverage now reflects alert-level classifications, not just per-event tags — techniques that only surface from correlation alerts (e.g. T1190 from "Repeated IPS Triggers") now light up the matrix instead of staying invisible',
     'Tightened the "Repeated IPS Triggers" correlation rule to fire only on real IPS detections (structured type/subtype=ips), so blocked outbound web/SSL traffic is no longer mislabeled as an IPS exploit (T1190)',

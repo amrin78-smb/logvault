@@ -105,6 +105,7 @@ export default function Home() {
   const [summary, setSummary]               = useState<any[]>([]);
   const [health, setHealth]                 = useState<any>(null);
   const [explorerFilter, setExplorerFilter] = useState<ExplorerFilter>({});
+  const [alertTechnique, setAlertTechnique] = useState<string | undefined>(undefined);
   const [refreshInterval, setRefreshInterval] = useState(30);
   const [kpiFlash, setKpiFlash]             = useState(false);
   // Sidebar collapse — suite-standard 240↔64px, persisted to localStorage so it
@@ -168,6 +169,11 @@ export default function Home() {
   const openExplorer = (filter: ExplorerFilter) => {
     setExplorerFilter({ ...filter, hours: String(hours) });
     setTab('explorer');
+  };
+
+  const openAlerts = (technique?: string) => {
+    setAlertTechnique(technique);
+    setTab('alerts');
   };
 
   const totalLogs  = summary.reduce((s, r) => s + parseInt(r.log_count), 0);
@@ -438,9 +444,9 @@ export default function Home() {
 
           {tab === 'explorer'  && <ErrorBoundary name="Log Explorer"><LogExplorer initialFilter={explorerFilter} onFilterUsed={() => setExplorerFilter({})} /></ErrorBoundary>}
           {tab === 'livetail'  && <ErrorBoundary name="Live Tail"><LiveTail /></ErrorBoundary>}
-          {tab === 'alerts'    && <ErrorBoundary name="Alerts"><AlertEvents /></ErrorBoundary>}
+          {tab === 'alerts'    && <ErrorBoundary name="Alerts"><AlertEvents initialTechnique={alertTechnique} onTechniqueConsumed={() => setAlertTechnique(undefined)} /></ErrorBoundary>}
           {tab === 'health'    && <ErrorBoundary name="Network Health"><NetworkHealth hours={hours} onHoursChange={setHours} refreshInterval={refreshInterval} onRefreshChange={setRefreshInterval} /></ErrorBoundary>}
-          {tab === 'security'  && <ErrorBoundary name="Security"><SecurityAnalysis hours={hours} onHoursChange={setHours} refreshInterval={refreshInterval} onRefreshChange={setRefreshInterval} onTechnique={(t) => openExplorer({ technique: t })} onDrill={openExplorer} /></ErrorBoundary>}
+          {tab === 'security'  && <ErrorBoundary name="Security"><SecurityAnalysis hours={hours} onHoursChange={setHours} refreshInterval={refreshInterval} onRefreshChange={setRefreshInterval} onTechnique={(t, info) => (info && info.alerts > 0 ? openAlerts(t) : openExplorer({ technique: t }))} onDrill={openExplorer} /></ErrorBoundary>}
           {tab === 'intelligence' && <ErrorBoundary name="Intelligence"><IntelligenceConsole openExplorer={openExplorer} hours={String(hours)} /></ErrorBoundary>}
           {tab === 'hosts'     && <ErrorBoundary name="Known Hosts"><KnownHosts /></ErrorBoundary>}
           {tab === 'settings'  && isAdmin && <ErrorBoundary name="Settings"><Settings /></ErrorBoundary>}

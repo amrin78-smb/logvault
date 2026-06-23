@@ -62,7 +62,7 @@ interface GroupedRule {
   mitre_techniques?: string[] | null;
 }
 
-export default function AlertEvents() {
+export default function AlertEvents({ initialTechnique, onTechniqueConsumed }: { initialTechnique?: string; onTechniqueConsumed?: () => void } = {}) {
   const { toast } = useToast();
   const [events,      setEvents]      = useState<AlertEvent[]>([]);
   const [rules,       setRules]       = useState<any[]>([]);
@@ -72,6 +72,7 @@ export default function AlertEvents() {
   const [selected,    setSelected]    = useState<Set<number>>(new Set());
   const [loading,     setLoading]     = useState(false);
   const [detailAlert, setDetailAlert] = useState<AlertEvent | null>(null);
+  const [techniqueFilter, setTechniqueFilter] = useState<string | undefined>(initialTechnique);
 
   const correlationNames = new Set(CORRELATION_RULES.map(r => r.name));
 
@@ -84,6 +85,17 @@ export default function AlertEvents() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Drilled in from the ATT&CK coverage matrix: filter to that technique and show
+  // the full history (acked + unacked). Clear the page-level seed so a later plain
+  // visit to Alerts is unfiltered; the local filter persists until the user clears it.
+  useEffect(() => {
+    if (initialTechnique) {
+      setTechniqueFilter(initialTechnique);
+      setActiveTab('history');
+      onTechniqueConsumed?.();
+    }
+  }, [initialTechnique]);
 
   // Group events by rule name
   const grouped: GroupedRule[] = [];
@@ -106,8 +118,9 @@ export default function AlertEvents() {
   }
   grouped.sort((a, b) => b.unacked_count - a.unacked_count || new Date(b.latest).getTime() - new Date(a.latest).getTime());
 
-  const activeGroups  = grouped.filter(g => g.unacked_count > 0);
-  const historyGroups = grouped;
+  const matchTech = (g: GroupedRule) => !techniqueFilter || (g.mitre_techniques || []).includes(techniqueFilter);
+  const activeGroups  = grouped.filter(g => g.unacked_count > 0 && matchTech(g));
+  const historyGroups = grouped.filter(matchTech);
 
   const totalUnacked = events.filter(e => !e.acknowledged).length;
 
@@ -183,6 +196,13 @@ export default function AlertEvents() {
 
   const renderGroups = (groups: GroupedRule[]) => (
     <div>
+      {techniqueFilter && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+          <span>Filtered to ATT&amp;CK technique</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, background: 'var(--tint-purple)', color: 'var(--tint-purple-fg)', borderRadius: 6, padding: '2px 8px' }}>{techniqueFilter}</span>
+          <button onClick={() => setTechniqueFilter(undefined)} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 8px', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--text-xs)' }}>Clear ✕</button>
+        </div>
+      )}
       {/* Bulk actions bar */}
       {selected.size > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
