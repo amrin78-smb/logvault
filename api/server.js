@@ -989,7 +989,7 @@ app.get('/api/hosts', asyncHandler(async (req, res) => {
   }
   const { rows } = await pool.query(`
     SELECT ip_address::TEXT, hostname, vendor, description,
-      site_name, brand, model, device_status, lifecycle_status,
+      site_name, site_id, brand, model, device_status, lifecycle_status,
       synced_from_nv, last_synced, last_seen,
       country_code, country_name, city, asn, asn_org, is_external,
       abuse_score, is_known_bad, threat_tags, last_enriched
@@ -1004,19 +1004,55 @@ app.get('/api/hosts', asyncHandler(async (req, res) => {
 app.put('/api/hosts', requireAdmin, asyncHandler(async (req, res) => {
   const { ip_address, hostname, vendor, description } = req.body;
   if (!ip_address) return res.status(400).json({ error: 'ip_address required' });
+
+  // Optional manual site assignment. site_id must be a real netvault.sites.id
+  // (integer) — that's what RBAC site filtering keys on. We also denormalize
+  // site_name for the table display, matching the sync's "name · city" form.
+  let siteId = req.body.site_id;
+  let siteName = null;
+  if (siteId === '' || siteId === undefined || siteId === null) {
+    siteId = null;
+  } else {
+    siteId = parseInt(siteId, 10);
+    if (isNaN(siteId)) return res.status(400).json({ error: 'invalid site_id' });
+    try {
+      const sites = await getNetvaultSites();
+      const match = sites.find(s => s.id === siteId);
+      if (!match) return res.status(400).json({ error: 'unknown site_id' });
+      siteName = match.label;
+    } catch (_) {
+      // NetVault DB unreachable — still persist the integer site_id (RBAC needs
+      // it); site_name display will fill in on the next NetVault sync/lookup.
+    }
+  }
+
   const { rows } = await pool.query(`
-    INSERT INTO known_hosts (ip_address, hostname, vendor, description, last_seen)
-    VALUES ($1,$2,$3,$4,NOW())
+    INSERT INTO known_hosts (ip_address, hostname, vendor, description, site_id, site_name, last_seen)
+    VALUES ($1,$2,$3,$4,$5,$6,NOW())
     ON CONFLICT (ip_address) DO UPDATE
       SET hostname=EXCLUDED.hostname, vendor=EXCLUDED.vendor,
-          description=EXCLUDED.description, last_seen=NOW()
+          description=EXCLUDED.description, site_id=EXCLUDED.site_id,
+          site_name=EXCLUDED.site_name, last_seen=NOW()
     RETURNING *
-  `, [ip_address, hostname, vendor, description]);
+  `, [ip_address, hostname, vendor, description, siteId, siteName]);
   res.json({ data: rows[0] });
 }));
 
-// Manual trigger for NetVault sync
-const { syncFromNetVault } = require('./netvaultSync');
+// Manual trigger for NetVault sync + sites list for the Known Hosts dropdown
+const { syncFromNetVault, getNetvaultSites } = require('./netvaultSync');
+
+// Sites come from NetVault (the CMDB). Used to populate the manual site-assignment
+// dropdown for hosts that aren't NetVault-managed (external IPs, syslog relays).
+app.get('/api/sites', requireAdmin, asyncHandler(async (req, res) => {
+  try {
+    const data = await getNetvaultSites();
+    res.json({ data });
+  } catch (err) {
+    console.error('[Sites] Error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}));
+
 app.post('/api/hosts/sync-netvault', requireSuperAdmin, asyncHandler(async (req, res) => {
   try {
     const result = await syncFromNetVault(pool);
@@ -2159,6 +2195,12 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.17.0': [
+    'Known Hosts: you can now assign a Site to a host directly in LogVault. The Add/Edit form has a new Site dropdown populated from NetVault (the CMDB is the source of truth for sites), so manually-registered hosts that aren\'t NetVault-managed — external IPs, syslog relays like the firewall — can be put into a site.',
+    'Why it matters: site-based access control (RBAC) and all per-site dashboards/alerts key on a host\'s site. Hosts with no site were invisible to site-scoped users; assigning a site fixes that.',
+    'New GET /api/sites endpoint returns the active NetVault sites for the dropdown; PUT /api/hosts now accepts site_id (validated against real NetVault sites) and denormalizes the site name for the table.',
+    'NetVault-synced devices are unchanged — their site still flows automatically from the CMDB every 15 minutes; the manual dropdown is for the non-managed hosts only.',
+  ],
   '2.16.5': [
     'Fixed ATT&CK Coverage for site-scoped (non-admin) users: alert-derived techniques (T1190 Repeated IPS Triggers, T1110/T1133 VPN Brute Force, T1046 Port Scan) were collapsing to zero because the alert branch was filtered by the internal triggering-host IP, which is almost never registered to a site. Alerts are now scoped by the same relay/site attribution as events, so a technique an admin sees is also visible to the site-scoped user whose site produced it.',
     'Hardened cross-site isolation on the coverage matrix: alert attribution keys on the firewall relay (source_host → known_hosts.site_id) so a user never sees another site\'s techniques.',

@@ -84,4 +84,23 @@ async function syncFromNetVault(lvPool) {
   return { synced };
 }
 
-module.exports = { syncFromNetVault };
+// Return the list of active NetVault sites for the Known Hosts site dropdown.
+// NetVault is the source of truth for sites (the CMDB); we read them straight
+// from the netvault DB, matching how syncFromNetVault already reaches into it.
+// Shape: { id (int, matches known_hosts.site_id), name, label } — label is the
+// same "name · city" form the sync writes into known_hosts.site_name.
+async function getNetvaultSites() {
+  const { rows } = await nvPool.query(`
+    SELECT id, name, city
+    FROM sites
+    WHERE site_status = 'Active'
+    ORDER BY name
+  `);
+  return rows.map(s => ({
+    id: s.id,
+    name: s.name,
+    label: [s.name, s.city].filter(Boolean).join(' · '),
+  }));
+}
+
+module.exports = { syncFromNetVault, getNetvaultSites };

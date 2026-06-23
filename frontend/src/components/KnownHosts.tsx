@@ -9,6 +9,7 @@ interface Host {
   vendor:           string;
   description:      string;
   site_name:        string;
+  site_id:          number | null;
   brand:            string;
   model:            string;
   device_status:    string;
@@ -18,7 +19,9 @@ interface Host {
   last_seen:        string;
 }
 
-const EMPTY = { ip_address: '', hostname: '', vendor: 'generic', description: '' };
+interface Site { id: number; name: string; label: string; }
+
+const EMPTY = { ip_address: '', hostname: '', vendor: 'generic', description: '', site_id: '' };
 
 const INPUT = { padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)',
   background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-base)',
@@ -49,6 +52,7 @@ export default function KnownHosts() {
   const [listLoading, setListLoading] = useState(true);
   const [syncing,  setSyncing]  = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const [sites,    setSites]    = useState<Site[]>([]);
 
   const fetchHosts = () => {
     fetch('/api/hosts').then(r => r.json()).then(d => {
@@ -60,7 +64,10 @@ export default function KnownHosts() {
     }).catch(() => {}).finally(() => setListLoading(false));
   };
 
-  useEffect(() => { fetchHosts(); }, []);
+  useEffect(() => {
+    fetchHosts();
+    fetch('/api/sites').then(r => r.json()).then(d => setSites(d.data || [])).catch(() => {});
+  }, []);
 
   const save = async () => {
     if (!form.ip_address || !form.hostname) { setError('IP address and hostname are required.'); return; }
@@ -119,7 +126,7 @@ export default function KnownHosts() {
           <div style={{ padding: '8px 12px', background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)',
             borderRadius: 6, color: 'var(--tint-danger-fg)', fontSize: 'var(--text-sm)', marginBottom: 12 }}>{error}</div>
         )}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 12 }}>
           <div>
             <div style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>IP Address *</div>
             <input value={form.ip_address} onChange={e => setForm(f => ({ ...f, ip_address: e.target.value }))}
@@ -136,6 +143,17 @@ export default function KnownHosts() {
               style={{ ...INPUT, cursor: 'pointer' }}>
               {['fortinet','cisco','paloalto','aruba','sangfor','generic'].map(v => (
                 <option key={v} value={v}>{v.charAt(0).toUpperCase() + v.slice(1)}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4 }}>Site</div>
+            <select value={form.site_id} onChange={e => setForm(f => ({ ...f, site_id: e.target.value }))}
+              style={{ ...INPUT, cursor: 'pointer' }}
+              title={sites.length === 0 ? 'No NetVault sites available' : 'Sites are sourced from NetVault (CMDB)'}>
+              <option value="">— No site —</option>
+              {sites.map(s => (
+                <option key={s.id} value={s.id}>{s.label}</option>
               ))}
             </select>
           </div>
@@ -268,7 +286,8 @@ export default function KnownHosts() {
                       {!h.synced_from_nv && (
                         <button onClick={() => {
                           setForm({ ip_address: h.ip_address, hostname: h.hostname || '',
-                            vendor: h.vendor || 'generic', description: h.description || '' });
+                            vendor: h.vendor || 'generic', description: h.description || '',
+                            site_id: h.site_id != null ? String(h.site_id) : '' });
                           setEditIp(h.ip_address); setError(null);
                         }}
                           style={{ padding: '4px 10px', borderRadius: 5, border: '1px solid var(--border)',
