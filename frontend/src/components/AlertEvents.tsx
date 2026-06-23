@@ -62,7 +62,7 @@ interface GroupedRule {
   mitre_techniques?: string[] | null;
 }
 
-export default function AlertEvents({ initialTechnique, onTechniqueConsumed }: { initialTechnique?: string; onTechniqueConsumed?: () => void } = {}) {
+export default function AlertEvents({ initialTechnique, hours, onTechniqueConsumed }: { initialTechnique?: string; hours?: number; onTechniqueConsumed?: () => void } = {}) {
   const { toast } = useToast();
   const [events,      setEvents]      = useState<AlertEvent[]>([]);
   const [rules,       setRules]       = useState<any[]>([]);
@@ -78,11 +78,18 @@ export default function AlertEvents({ initialTechnique, onTechniqueConsumed }: {
 
   const fetchData = useCallback(() => {
     setLoading(true);
+    // When drilled into a specific technique, scope the fetch to the same `hours`
+    // window the ATT&CK coverage matrix counted, so the chip-filtered view shows
+    // exactly those alerts (the default unbounded LIMIT 500 could otherwise push
+    // an older technique's alerts off the page and yield an empty drill-down).
+    const eventsUrl = (techniqueFilter && hours)
+      ? `/api/alerts/events?hours=${hours}`
+      : '/api/alerts/events';
     Promise.all([
-      fetch('/api/alerts/events').then(r => r.json()).then(d => setEvents(d.data || [])).catch(() => {}),
+      fetch(eventsUrl).then(r => r.json()).then(d => setEvents(d.data || [])).catch(() => {}),
       fetch('/api/alerts/rules').then(r  => r.json()).then(d => setRules(d.data  || [])).catch(() => {}),
     ]).finally(() => setLoading(false));
-  }, []);
+  }, [techniqueFilter, hours]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

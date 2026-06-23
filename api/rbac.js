@@ -195,4 +195,47 @@ function getStatsSiteFilter(rbac, startParamIndex, tableAlias = 'se') {
   };
 }
 
-module.exports = { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter, getStatsSiteFilter };
+/**
+ * SQL helper for ALERT-branch site scoping (correlation + threshold alerts).
+ *
+ * alert_events.source_ip is the INTERNAL srcip of the triggering host (the real
+ * actor), which is almost never registered in known_hosts with a site — so the
+ * plain getSiteFilter (which keys on source_ip) collapses alert-derived MITRE
+ * techniques to zero for every site-scoped user, even though an admin sees them.
+ *
+ * Events are attributed to a site via the RELAY: syslog_entries.source_ip is the
+ * firewall/relay device, mapped through known_hosts.ip_address -> site_id. Every
+ * alert_event carries that same relay in ae.source_host (the firewall hostname,
+ * e.g. 'FGT200E_TUS'). To keep alert visibility CONSISTENT with event visibility
+ * (a technique an admin sees is also seen by the site-scoped user whose site
+ * produced it) WITHOUT leaking another site's data, we scope alerts by that relay:
+ *   ae.source_host -> known_hosts.hostname -> known_hosts.site_id
+ * This mirrors the event branch's relay attribution exactly (same physical
+ * device, same site mapping), so the two branches stay in lockstep and a user
+ * whose site does not own the relay sees neither its events nor its alerts.
+ *
+ * Same parameter footprint as getSiteFilter (one $N array param, or none).
+ *
+ * @param rbac            req.rbac object (may be undefined)
+ * @param startParamIndex next free $N parameter index for the query
+ * @param tableAlias      alias holding source_host (defaults to 'ae')
+ */
+function getAlertSiteFilter(rbac, startParamIndex, tableAlias = 'ae') {
+  if (!rbac || rbac.allowedSiteIds === null || rbac.allowedSiteIds === undefined) {
+    return { clause: '', params: [], nextParamIndex: startParamIndex };
+  }
+  if (rbac.allowedSiteIds.length === 0) {
+    return { clause: 'AND 1=0', params: [], nextParamIndex: startParamIndex };
+  }
+  const clause = `AND ${tableAlias}.source_host IN (
+    SELECT kh.hostname FROM known_hosts kh
+    WHERE kh.hostname IS NOT NULL AND kh.site_id = ANY($${startParamIndex}::int[])
+  )`;
+  return {
+    clause,
+    params: [rbac.allowedSiteIds],
+    nextParamIndex: startParamIndex + 1,
+  };
+}
+
+module.exports = { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter, getStatsSiteFilter, getAlertSiteFilter };

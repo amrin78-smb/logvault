@@ -444,7 +444,7 @@ export default function Home() {
 
           {tab === 'explorer'  && <ErrorBoundary name="Log Explorer"><LogExplorer initialFilter={explorerFilter} onFilterUsed={() => setExplorerFilter({})} /></ErrorBoundary>}
           {tab === 'livetail'  && <ErrorBoundary name="Live Tail"><LiveTail /></ErrorBoundary>}
-          {tab === 'alerts'    && <ErrorBoundary name="Alerts"><AlertEvents initialTechnique={alertTechnique} onTechniqueConsumed={() => setAlertTechnique(undefined)} /></ErrorBoundary>}
+          {tab === 'alerts'    && <ErrorBoundary name="Alerts"><AlertEvents initialTechnique={alertTechnique} hours={hours} onTechniqueConsumed={() => setAlertTechnique(undefined)} /></ErrorBoundary>}
           {tab === 'health'    && <ErrorBoundary name="Network Health"><NetworkHealth hours={hours} onHoursChange={setHours} refreshInterval={refreshInterval} onRefreshChange={setRefreshInterval} /></ErrorBoundary>}
           {tab === 'security'  && <ErrorBoundary name="Security"><SecurityAnalysis hours={hours} onHoursChange={setHours} refreshInterval={refreshInterval} onRefreshChange={setRefreshInterval} onTechnique={(t, info) => (info && info.alerts > 0 ? openAlerts(t) : openExplorer({ technique: t }))} onDrill={openExplorer} /></ErrorBoundary>}
           {tab === 'intelligence' && <ErrorBoundary name="Intelligence"><IntelligenceConsole openExplorer={openExplorer} hours={String(hours)} /></ErrorBoundary>}

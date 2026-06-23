@@ -13,7 +13,7 @@ const { Pool } = require('pg');
 const http     = require('http');
 const { WebSocketServer } = require('ws');
 const { testEmail } = require('../collector/emailer');
-const { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter, getStatsSiteFilter } = require('./rbac');
+const { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter, getStatsSiteFilter, getAlertSiteFilter } = require('./rbac');
 const { getLicense, getLicenseState } = require('./licenseCheck');
 const { writeAudit } = require('./auditLog');
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env.local') });
@@ -423,11 +423,18 @@ app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
 // groups techniques into tactics via the shared catalog.
 app.get('/api/stats/mitre-coverage', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  // Two RBAC site filters: one for the event branch (se.source_ip), one for the
-  // alert branch (ae.source_ip). The alert filter's params start AFTER the event
+  // Two RBAC site filters: one for the event branch (se.source_ip → relay → site),
+  // one for the alert branch. The alert branch is scoped by the SAME relay
+  // (ae.source_host → known_hosts.hostname → site) instead of ae.source_ip — the
+  // internal triggering-host srcip is almost never registered with a site, so
+  // keying alerts on it collapsed every alert-derived technique to zero for
+  // site-scoped users while admins saw them (DB-confirmed: 1 of 50 distinct alert
+  // source_ips has a site, but all alerts carry the relay in source_host). Scoping
+  // by the relay keeps alert visibility consistent with event visibility and never
+  // leaks another site's data. The alert filter's params start AFTER the event
   // filter's so the $-placeholders never collide.
   const sfEvents = getSiteFilter(req.rbac, 2, 'se');
-  const sfAlerts = getSiteFilter(req.rbac, 2 + sfEvents.params.length, 'ae');
+  const sfAlerts = getAlertSiteFilter(req.rbac, 2 + sfEvents.params.length, 'ae');
   const cacheKey = `mitre-coverage:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 30000, async () => {
     const { rows } = await pool.query(`
@@ -716,16 +723,38 @@ app.patch('/api/alerts/rules/:id', requireAdmin, asyncHandler(async (req, res) =
 }));
 
 app.get('/api/alerts/events', asyncHandler(async (req, res) => {
-  const sf = getSiteFilter(req.rbac, 1, 'ae');
+  // Optional `hours` window (backward compatible — omitted = no time filter).
+  // The ATT&CK coverage matrix counts alerts FIRED within a window; when the user
+  // drills into a technique we pass that same window here so the chip-filtered
+  // view shows exactly the alerts the matrix counted, instead of relying on the
+  // LIMIT 500 ordering (which could push an older technique's alerts off the page
+  // in a long window and re-introduce the empty-drill-down). When `hours` is
+  // present we also drop the LIMIT so a window-scoped query returns the full set.
+  const hasHours = req.query.hours !== undefined && req.query.hours !== '';
+  const hours = hasHours ? safeHours(req.query.hours) : null;
+  const params = [];
+  let p = 1;
+  let timeClause = '';
+  if (hasHours) {
+    timeClause = `AND ae.fired_at > NOW() - make_interval(hours => $${p})`;
+    params.push(hours);
+    p += 1;
+  }
+  // RBAC: scope by the relay (ae.source_host → site), matching the mitre-coverage
+  // alert branch so a technique the coverage matrix counted for this user is also
+  // returned here. Keeps cross-site isolation intact.
+  const sf = getAlertSiteFilter(req.rbac, p, 'ae');
+  params.push(...sf.params);
   const { rows } = await pool.query(`
     SELECT ae.*, ar.name AS rule_name, ar.mitre_techniques
     FROM alert_events ae
     LEFT JOIN alert_rules ar ON ar.id = ae.rule_id
     WHERE TRUE
+    ${timeClause}
     ${sf.clause}
     ORDER BY ae.acknowledged ASC, ae.fired_at DESC
-    LIMIT 500
-  `, sf.params);
+    ${hasHours ? '' : 'LIMIT 500'}
+  `, params);
   res.json({ data: rows });
 }));
 
@@ -2130,6 +2159,12 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.16.5': [
+    'Fixed ATT&CK Coverage for site-scoped (non-admin) users: alert-derived techniques (T1190 Repeated IPS Triggers, T1110/T1133 VPN Brute Force, T1046 Port Scan) were collapsing to zero because the alert branch was filtered by the internal triggering-host IP, which is almost never registered to a site. Alerts are now scoped by the same relay/site attribution as events, so a technique an admin sees is also visible to the site-scoped user whose site produced it.',
+    'Hardened cross-site isolation on the coverage matrix: alert attribution keys on the firewall relay (source_host → known_hosts.site_id) so a user never sees another site\'s techniques.',
+    'Fixed the Alerts drill-down landing on an empty list: clicking an alert-only technique now passes the active time window to /api/alerts/events so the filtered view shows exactly the alerts the coverage matrix counted, instead of relying on a LIMIT 500 ordering that could push older alerts off the page.',
+    '/api/alerts/events now accepts an optional `hours` query param (backward compatible) that filters by fired_at and lifts the row cap for window-scoped queries.',
+  ],
   '2.16.4': [
     'ATT&CK Coverage drill-down now lands on the right evidence: clicking an alert-derived technique (e.g. T1046 Port Scan, T1190) opens the Alerts view filtered to that technique instead of an empty log search; purely event-tagged techniques still open the Log Explorer',
     'Coverage tiles now show the events/alerts split in the tooltip (N logs · M alerts), and the Alerts view can be filtered by ATT&CK technique',
