@@ -222,9 +222,11 @@ const CORRELATION_RULES = [
   // ── 7. Repeated IPS Hits from Same Source ──────────────────
   // Same source IP triggering IPS 5+ times in 5 min.
   // VENDOR-AGNOSTIC: no longer gated on vendor==='fortinet' + type==='utm'.
-  // Matches the normalized IPS/threat signal — structured_data.type === 'ips'
-  // OR top-level category === 'security'. Groups by the REAL attacker IP
-  // (structured_data.srcip || source_ip).
+  // Matches ONLY true IPS signal (structured_data.type === 'ips' OR subtype === 'ips'
+  // — FortiOS UTM IPS logs arrive as type=utm/subtype=ips). The old
+  // category==='security' fallback was removed — it fired on benign blocked
+  // web/SSL traffic and mislabeled it as an IPS exploit (T1190). Groups by the
+  // REAL attacker IP (structured_data.srcip || source_ip).
   {
     id:          'IPS_REPEATED_ATTACK',
     name:        'Repeated IPS Triggers',
@@ -235,10 +237,7 @@ const CORRELATION_RULES = [
       {
         name:     'ipshits',
         minCount: 5,
-        match:    (e) => (
-          e.structured_data?.type === 'ips' ||
-          e.category === 'security'
-        ),
+        match:    (e) => e.structured_data?.type === 'ips' || e.structured_data?.subtype === 'ips',
         groupBy:  (e) => e.structured_data?.srcip || e.source_ip,
       },
     ],

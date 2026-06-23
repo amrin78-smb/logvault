@@ -54,8 +54,11 @@ function mapTechniques(entry) {
   }
   // T1190 Exploit Public-Facing Application (Initial Access) — IPS/UTM threats.
   // Fortinet/Palo Alto carry the structured discriminator subtype/type='ips'.
+  // Match the structured subtype/type='ips' + specific threat phrases — NOT a bare
+  // "ips" word, which also matches benign "FortiGuard IPS update license expiring"
+  // system notices and produced a phantom T1190 in the ATT&CK coverage view.
   if (subt === 'ips' || typ === 'ips' ||
-      /utm\/ips|\bips\b|intrusion|exploit|signature matched|attack detected/i.test(msg)) {
+      /utm\/ips|intrusion|exploit|signature matched|attack detected/i.test(msg)) {
     ids.add('T1190');
   }
   // T1486 Data Encrypted for Impact — ransomware

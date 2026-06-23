@@ -423,24 +423,46 @@ app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
 // groups techniques into tactics via the shared catalog.
 app.get('/api/stats/mitre-coverage', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const sf = getSiteFilter(req.rbac, 2, 'se');
+  // Two RBAC site filters: one for the event branch (se.source_ip), one for the
+  // alert branch (ae.source_ip). The alert filter's params start AFTER the event
+  // filter's so the $-placeholders never collide.
+  const sfEvents = getSiteFilter(req.rbac, 2, 'se');
+  const sfAlerts = getSiteFilter(req.rbac, 2 + sfEvents.params.length, 'ae');
   const cacheKey = `mitre-coverage:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 30000, async () => {
     const { rows } = await pool.query(`
-      SELECT t.technique AS technique, COUNT(*)::bigint AS count
-      FROM syslog_entries se,
-           -- Guard the type check INSIDE the SRF argument: a WHERE qual cannot stop
-           -- jsonb_array_elements_text from being invoked per row, so a non-array
-           -- 'mitre' value would error mid-scan. CASE feeds it '[]' instead.
-           LATERAL jsonb_array_elements_text(
-             CASE WHEN jsonb_typeof(se.structured_data->'mitre') = 'array'
-                  THEN se.structured_data->'mitre' ELSE '[]'::jsonb END
-           ) AS t(technique)
-      WHERE se.received_at > NOW() - make_interval(hours => $1)
-      ${sf.clause}
-      GROUP BY t.technique
+      WITH event_tech AS (
+        -- Event-level tags written at ingest by collector/mitreMapper.js.
+        SELECT t.technique AS technique, COUNT(*)::bigint AS count
+        FROM syslog_entries se,
+             LATERAL jsonb_array_elements_text(
+               CASE WHEN jsonb_typeof(se.structured_data->'mitre') = 'array'
+                    THEN se.structured_data->'mitre' ELSE '[]'::jsonb END
+             ) AS t(technique)
+        WHERE se.received_at > NOW() - make_interval(hours => $1)
+        ${sfEvents.clause}
+        GROUP BY t.technique
+      ),
+      alert_tech AS (
+        -- Fold in techniques from alerts FIRED in the window. alert_rules.mitre_techniques
+        -- carries the static technique set for BOTH threshold rules and correlation
+        -- rules (correlationEngine.js persists MITRE_BY_RULE onto that column), so a
+        -- technique that only ever surfaces at the correlation altitude still lights up
+        -- the coverage matrix. Counts fired alerts.
+        SELECT tech AS technique, COUNT(*)::bigint AS count
+        FROM alert_events ae
+        JOIN alert_rules ar ON ar.id = ae.rule_id,
+             LATERAL unnest(ar.mitre_techniques) AS tech
+        WHERE ae.fired_at > NOW() - make_interval(hours => $1)
+          AND ar.mitre_techniques IS NOT NULL
+        ${sfAlerts.clause}
+        GROUP BY tech
+      )
+      SELECT technique, SUM(count)::bigint AS count
+      FROM (SELECT * FROM event_tech UNION ALL SELECT * FROM alert_tech) u
+      GROUP BY technique
       ORDER BY count DESC
-    `, [hours, ...sf.params]);
+    `, [hours, ...sfEvents.params, ...sfAlerts.params]);
     return { hours, data: rows };
   });
   res.json(data);
@@ -2105,6 +2127,11 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.16.3': [
+    'ATT&CK Coverage now reflects alert-level classifications, not just per-event tags — techniques that only surface from correlation alerts (e.g. T1190 from "Repeated IPS Triggers") now light up the matrix instead of staying invisible',
+    'Tightened the "Repeated IPS Triggers" correlation rule to fire only on real IPS detections (structured type/subtype=ips), so blocked outbound web/SSL traffic is no longer mislabeled as an IPS exploit (T1190)',
+    'Stopped the event-level MITRE mapper from tagging T1190 on benign "FortiGuard IPS update license expiring" notices (a bare "ips" word match) that had put a phantom technique in the coverage matrix',
+  ],
   '2.16.2': [
     'Made the "Logs by Vendor" widget\'s severity badges self-explaining: the compact "c"/"e" badges now have hover tooltips ("N critical" / "N error(s)") and the total shows "N total logs", plus a tiny one-line legend (c = critical · e = error) under the sub-header so the meaning is clear at a glance.',
   ],
