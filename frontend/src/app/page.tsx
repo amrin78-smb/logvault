@@ -201,7 +201,7 @@ export default function Home() {
   ];
 
   if (!licenseLoading && licenseState.disabled) {
-    return <LicenseDisabledScreen />;
+    return <LicenseDisabledScreen mode={licenseState.mode} />;
   }
 
   return (

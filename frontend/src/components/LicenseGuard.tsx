@@ -3,7 +3,7 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 
 interface LicenseState {
-  mode: 'active' | 'trial' | 'grace' | 'disabled' | 'unreachable' | 'unknown';
+  mode: 'active' | 'trial' | 'grace' | 'disabled' | 'unlicensed' | 'unreachable' | 'unknown';
   canWrite: boolean;
   canRead: boolean;
   disabled: boolean;
@@ -101,8 +101,14 @@ export function LicenseBanner() {
   );
 }
 
-export function LicenseDisabledScreen() {
+export function LicenseDisabledScreen({ mode }: { mode?: string }) {
   const hubUrl = process.env.NEXT_PUBLIC_NOCVAULT_HUB_URL || 'http://localhost:3000';
+  const unlicensed = mode === 'unlicensed';
+  const heading = unlicensed ? 'LogVault Not Licensed' : 'License Expired';
+  const body = unlicensed
+    ? 'LogVault is not included in this license — contact your NocVault representative to add it.'
+    : 'Your NocVault license has expired and the 30-day grace period has ended. Please renew your license to restore access.';
+  const cta = unlicensed ? 'Manage License at NocVault Hub →' : 'Renew License at NocVault Hub →';
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -110,15 +116,14 @@ export function LicenseDisabledScreen() {
       gap: 16, padding: 32, textAlign: 'center',
     }}>
       <div style={{ fontSize: 64 }}>🔒</div>
-      <h1 style={{ fontSize: 'var(--text-2xl)', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>License Expired</h1>
+      <h1 style={{ fontSize: 'var(--text-2xl)', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>{heading}</h1>
       <p style={{ fontSize: 'var(--text-md)', color: 'var(--text-muted)', maxWidth: 480, margin: 0 }}>
-        Your NocVault license has expired and the 30-day grace period has ended.
-        Please renew your license to restore access.
+        {body}
       </p>
       <a href={`${hubUrl}/settings/license`}
         style={{ background: 'var(--primary)', color: '#fff', padding: '12px 28px', borderRadius: 6,
                  textDecoration: 'none', fontWeight: 600, fontSize: 'var(--text-md)', marginTop: 8 }}>
-        Renew License at NocVault Hub →
+        {cta}
       </a>
     </div>
   );

@@ -2195,6 +2195,12 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.18.0': [
+    'Per-app license entitlement: LogVault now honours the module list on your NocVault license. If your active license key explicitly lists the products it covers and LogVault is not among them, the app locks to a "not included in this license" screen.',
+    'Fail-open by design: trials, grace periods, an unreachable hub, and legacy/empty-module license keys are never blocked — only an ACTIVE key that explicitly enumerates modules and omits LogVault triggers the lock, so existing customers are never bricked.',
+    'Enforcement is access-control only — no database, schema, or log-data changes. The lock is applied by the existing license middleware (402) and the disabled-screen, so no new infrastructure is required.',
+    'The disabled screen now shows a clearer message for the unlicensed-module case, pointing operators to their NocVault representative rather than the generic "License Expired" copy.',
+  ],
   '2.17.0': [
     'Known Hosts: you can now assign a Site to a host directly in LogVault. The Add/Edit form has a new Site dropdown populated from NetVault (the CMDB is the source of truth for sites), so manually-registered hosts that aren\'t NetVault-managed — external IPs, syslog relays like the firewall — can be put into a site.',
     'Why it matters: site-based access control (RBAC) and all per-site dashboards/alerts key on a host\'s site. Hosts with no site were invisible to site-scoped users; assigning a site fixes that.',

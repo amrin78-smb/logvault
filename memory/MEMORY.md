@@ -1,0 +1,2 @@
+- [SecVault division of labor](secvault-division-of-labor.md) — SecVault owns compliance/firewall scope; what LogVault won't build
+- [LogVault enterprise roadmap status](logvault-enterprise-roadmap-status.md) — phases done/deferred/skipped + open credential-rotation loose end
