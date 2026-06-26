@@ -48,7 +48,9 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
       }
     };
     check();
-    const interval = setInterval(check, 6 * 60 * 60 * 1000);
+    // Re-check every 5 min so a license change enforces within ~5 min on the
+    // frontend too (matches the backend cache TTL / suite dynamic-settings cadence).
+    const interval = setInterval(check, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -61,6 +63,20 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
 
 export function useLicense() {
   return useContext(LicenseContext);
+}
+
+// Hard-block wrapper used at the layout level so that on EVERY route a user can
+// land on directly (the main page, the SSO landing, anything else) the entire app
+// is replaced by the full-screen lock when the license is disabled/unlicensed —
+// not just a banner with the app usable behind it. Page-level checks (e.g. in
+// page.tsx) remain harmless but redundant; this is the single chokepoint.
+export function LicenseGate({ children }: { children: ReactNode }) {
+  const { state, loading } = useLicense();
+  // Fail-open while loading (and on unreachable) so a slow/offline hub never bricks the app.
+  if (!loading && state.disabled) {
+    return <LicenseDisabledScreen mode={state.mode} />;
+  }
+  return <>{children}</>;
 }
 
 export function LicenseBanner() {

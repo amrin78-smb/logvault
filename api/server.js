@@ -2195,6 +2195,11 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.18.1': [
+    'License changes now take effect within ~5 minutes: the hub-license cache was shortened from 24 hours to 5 minutes (matching the suite\'s dynamic-settings cadence), so a reduced or revoked license enforces promptly instead of staying open for up to a day.',
+    'Unlicensed/expired apps now show a full-screen lock on every entry path: the disabled-license lock screen replaces the entire app (main page and the SSO landing alike) rather than just showing a banner with the app still usable behind it.',
+    'The frontend also re-checks its license every 5 minutes (down from 6 hours) so the lock appears promptly without waiting for a reload.',
+  ],
   '2.18.0': [
     'Per-app license entitlement: LogVault now honours the module list on your NocVault license. If your active license key explicitly lists the products it covers and LogVault is not among them, the app locks to a "not included in this license" screen.',
     'Fail-open by design: trials, grace periods, an unreachable hub, and legacy/empty-module license keys are never blocked — only an ACTIVE key that explicitly enumerates modules and omits LogVault triggers the lock, so existing customers are never bricked.',
