@@ -2195,6 +2195,10 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.18.2': [
+    'Security: upgraded the frontend Next.js 16.2.6 → 16.2.9 (patched release), clearing the bundled postcss stringify XSS advisory.',
+    'Security: upgraded the backend ws 8.20.0 → 8.21.0 (WebSocket memory-exhaustion DoS) and qs to the patched 6.15.x. No functional or UI changes.',
+  ],
   '2.18.1': [
     'License changes now take effect within ~5 minutes: the hub-license cache was shortened from 24 hours to 5 minutes (matching the suite\'s dynamic-settings cadence), so a reduced or revoked license enforces promptly instead of staying open for up to a day.',
     'Unlicensed/expired apps now show a full-screen lock on every entry path: the disabled-license lock screen replaces the entire app (main page and the SSO landing alike) rather than just showing a banner with the app still usable behind it.',

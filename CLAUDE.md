@@ -25,6 +25,23 @@ netvault repo too; if you can't, flag it explicitly so it isn't missed.
 
 ---
 
+## Known Security Debt (scheduled, not yet done)
+
+Tracked npm-audit finding deliberately deferred (triaged 2026-06-26). NOT fixable with a
+safe `npm audit fix` — needs a breaking change, so schedule as deliberate, tested work.
+**NEVER run `npm audit fix --force`.**
+
+- **nodemailer → v9 (root).** The current v8 line carries a high advisory
+  (GHSA-p6gq-j5cr-w38f: the message-level `raw` option bypasses
+  `disableFileAccess`/`disableUrlAccess` → file-read/SSRF). The only fix is the breaking
+  major **9.0.1**. Not currently reachable — SMTP config is admin-only and
+  `collector/emailer.js` never uses the `raw` option — so low risk on the internal LAN.
+  Upgrade to nodemailer 9.x in a maintenance window and re-test the email alert path.
+
+(The frontend Next.js + ws/qs backend advisories were cleared in 2.18.2.)
+
+---
+
 ## NocVault Suite Context
 
 | Product | Purpose | Port |
