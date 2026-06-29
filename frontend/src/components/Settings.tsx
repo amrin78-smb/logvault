@@ -383,6 +383,16 @@ export default function Settings() {
         setUpdateBlocked(msg);
         return;
       }
+      // Any other non-OK response (e.g. 400/500) means the update never started —
+      // surface the server's error instead of leaving the overlay spinning forever.
+      if (!r.ok) {
+        let msg = 'Failed to start update. Please try again or update manually.';
+        try { const d = await r.json(); if (d?.error) msg = d.error; } catch { /* keep default */ }
+        setShowUpdateOverlay(false);
+        setUpdating(false);
+        setUpdateBlocked(msg);
+        return;
+      }
     } catch {
       // The response may be cut off by a fast restart — the overlay's health
       // polling detects recovery regardless, so we still show it.

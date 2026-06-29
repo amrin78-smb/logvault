@@ -2195,6 +2195,10 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.18.3': [
+    'Fix: the in-app "Update" (Settings) now works on fresh installs. The update API previously refused to start with a 400 when SERVER_IP was unset; it now derives the IP from LV_APP_URL and proceeds. The updater script also prepends Git/Node to the SYSTEM PATH so the pull/build/restart actually runs',
+    'The update screen now shows the server error instead of spinning indefinitely when an update cannot start',
+  ],
   '2.18.2': [
     'Security: upgraded the frontend Next.js 16.2.6 → 16.2.9 (patched release), clearing the bundled postcss stringify XSS advisory.',
     'Security: upgraded the backend ws 8.20.0 → 8.21.0 (WebSocket memory-exhaustion DoS) and qs to the patched 6.15.x. No functional or UI changes.',
@@ -2659,9 +2663,13 @@ app.post('/api/system/update', requireSuperAdmin, asyncHandler(async (req, res) 
     });
   }
 
-  const serverIp = process.env.SERVER_IP || '';
+  // SERVER_IP is only persisted to .env.local for future use by the updater — the
+  // update itself does not require it. Don't block the update if it's unset (the
+  // suite installer doesn't always provision it for LogVault). Fall back to the
+  // host derived from LV_APP_URL, and only warn if it's still empty.
+  const serverIp = process.env.SERVER_IP || (process.env.LV_APP_URL || '').replace(/^https?:\/\//, '').split(':')[0] || '';
   if (!serverIp) {
-    return res.status(400).json({ error: 'SERVER_IP not configured in .env.local' });
+    console.warn('[Update] SERVER_IP not configured and LV_APP_URL unset — proceeding without a server IP.');
   }
 
   const scriptPath = path.join(appRoot, 'installer', 'Update-LogVault.ps1').replace(/\//g, '\\');

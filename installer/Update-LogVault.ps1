@@ -10,6 +10,19 @@ param(
   [string]$ServerIp   = ""
 )
 
+# The scheduled task runs as SYSTEM, which has a minimal PATH that does not
+# include git/node/npm. Without this, "git fetch/reset" silently exits 0 with
+# no binary found and the update "succeeds" with old code (and npm install/build
+# no-op). Prepend the standard install locations so the toolchain resolves under
+# SYSTEM. (Services are controlled via sc.exe, which is PATH-independent.)
+$env:PATH = @(
+    "C:\Program Files\Git\cmd",
+    "C:\Program Files\Git\bin",
+    "C:\Program Files\nodejs",
+    "C:\Program Files\npm",
+    $env:PATH
+) -join ";"
+
 $AppDir      = $InstallDir
 $FrontendDir = "$InstallDir\frontend"
 $LogDir      = "$InstallDir\logs"
