@@ -582,3 +582,30 @@ CREATE INDEX IF NOT EXISTS idx_entity_risk_score ON entity_risk (risk_score DESC
 -- installs (idempotent; harmless on fresh installs where the GRANT ran above).
 GRANT ALL ON ALL TABLES IN SCHEMA public TO logvault_user;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO logvault_user;
+
+-- ── Hub cross-DB read role ───────────────────────────────────────
+-- The Hub reads across all suite DBs via the shared `nocvault_readonly`
+-- role. The suite installer grants it SELECT once, but a table added by a
+-- future release (or at runtime) is never covered by that one-time grant —
+-- and the updater re-applies THIS file but not the installer's grant, so the
+-- new table becomes invisible to the Hub's cross-DB reads. Re-granting here
+-- makes both installer and updater converge, and ALTER DEFAULT PRIVILEGES
+-- auto-covers future tables. No-op on a standalone LogVault (no role).
+--
+-- IMPORTANT: this is SELECT-only — it grants the read role visibility WITHOUT
+-- touching the append-only tamper model. logvault_user keeps its REVOKEd
+-- UPDATE/DELETE on syslog_entries/audit_log; nocvault_readonly never receives
+-- INSERT/UPDATE/DELETE on anything. FOR ROLE is `postgres` (NOT logvault_user)
+-- because LogVault's tables are created and OWNED BY postgres (schema.sql is
+-- applied as postgres), so postgres is the role whose future CREATE TABLEs the
+-- default-privileges rule must cover. Placed AFTER the GRANT/REVOKE block so it
+-- is not undone.
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'nocvault_readonly') THEN
+        GRANT USAGE ON SCHEMA public TO nocvault_readonly;
+        GRANT SELECT ON ALL TABLES IN SCHEMA public TO nocvault_readonly;
+        ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO nocvault_readonly;
+    END IF;
+END
+$$;

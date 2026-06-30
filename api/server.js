@@ -2195,6 +2195,10 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.18.4': [
+    'Fix: the NocVault Hub\'s cross-DB read role now self-heals on every update. The shared nocvault_readonly SELECT grant is re-applied by the schema step the updater runs as postgres, so tables added by future releases stay visible to the Hub instead of becoming invisible (the grant was previously provisioned only by the fresh suite installer).',
+    'ALTER DEFAULT PRIVILEGES (FOR ROLE postgres) auto-covers any future LogVault tables for the read role. SELECT-only - the change does not touch the append-only tamper model on syslog_entries/audit_log, and no-ops on a standalone LogVault without the role.',
+  ],
   '2.18.3': [
     'Fix: the in-app "Update" (Settings) now works on fresh installs. The update API previously refused to start with a 400 when SERVER_IP was unset; it now derives the IP from LV_APP_URL and proceeds. The updater script also prepends Git/Node to the SYSTEM PATH so the pull/build/restart actually runs',
     'The update screen now shows the server error instead of spinning indefinitely when an update cannot start',
