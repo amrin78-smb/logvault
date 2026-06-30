@@ -23,9 +23,15 @@ $env:PATH = @(
     $env:PATH
 ) -join ";"
 
-$AppDir      = $InstallDir
-$FrontendDir = "$InstallDir\frontend"
-$LogDir      = "$InstallDir\logs"
+# Self-locate the app root. This script lives at <appRoot>\installer\Update-LogVault.ps1,
+# so the real app root is the PARENT of the script's own folder. This is correct on BOTH
+# the suite install (C:\Apps\LogVault\app) and a standalone install (C:\Apps\logvault),
+# regardless of what -InstallDir is (or isn't) passed. The -InstallDir param is kept for
+# backward-compat but NO LONGER drives any path - self-location always wins, so the updater
+# can never Set-Location to a non-repo parent dir and leave services down.
+$AppDir      = Split-Path -Parent $PSScriptRoot
+$FrontendDir = "$AppDir\frontend"
+$LogDir      = "$AppDir\logs"
 
 # Helper functions
 function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
@@ -126,9 +132,12 @@ if (Test-Path $frontendEnvPath) {
     Write-Warn "No .env.local at $frontendEnvPath"
 }
 
-# Ensure git safe.directory is set for SYSTEM account
+# Ensure git safe.directory is set for SYSTEM account. Derive it from the self-located
+# $AppDir (git wants forward slashes) so it matches the REAL repo on any layout - a
+# hardcoded C:/Apps/logvault would not cover the suite install at C:\Apps\LogVault\app.
+$gitSafeDir = $AppDir -replace '\\', '/'
 try {
-    $null = git config --global --add safe.directory C:/Apps/logvault 2>&1
+    $null = git config --global --add safe.directory $gitSafeDir 2>&1
 } catch {}
 
 # Step 3: Pull latest from GitHub

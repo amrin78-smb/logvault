@@ -2195,6 +2195,9 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.18.6': [
+    'Fix: the in-app "Update" now works on suite installs. The updater was resolving the app folder from a hardcoded path (C:\\Apps\\logvault) instead of the actual install location (C:\\Apps\\LogVault\\app), so it ran git/npm in the wrong directory, failed, and left the services stopped. It now self-locates its app folder from the script path, and the git safe.directory + server-side launcher were corrected to match.',
+  ],
   '2.18.5': [
     'Dashboard: the Top Talkers, Logs by Vendor and Top Destinations cards no longer clip their last row — each list now scrolls within the card (whole rows only), so all entries are reachable without changing the card height. Works in both light and dark mode.',
   ],
@@ -2688,7 +2691,7 @@ app.post('/api/system/update', requireSuperAdmin, asyncHandler(async (req, res) 
     execSync(
       `schtasks /create /tn "LogVaultUpdate" ` +
       `/tr "powershell.exe -NonInteractive -ExecutionPolicy Bypass ` +
-      `-File \\"${scriptPath}\\" -InstallDir \\"C:\\\\Apps\\\\logvault\\" ` +
+      `-File \\"${scriptPath}\\" ` +
       `-ServerIp \\"${serverIp}\\"" ` +
       `/sc once /st 00:00 /f /ru SYSTEM`,
       { stdio: 'pipe' }
