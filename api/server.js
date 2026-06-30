@@ -2195,6 +2195,9 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.18.5': [
+    'Dashboard: the Top Talkers, Logs by Vendor and Top Destinations cards no longer clip their last row — each list now scrolls within the card (whole rows only), so all entries are reachable without changing the card height. Works in both light and dark mode.',
+  ],
   '2.18.4': [
     'Fix: the NocVault Hub\'s cross-DB read role now self-heals on every update. The shared nocvault_readonly SELECT grant is re-applied by the schema step the updater runs as postgres, so tables added by future releases stay visible to the Hub instead of becoming invisible (the grant was previously provisioned only by the fresh suite installer).',
     'ALTER DEFAULT PRIVILEGES (FOR ROLE postgres) auto-covers any future LogVault tables for the read role. SELECT-only - the change does not touch the append-only tamper model on syslog_entries/audit_log, and no-ops on a standalone LogVault without the role.',

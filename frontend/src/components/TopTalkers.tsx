@@ -23,7 +23,7 @@ export default function TopTalkers({ hours, onHostClick, compact }: {
       padding: '16px 20px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
       <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 1, flexShrink: 0 }}>Top Talkers</div>
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 8, flexShrink: 0 }}>Most active — {hours}h</div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7, justifyContent: 'space-evenly' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
         {data.slice(0, 5).map((row, i) => {
           const pct = Math.round((parseInt(row.log_count) / max) * 100);
           const color = VENDOR_COLORS[row.vendor] || '#9ca3af';

@@ -29,7 +29,7 @@ export default function VendorBreakdown({ hours, onVendorClick, compact }: {
           <span style={{ width: 7, height: 7, borderRadius: 2, background: 'var(--tint-warn)', border: '1px solid var(--tint-warn-fg)' }} />e = error
         </span>
       </div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7, justifyContent: 'space-evenly' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
         {data.map(row => {
           const count = parseInt(row.log_count); const pct = Math.round((count / total) * 100);
           const color = VENDOR_COLORS[row.vendor] || '#9ca3af';
