@@ -6,7 +6,7 @@ import { ThemeProvider }   from '@/components/ThemeContext';
 import { ToastProvider }   from '@/components/Toast';
 import AuthProvider        from '@/components/AuthProvider';
 import IdleTimeout         from '@/components/IdleTimeout';
-import { LicenseProvider, LicenseBanner, LicenseGate } from '@/components/LicenseGuard';
+import { LicenseProvider, LicenseGate } from '@/components/LicenseGuard';
 import UpdateNotifier      from '@/components/UpdateNotifier';
 
 export const metadata: Metadata = {
@@ -26,10 +26,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <ThemeProvider>
               <ToastProvider>
                 {/* LicenseGate hard-blocks EVERY route with the full-screen lock when the
-                    license is disabled/unlicensed — the banner/notifier/idle-timeout and
-                    page content only render when the app is actually licensed. */}
+                    license is disabled/unlicensed — the notifier/idle-timeout and
+                    page content only render when the app is actually licensed.
+                    LicenseBanner is rendered inside page.tsx (below the sticky Header,
+                    in the content column) so it sits in normal flow beneath the header —
+                    matching DDIVault — instead of above it. */}
                 <LicenseGate>
-                  <LicenseBanner />
                   <UpdateNotifier />
                   <IdleTimeout />
                   {children}

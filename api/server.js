@@ -2195,6 +2195,9 @@ function localCommitHash() {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.18.7': [
+    'Fix: the trial/license banner now renders directly below the top header (in the content flow) instead of above the LogVault logo. It pushes content down like the rest of the NocVault suite, and the header avatar dropdown correctly stacks above it.',
+  ],
   '2.18.6': [
     'Fix: the in-app "Update" now works on suite installs. The updater was resolving the app folder from a hardcoded path (C:\\Apps\\logvault) instead of the actual install location (C:\\Apps\\LogVault\\app), so it ran git/npm in the wrong directory, failed, and left the services stopped. It now self-locates its app folder from the script path, and the git safe.directory + server-side launcher were corrected to match.',
   ],

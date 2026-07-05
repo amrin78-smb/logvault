@@ -23,7 +23,7 @@ import AlertBanner     from '@/components/AlertBanner';
 import TimeRangePicker from '@/components/TimeRangePicker';
 import ErrorBoundary   from '@/components/ErrorBoundary';
 import { useTheme }    from '@/components/ThemeContext';
-import { useLicense, LicenseDisabledScreen } from '@/components/LicenseGuard';
+import { useLicense, LicenseDisabledScreen, LicenseBanner } from '@/components/LicenseGuard';
 import { PageHeader }  from '@/components/ui';
 import { version as APP_VERSION } from '../../package.json';
 
@@ -285,6 +285,7 @@ export default function Home() {
             content width (not the full screen over the sidebar), matching the suite.
             The tab content below them keeps the 16px padding. */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+          <LicenseBanner />
           <AlertBanner />
           <UpdatedNotice />
           {/* Site-restriction notice for regular users */}
