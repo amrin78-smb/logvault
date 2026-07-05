@@ -16,3 +16,7 @@ frontend/tsconfig.tsbuildinfo
 # Claude web UI attachments
 .claude-web-images/
 .claude-web-files/
+
+# local demo-seed scripts (superseded by the bundled suite seeder in netvault/installer/seeds)
+demo-seed.js
+frontend/demo-seed.js
