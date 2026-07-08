@@ -2132,7 +2132,10 @@ app.get('/api/stats/whats-changed', asyncHandler(async (req, res) => {
 }));
 
 // ── DISK SPACE ───────────────────────────────────────────────
-const { execSync } = require('child_process');
+const { execSync, execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileP = promisify(execFile);
+const GIT_ENV = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
 const path = require('path');
 
 app.get('/api/stats/disk', asyncHandler(async (req, res) => {
@@ -2193,12 +2196,12 @@ function localCommitHash() {
 // instead of GitHub's public web API. Git transport is not per-IP rate-limited,
 // so this works from Thai Union's shared egress where api.github.com times out
 // and raw.githubusercontent returns 429. Returns null on any failure.
-function remoteCommitHash() {
+async function remoteCommitHash() {
   try {
-    const out = execSync('git ls-remote origin main', {
-      cwd: appRoot, encoding: 'utf8', timeout: 10000,
+    const { stdout } = await execFileP('git', ['ls-remote', 'origin', 'main'], {
+      cwd: appRoot, encoding: 'utf8', timeout: 10000, env: GIT_ENV,
     });
-    const sha = out.trim().split(/\s+/)[0];
+    const sha = stdout.trim().split(/\s+/)[0];
     return sha ? sha.slice(0, 7) : null;
   } catch {
     return null;
@@ -2208,13 +2211,13 @@ function remoteCommitHash() {
 // package.json version on origin/main, read over git transport. Does a network
 // fetch, so only call this once the remote hash is known to differ from local.
 // Falls back to the local version on any failure (display-only field).
-function remoteVersion(localVersion) {
+async function remoteVersion(localVersion) {
   try {
-    execSync('git fetch --quiet origin main', { cwd: appRoot, timeout: 20000, stdio: 'ignore' });
-    const pkg = execSync('git show origin/main:package.json', {
-      cwd: appRoot, encoding: 'utf8', timeout: 10000,
+    await execFileP('git', ['fetch', '--quiet', 'origin', 'main'], { cwd: appRoot, timeout: 20000, env: GIT_ENV });
+    const { stdout } = await execFileP('git', ['show', 'FETCH_HEAD:package.json'], {
+      cwd: appRoot, encoding: 'utf8', timeout: 10000, env: GIT_ENV,
     });
-    return JSON.parse(pkg).version || localVersion;
+    return JSON.parse(stdout).version || localVersion;
   } catch {
     return localVersion;
   }
@@ -2224,6 +2227,9 @@ function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.18.9': [
+    'Update check hardening: the git-based update check + banner now run asynchronously, so a slow or unreachable GitHub can no longer briefly stall the server (and log ingestion) while checking for updates.',
+  ],
   '2.18.8': [
     'Fixed "Could not check for updates" in Settings → Updates. The update check (and the update-available banner) was calling GitHub\'s public web APIs (api.github.com + raw.githubusercontent.com), which are rate-limited per source IP — from a shared network with several apps checking, raw.githubusercontent started returning 429 and the check failed. Both now check via git (the same transport the updater already uses), which is not rate-limited.',
   ],
@@ -2608,12 +2614,12 @@ let updateAvailable = null;
 async function checkForUpdates() {
   try {
     const localHash = localCommitHash();
-    const remoteHash = remoteCommitHash();
+    const remoteHash = await remoteCommitHash();
 
     // Any differing commit = update available. If either hash is missing,
     // keep the last known state so a blip never shows a false banner.
     updateAvailable = (localHash && remoteHash && remoteHash !== localHash)
-      ? { current: version, latest: remoteVersion(version) }
+      ? { current: version, latest: await remoteVersion(version) }
       : null;
   } catch {
     // never block on network failure — keep the last known state
@@ -2641,7 +2647,7 @@ app.get('/api/system/update-status', requireSuperAdmin, asyncHandler(async (req,
     // GitHub web APIs, which are per-IP rate-limited — from Thai Union's shared
     // egress raw.githubusercontent returns 429 and api.github.com times out. Git
     // push/pull already work on the server, so ls-remote does too.
-    const remoteHash = remoteCommitHash();
+    const remoteHash = await remoteCommitHash();
 
     // If the remote hash is unreadable, degrade gracefully to the same
     // "Could not check for updates" response as a hard failure.
@@ -2655,7 +2661,7 @@ app.get('/api/system/update-status', requireSuperAdmin, asyncHandler(async (req,
 
     // Only fetch the remote version (a network round-trip) when there is
     // actually a new commit; otherwise the version is display-identical to local.
-    const remoteVer = updateAvail ? remoteVersion(localVersion) : localVersion;
+    const remoteVer = updateAvail ? await remoteVersion(localVersion) : localVersion;
 
     // Release notes keyed by the latest version, with a generic fallback.
     const release_notes = releaseNotes[remoteVer] || releaseNotes['default'];
