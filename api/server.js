@@ -20,8 +20,6 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env.loc
 
 // App version — single source of truth is the root package.json.
 const { version } = require('../package.json');
-// Raw GitHub base for remote version/changelog checks (no auth, public repo).
-const GH_RAW = 'https://raw.githubusercontent.com/amrin78-smb/logvault/main';
 
 // ── Crash resilience ──────────────────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -2191,10 +2189,44 @@ function localCommitHash() {
   }
 }
 
+// Short git commit hash for origin/main, read over GIT TRANSPORT (git ls-remote)
+// instead of GitHub's public web API. Git transport is not per-IP rate-limited,
+// so this works from Thai Union's shared egress where api.github.com times out
+// and raw.githubusercontent returns 429. Returns null on any failure.
+function remoteCommitHash() {
+  try {
+    const out = execSync('git ls-remote origin main', {
+      cwd: appRoot, encoding: 'utf8', timeout: 10000,
+    });
+    const sha = out.trim().split(/\s+/)[0];
+    return sha ? sha.slice(0, 7) : null;
+  } catch {
+    return null;
+  }
+}
+
+// package.json version on origin/main, read over git transport. Does a network
+// fetch, so only call this once the remote hash is known to differ from local.
+// Falls back to the local version on any failure (display-only field).
+function remoteVersion(localVersion) {
+  try {
+    execSync('git fetch --quiet origin main', { cwd: appRoot, timeout: 20000, stdio: 'ignore' });
+    const pkg = execSync('git show origin/main:package.json', {
+      cwd: appRoot, encoding: 'utf8', timeout: 10000,
+    });
+    return JSON.parse(pkg).version || localVersion;
+  } catch {
+    return localVersion;
+  }
+}
+
 // Structured release notes keyed by version. The update-status endpoint surfaces
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.18.8': [
+    'Fixed "Could not check for updates" in Settings → Updates. The update check (and the update-available banner) was calling GitHub\'s public web APIs (api.github.com + raw.githubusercontent.com), which are rate-limited per source IP — from a shared network with several apps checking, raw.githubusercontent started returning 429 and the check failed. Both now check via git (the same transport the updater already uses), which is not rate-limited.',
+  ],
   '2.18.7': [
     'Fix: the trial/license banner now renders directly below the top header (in the content flow) instead of above the LogVault logo. It pushes content down like the rest of the NocVault suite, and the header avatar dropdown correctly stacks above it.',
   ],
@@ -2576,21 +2608,12 @@ let updateAvailable = null;
 async function checkForUpdates() {
   try {
     const localHash = localCommitHash();
-    const [commitRes, pkgRes] = await Promise.all([
-      fetch('https://api.github.com/repos/amrin78-smb/logvault/commits/main', {
-        headers: { 'Accept': 'application/vnd.github.v3+json' },
-        cache: 'no-store',
-      }),
-      fetch(`${GH_RAW}/package.json?cb=${Date.now()}`, { cache: 'no-store' }),
-    ]);
-    const commit = await commitRes.json();
-    const remoteHash = commit && commit.sha ? String(commit.sha).slice(0, 7) : null;
-    const remotePkg = await pkgRes.json();
+    const remoteHash = remoteCommitHash();
 
     // Any differing commit = update available. If either hash is missing,
     // keep the last known state so a blip never shows a false banner.
     updateAvailable = (localHash && remoteHash && remoteHash !== localHash)
-      ? { current: version, latest: remotePkg.version }
+      ? { current: version, latest: remoteVersion(version) }
       : null;
   } catch {
     // never block on network failure — keep the last known state
@@ -2614,33 +2637,34 @@ app.get('/api/system/update-status', requireSuperAdmin, asyncHandler(async (req,
   const localVersion = version;
   const localHash = localCommitHash();
   try {
-    // Cache-bust so GitHub's raw CDN can't return a stale copy — the Settings
-    // "Re-check" button must reflect a freshly pushed commit immediately.
-    const bust = Date.now();
-    const [commitRes, pkgRes] = await Promise.all([
-      fetch('https://api.github.com/repos/amrin78-smb/logvault/commits/main', {
-        headers: { 'Accept': 'application/vnd.github.v3+json' },
-        cache: 'no-store',
-      }),
-      fetch(`${GH_RAW}/package.json?cb=${bust}`, { cache: 'no-store' }),
-    ]);
-    const commit = await commitRes.json();
-    const remoteHash = commit && commit.sha ? String(commit.sha).slice(0, 7) : null;
-    const remotePkg = await pkgRes.json();
-    const remoteVersion = remotePkg.version;
+    // Read the latest commit over GIT TRANSPORT (git ls-remote) rather than the
+    // GitHub web APIs, which are per-IP rate-limited — from Thai Union's shared
+    // egress raw.githubusercontent returns 429 and api.github.com times out. Git
+    // push/pull already work on the server, so ls-remote does too.
+    const remoteHash = remoteCommitHash();
+
+    // If the remote hash is unreadable, degrade gracefully to the same
+    // "Could not check for updates" response as a hard failure.
+    if (!remoteHash) {
+      console.error('[update-status] could not read remote commit hash (git ls-remote)');
+      return res.json({ current_version: localVersion, up_to_date: true, error: 'Could not check for updates' });
+    }
+
+    // Any differing commit = update available; both hashes must be present.
+    const updateAvail = !!remoteHash && !!localHash && remoteHash !== localHash;
+
+    // Only fetch the remote version (a network round-trip) when there is
+    // actually a new commit; otherwise the version is display-identical to local.
+    const remoteVer = updateAvail ? remoteVersion(localVersion) : localVersion;
 
     // Release notes keyed by the latest version, with a generic fallback.
-    const release_notes = releaseNotes[remoteVersion] || releaseNotes['default'];
+    const release_notes = releaseNotes[remoteVer] || releaseNotes['default'];
 
-    // Any differing commit = update available. If either hash is missing
-    // (e.g. git unavailable or API error), treat as up to date to avoid
-    // false alarms.
-    const updateAvail = !!remoteHash && !!localHash && remoteHash !== localHash;
     // Keep the cached banner state in sync with this on-demand check.
-    updateAvailable = updateAvail ? { current: localVersion, latest: remoteVersion } : null;
+    updateAvailable = updateAvail ? { current: localVersion, latest: remoteVer } : null;
     res.json({
       current_version:  localVersion,
-      latest_version:   remoteVersion,
+      latest_version:   remoteVer,
       current_commit:   localHash,
       latest_commit:    remoteHash,
       current_hash:     localHash,
