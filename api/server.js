@@ -2227,6 +2227,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.18.10': [
+    'Updater hardening: the update script now pins the build directory to its true on-disk casing, so a build can no longer fail with a duplicate-React "useContext" error when the updater is invoked with a different path casing than a previous run (Next.js caches absolute paths, so a casing change between runs collided).',
+  ],
   '2.18.9': [
     'Update check hardening: the git-based update check + banner now run asynchronously, so a slow or unreachable GitHub can no longer briefly stall the server (and log ingestion) while checking for updates.',
   ],

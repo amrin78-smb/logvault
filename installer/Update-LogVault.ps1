@@ -29,7 +29,28 @@ $env:PATH = @(
 # regardless of what -InstallDir is (or isn't) passed. The -InstallDir param is kept for
 # backward-compat but NO LONGER drives any path - self-location always wins, so the updater
 # can never Set-Location to a non-repo parent dir and leave services down.
+# Resolve a path to its TRUE on-disk casing (walking each parent for the real component
+# name). Get-Item().FullName only echoes the TYPED casing, which is not enough here.
+function Get-TrueCasePath([string]$p) {
+    try {
+        $di = New-Object System.IO.DirectoryInfo([System.IO.Path]::GetFullPath($p))
+        $parts = @()
+        while ($null -ne $di.Parent) {
+            $m = $di.Parent.GetFileSystemInfos($di.Name)
+            if ($m.Count -eq 0) { return [System.IO.Path]::GetFullPath($p) }
+            $parts = ,($m[0].Name) + $parts; $di = $di.Parent
+        }
+        $root = $di.Name; if (-not $root.EndsWith('\')) { $root += '\' }
+        return $root + ($parts -join '\')
+    } catch { return $p }
+}
 $AppDir      = Split-Path -Parent $PSScriptRoot
+# Normalize the build directory to its true on-disk casing. `next build` caches absolute
+# module paths in .next; if a later run's cwd casing differs (e.g. C:\Apps\LogVault vs
+# ...\logvault, depending on how the invocation path was typed), webpack treats the two
+# casings as different modules and loads React twice -> the build crashes with "Cannot read
+# properties of null (reading 'useContext')". Pinning to on-disk casing makes it stable.
+$AppDir      = Get-TrueCasePath $AppDir
 $FrontendDir = "$AppDir\frontend"
 $LogDir      = "$AppDir\logs"
 
