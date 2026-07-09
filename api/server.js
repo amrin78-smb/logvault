@@ -2227,6 +2227,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.18.11': [
+    'Installer: the post-update health check now uses 127.0.0.1 instead of localhost, so it can no longer stall waiting on IPv6 (::1) when the app listens on IPv4 — the update reports the service healthy as soon as it is actually up.',
+  ],
   '2.18.10': [
     'Updater hardening: the update script now pins the build directory to its true on-disk casing, so a build can no longer fail with a duplicate-React "useContext" error when the updater is invoked with a different path casing than a previous run (Next.js caches absolute paths, so a casing change between runs collided).',
   ],

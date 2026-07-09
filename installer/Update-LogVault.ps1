@@ -329,7 +329,9 @@ foreach ($svc in $services) {
 # Quick health check
 Start-Sleep -Seconds 2
 try {
-    $health = Invoke-WebRequest -Uri "http://localhost:3005/api/health" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+    # 127.0.0.1 (not localhost): on Windows localhost resolves to IPv6 ::1 first, which the
+    # server may not answer, making the poll time out while the app is actually up.
+    $health = Invoke-WebRequest -Uri "http://127.0.0.1:3005/api/health" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
     if ($health.StatusCode -eq 200) {
         Write-OK "API health check passed - $($health.Content)"
     }
