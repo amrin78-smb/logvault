@@ -258,6 +258,7 @@ app.get('/api/stats/top-destinations', asyncHandler(async (req, res) => {
 
 app.get('/api/stats/by-vendor', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getStatsSiteFilter(req.rbac, 2, 'syslog_entries');
   const { rows } = await pool.query(`
     SELECT
       vendor, COUNT(*) AS log_count,
@@ -266,8 +267,9 @@ app.get('/api/stats/by-vendor', asyncHandler(async (req, res) => {
       COUNT(*) FILTER (WHERE severity = 4)  AS warning_count
     FROM syslog_entries
     WHERE received_at > NOW() - make_interval(hours => $1)
+    ${sf.clause}
     GROUP BY vendor ORDER BY log_count DESC
-  `, [hours]);
+  `, [hours, ...sf.params]);
   res.json({ hours, data: rows });
 }));
 
@@ -478,6 +480,7 @@ app.get('/api/stats/mitre-coverage', asyncHandler(async (req, res) => {
 
 app.get('/api/stats/vpn-summary', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getStatsSiteFilter(req.rbac, 2, 'syslog_entries');
   const { rows } = await pool.query(`
     SELECT
       COUNT(*) AS total,
@@ -489,27 +492,33 @@ app.get('/api/stats/vpn-summary', asyncHandler(async (req, res) => {
       AND vendor = 'fortinet'
       AND (structured_data->>'subtype' = 'vpn' OR message ILIKE '%vpn%'
         OR message ILIKE '%ipsec%' OR message ILIKE '%ssl%')
-  `, [hours]);
+    ${sf.clause}
+  `, [hours, ...sf.params]);
   res.json(rows[0]);
 }));
 
 app.get('/api/stats/alerts-summary', asyncHandler(async (req, res) => {
+  // RBAC: scope by the relay (ae.source_host → site), same as every other
+  // alert_events read (see the mitre-coverage / recent-unacked routes above).
+  const sf = getAlertSiteFilter(req.rbac, 1, 'ae');
   const [unacked, total24h, recent] = await Promise.all([
-    pool.query(`SELECT COUNT(*) AS count FROM alert_events WHERE acknowledged = FALSE`),
-    pool.query(`SELECT COUNT(*) AS count FROM alert_events WHERE fired_at > NOW() - make_interval(hours => 24)`),
-    pool.query(`SELECT ae.fired_at, ar.name AS rule_name FROM alert_events ae LEFT JOIN alert_rules ar ON ar.id = ae.rule_id WHERE ae.acknowledged = FALSE ORDER BY ae.fired_at DESC LIMIT 3`),
+    pool.query(`SELECT COUNT(*) AS count FROM alert_events ae WHERE ae.acknowledged = FALSE ${sf.clause}`, sf.params),
+    pool.query(`SELECT COUNT(*) AS count FROM alert_events ae WHERE ae.fired_at > NOW() - make_interval(hours => 24) ${sf.clause}`, sf.params),
+    pool.query(`SELECT ae.fired_at, ar.name AS rule_name FROM alert_events ae LEFT JOIN alert_rules ar ON ar.id = ae.rule_id WHERE ae.acknowledged = FALSE ${sf.clause} ORDER BY ae.fired_at DESC LIMIT 3`, sf.params),
   ]);
   res.json({ unacknowledged: parseInt(unacked.rows[0].count), total_24h: parseInt(total24h.rows[0].count), recent: recent.rows });
 }));
 
 // Lightweight count for the header notifications bell badge
 app.get('/api/alerts/unacked-count', asyncHandler(async (req, res) => {
-  const { rows } = await pool.query(`SELECT COUNT(*) AS count FROM alert_events WHERE acknowledged = FALSE`);
+  const sf = getAlertSiteFilter(req.rbac, 1, 'ae');
+  const { rows } = await pool.query(`SELECT COUNT(*) AS count FROM alert_events ae WHERE ae.acknowledged = FALSE ${sf.clause}`, sf.params);
   res.json({ count: parseInt(rows[0].count) });
 }));
 
 app.get('/api/stats/top-services', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getStatsSiteFilter(req.rbac, 2, 'syslog_entries');
   const { rows } = await pool.query(`
     SELECT COALESCE(structured_data->>'service', 'unknown') AS service, COUNT(*) AS count
     FROM syslog_entries
@@ -517,23 +526,26 @@ app.get('/api/stats/top-services', asyncHandler(async (req, res) => {
       AND vendor = 'fortinet'
       AND structured_data->>'service' IS NOT NULL
       AND structured_data->>'service' != ''
+    ${sf.clause}
     GROUP BY structured_data->>'service'
     ORDER BY count DESC LIMIT 8
-  `, [hours]);
+  `, [hours, ...sf.params]);
   res.json({ data: rows });
 }));
 
 app.get('/api/stats/firewall-actions', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  const sf = getStatsSiteFilter(req.rbac, 2, 'syslog_entries');
   const { rows } = await pool.query(`
     SELECT COALESCE(structured_data->>'action', 'unknown') AS action, COUNT(*) AS count
     FROM syslog_entries
     WHERE received_at > NOW() - make_interval(hours => $1)
       AND vendor = 'fortinet'
       AND structured_data->>'action' IS NOT NULL
+    ${sf.clause}
     GROUP BY structured_data->>'action'
     ORDER BY count DESC LIMIT 10
-  `, [hours]);
+  `, [hours, ...sf.params]);
   res.json({ data: rows });
 }));
 
@@ -546,6 +558,13 @@ function formatBytes(bytes) {
   return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB';
 }
 
+// Global DB/table size + retention stats. Not site-scopable (a single physical
+// database, not a per-site metric), so there is no getStatsSiteFilter call
+// here by design. Relies on the proxy-level fix (frontend/src/proxy.ts) to
+// require SOME authenticated session before this handler is ever reached —
+// matches the rest of the /api/stats/* dashboard tiles, which are readable by
+// any logged-in role, not admin-restricted (this powers StorageWidget.tsx on
+// the general dashboard, not an admin-only page).
 app.get('/api/stats/storage', asyncHandler(async (req, res) => {
   const [sizes, growth, oldest, retention] = await Promise.all([
     // table_size must SUM the partition tree: syslog_entries is a PARTITIONED parent
@@ -651,13 +670,13 @@ app.get('/api/logs/recent-critical', asyncHandler(async (req, res) => {
 
 // ── ALERT RULES ──────────────────────────────────────────────
 
-app.get('/api/alerts/rules', asyncHandler(async (req, res) => {
+app.get('/api/alerts/rules', requireAdmin, asyncHandler(async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM alert_rules ORDER BY id');
   res.json({ data: rows });
 }));
 
 // Lightweight alert-rule list for per-rule email configuration in Settings.
-app.get('/api/alert-rules', asyncHandler(async (req, res) => {
+app.get('/api/alert-rules', requireAdmin, asyncHandler(async (req, res) => {
   const { rows } = await pool.query(
     'SELECT id, name, description, notify_email, is_enabled FROM alert_rules ORDER BY id'
   );
@@ -2227,6 +2246,12 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.19.0': [
+    'Per-user app-access enforcement: LogVault now blocks users who are not granted the LogVault app at the app level, not just on the hub launcher. A user without LogVault access is redirected to the NocVault hub launcher with a "denied" banner instead of reaching any LogVault page.',
+    'The allowed-apps claim now flows end-to-end through SSO: NetVault mints it into the SSO token, and LogVault carries it into its own NextAuth session so the edge middleware (proxy.ts) can enforce it on every page request.',
+    'Fail-open by design: tokens with no apps claim (or an empty list) are treated as default-all, so existing sessions and older SSO tokens are never locked out. NetVault (the hub) is always allowed.',
+    'Unauthenticated handling is unchanged — no session still redirects to the hub login. Only a valid session that explicitly lacks LogVault access is bounced to the launcher.',
+  ],
   '2.18.11': [
     'Installer: the post-update health check now uses 127.0.0.1 instead of localhost, so it can no longer stall waiting on IPv6 (::1) when the app listens on IPv4 — the update reports the service healthy as soon as it is actually up.',
   ],

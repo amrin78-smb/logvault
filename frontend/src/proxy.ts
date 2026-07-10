@@ -11,6 +11,15 @@
 //      (src/app/api/[...path]/route.ts): one cheap edge JWE decode + a rewrite,
 //      instead of a full session decrypt inside an extra Node hop on every call.
 //
+//      Unauthenticated calls are rejected HERE with a 401 unless the path is on
+//      the small PUBLIC_API_PATHS allow-list below. We used to proxy them
+//      through anyway with no identity headers on the theory that Express
+//      "fails closed" by defaulting to the 'user' role — but that's only true
+//      for routes that actually consult req.rbac. A route that never checks
+//      req.rbac at all (e.g. a GET handler with no guard) is wide open to
+//      anonymous callers. Rejecting at the edge removes the whole bug class
+//      instead of relying on every Express route to remember to check.
+//
 //   2. Guard page routes — redirect to the NocVault hub login when there is no
 //      session.
 //
@@ -32,6 +41,30 @@ const TOKEN_OPTS = {
   secureCookie: (process.env.NEXTAUTH_URL || '').startsWith('https'),
 };
 
+// The small set of /api/* routes that are genuinely meant to work with no
+// session — pre-login pages and external/cross-origin dashboards. EXACT path
+// match only (no prefix matching): e.g. '/api/stats' must NOT also allow
+// '/api/stats/by-vendor' through, since the /api/stats/* sub-routes are
+// site-scoped, session-gated data, unlike the bare /api/stats aggregate.
+// Kept in sync with api/server.js's enforceLicense() exemptPaths + the
+// explicit "unauthenticated"/"no-auth" route comments there.
+const PUBLIC_API_PATHS = new Set([
+  '/api/license-status',
+  '/api/health',
+  '/api/stats',
+  '/api/system/update-available',
+]);
+
+// Per-user app-access gate (NocVault suite). `apps` is the list of app slugs the
+// user is allowed, carried from the SSO token into LogVault's session JWT
+// (auth.ts). Fail OPEN: no/empty claim = default-all, so older tokens minted
+// before this feature never lock anyone out. netvault (the hub) is always allowed.
+function appAllowed(apps: unknown, slug: string): boolean {
+  if (slug === 'netvault') return true;
+  if (!Array.isArray(apps) || apps.length === 0) return true;
+  return apps.includes(slug);
+}
+
 export default async function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
@@ -50,9 +83,12 @@ export default async function proxy(req: NextRequest) {
     if (token) {
       headers.set('x-user-id', String((token as { id?: string | number }).id ?? '0'));
       headers.set('x-user-role', String((token as { role?: string }).role ?? 'user'));
+    } else if (!PUBLIC_API_PATHS.has(pathname)) {
+      // No session and not on the public allow-list — reject here instead of
+      // proxying through with no identity headers. See the file-header comment
+      // for why we no longer trust every Express route to fail closed on its own.
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    // Unauthenticated API calls (e.g. /api/license-status) pass through with no
-    // RBAC headers; Express treats them as the default 'user' (fail-closed).
     return NextResponse.rewrite(target, { request: { headers } });
   }
 
@@ -60,6 +96,12 @@ export default async function proxy(req: NextRequest) {
   const token = await getToken({ req, ...TOKEN_OPTS });
   if (!token) {
     return NextResponse.redirect(`${HUB}/login`);
+  }
+  // Per-user app-access enforcement: a valid session whose allowed-apps claim
+  // omits logvault is bounced to the hub launcher with a denied banner. The
+  // launcher lives on the hub origin, so this never loops inside LogVault.
+  if (!appAllowed((token as { apps?: unknown }).apps, 'logvault')) {
+    return NextResponse.redirect(`${HUB}/launcher?denied=logvault`);
   }
   return NextResponse.next();
 }

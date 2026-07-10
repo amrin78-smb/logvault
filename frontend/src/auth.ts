@@ -53,7 +53,16 @@ export const authOptions: NextAuthOptions = {
                 [payload.userId]
               );
               if (rows.length > 0) {
-                return { id: String(rows[0].id), name: rows[0].name, email: rows[0].email, role: rows[0].role };
+                // Carry the allowed-apps claim from the incoming SSO token so
+                // proxy.ts can gate per-user app access. `apps` is a string[] of
+                // slugs (e.g. ["netvault","logvault"]); absent/empty = default-all.
+                return {
+                  id: String(rows[0].id),
+                  name: rows[0].name,
+                  email: rows[0].email,
+                  role: rows[0].role,
+                  apps: Array.isArray(payload.apps) ? payload.apps : undefined,
+                };
               }
             }
           } catch {
@@ -89,6 +98,12 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id   = user.id;
         token.role = (user as any).role;
+        // Persist the allowed-apps claim into LogVault's own JWT so proxy.ts
+        // (getToken) can enforce per-user app access. Only set when present on
+        // the SSO login so older tokens (no claim) stay default-all.
+        if (Array.isArray((user as any).apps)) {
+          (token as any).apps = (user as any).apps;
+        }
       }
       return token;
     },
@@ -96,6 +111,7 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         (session.user as any).id   = token.id;
         (session.user as any).role = token.role;
+        (session.user as any).apps = (token as any).apps;
       }
       return session;
     },
