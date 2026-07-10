@@ -81,6 +81,14 @@ export default async function proxy(req: NextRequest) {
 
     const token = await getToken({ req, ...TOKEN_OPTS });
     if (token) {
+      // Per-user app-access enforcement (same helper/semantics as the page-route
+      // guard below): a valid session whose allowed-apps claim omits logvault must
+      // not be able to reach the API either — page navigation was gated, but a
+      // direct fetch('/api/...') with the same cookie previously sailed straight
+      // through to Express. This is an API caller, so deny with JSON, not a redirect.
+      if (!appAllowed((token as { apps?: unknown }).apps, 'logvault')) {
+        return NextResponse.json({ error: 'forbidden', reason: 'app_access_denied' }, { status: 403 });
+      }
       headers.set('x-user-id', String((token as { id?: string | number }).id ?? '0'));
       headers.set('x-user-role', String((token as { role?: string }).role ?? 'user'));
     } else if (!PUBLIC_API_PATHS.has(pathname)) {

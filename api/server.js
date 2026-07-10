@@ -2246,6 +2246,10 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.19.1': [
+    'Security fix: the per-user app-access block shipped in 2.19.0 only stopped a denied user from reaching LogVault pages — a valid session could still call the API directly and get full data. The API now enforces the same check.',
+    'Security fix: LogVault\'s legacy direct-login path (unused by the UI, but still reachable) never carried the allowed-apps claim, so a user denied LogVault could log in that way and bypass the block entirely. It now resolves and enforces the same claim as SSO login.',
+  ],
   '2.19.0': [
     'Per-user app-access enforcement: LogVault now blocks users who are not granted the LogVault app at the app level, not just on the hub launcher. A user without LogVault access is redirected to the NocVault hub launcher with a "denied" banner instead of reaching any LogVault page.',
     'The allowed-apps claim now flows end-to-end through SSO: NetVault mints it into the SSO token, and LogVault carries it into its own NextAuth session so the edge middleware (proxy.ts) can enforce it on every page request.',

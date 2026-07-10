@@ -24,6 +24,32 @@ const netvaultPool = new Pool({
   max:      3,
 });
 
+// Resolve the allowed-apps claim for the direct email/password login path from the
+// SAME source the SSO path's issuer (NetVault) uses — the `user_apps` table — so both
+// login paths produce a consistent, correctly-enforced `apps` claim instead of the
+// credentials path silently granting unrestricted access. Mirrors the semantics of
+// netvault's lib/appAccess.ts: super_admin and an existing user with zero rows both
+// mean full access (return undefined — proxy.ts's appAllowed() treats no claim as
+// allow-all, matching legacy tokens). A DB error must FAIL CLOSED, not open — but
+// appAllowed() treats an EMPTY apps array the same as "no claim" (allow-all), so a
+// closed failure can't be represented as `[]` here; instead resolve to a non-empty
+// sentinel array containing no real app slug, so appAllowed()'s `apps.includes(slug)`
+// check denies every app (netvault itself stays allowed — that check runs before the
+// apps check in proxy.ts).
+const DB_ERROR_DENY_ALL_APPS = ['__db_error_deny_all__'];
+
+async function resolveDirectLoginApps(userId: string, role: string): Promise<string[] | undefined> {
+  if (role === 'super_admin') return undefined; // full access, no query needed
+  try {
+    const { rows } = await netvaultPool.query('SELECT app FROM user_apps WHERE user_id = $1', [userId]);
+    if (rows.length === 0) return undefined; // existing user, no rows = full access (legacy/default-all)
+    return rows.map((r: any) => r.app);
+  } catch (err) {
+    console.error('[Auth] user_apps lookup failed for direct login, failing closed:', err);
+    return DB_ERROR_DENY_ALL_APPS;
+  }
+}
+
 export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
 
@@ -84,7 +110,11 @@ export const authOptions: NextAuthOptions = {
           const valid = await bcrypt.compare(credentials.password, user.password_hash);
           if (!valid) return null;
 
-          return { id: String(user.id), name: user.name, email: user.email, role: user.role };
+          // Resolve the allowed-apps claim here too (see resolveDirectLoginApps) —
+          // this path must be gated exactly like the SSO path, not left to the
+          // fail-open "no claim = default-all" behavior in appAllowed()/jwt().
+          const apps = await resolveDirectLoginApps(String(user.id), user.role);
+          return { id: String(user.id), name: user.name, email: user.email, role: user.role, apps };
         } catch (err) {
           console.error('[Auth] DB error:', err);
           return null;
