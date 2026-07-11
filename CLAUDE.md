@@ -450,7 +450,17 @@ LogVault has NO local login. All auth goes through NetVault hub.
 
 **Cookie name:** `nexvault.session-token` — DO NOT CHANGE (breaks existing sessions)
 
-**Hub URL:** Always use `process.env.NEXT_PUBLIC_NOCVAULT_HUB_URL` (client) or `process.env.NOCVAULT_HUB_URL` (server) — never hardcode `192.168.6.111:3000`
+**Hub URL:** these env vars are now the LAST-RESORT fallback only, not the
+primary source (added 2026-07). Server-side call sites (`proxy.ts` and any new
+route needing the hub's origin) should call `resolveOrigin(req, 3000,
+<the env-var fallback chain>)` from `frontend/src/lib/publicUrl.ts` — it
+derives the hub's origin from the CURRENT request's `x-forwarded-host`/`host` +
+`x-forwarded-proto` (validated against a hostname-shape regex) instead of a
+static env var, so hub links keep working when the suite is reached via a
+hostname different from the install-time server IP (e.g. a customer's own
+local-DNS name). Client-side call sites use a `getHubUrl()` helper
+(`window.location`-derived) in the same file instead of reading
+`NEXT_PUBLIC_NOCVAULT_HUB_URL` directly. Never hardcode `192.168.6.111:3000`.
 
 ### Env var standard (NocVault suite — updated)
 
@@ -872,6 +882,7 @@ const BRAND_TO_VENDOR = {
 
 | Bug | Fix |
 |---|---|
+| Cross-app links hardcoded to install-time IP | Use `resolveOrigin()`/`getHubUrl()` from `frontend/src/lib/publicUrl.ts`, not a raw `process.env.NOCVAULT_HUB_URL` read |
 | TypeScript in `.js` files | Never use type annotations in server/collector JS files |
 | `${hours}` in SQL | Use `make_interval(hours => $1)` |
 | Same `$1` twice in query | Use JOIN not nested subquery |
