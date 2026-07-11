@@ -2,8 +2,7 @@
 import { Suspense, useEffect } from 'react';
 import { signIn } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
-
-const HUB_URL = process.env.NEXT_PUBLIC_NOCVAULT_HUB_URL || 'http://localhost:3000';
+import { getHubUrl } from '@/lib/publicUrl';
 
 function SSOHandler() {
   const params = useSearchParams();
@@ -11,14 +10,14 @@ function SSOHandler() {
   useEffect(() => {
     const token = params.get('token');
     if (!token) {
-      window.location.href = `${HUB_URL}/login`;
+      window.location.href = `${getHubUrl()}/login`;
       return;
     }
     signIn('credentials', { ssoToken: token, redirect: false }).then(result => {
       if (result?.ok) {
         window.location.href = '/';
       } else {
-        window.location.href = `${HUB_URL}/login?error=sso_failed`;
+        window.location.href = `${getHubUrl()}/login?error=sso_failed`;
       }
     });
   }, [params]);

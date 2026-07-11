@@ -2246,6 +2246,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.19.2': [
+    'Fixed: links back to the NocVault hub (sign-out, home button, license page, session-expiry redirect) always pointed at the server\'s original install-time IP address, regardless of what hostname you actually used to reach LogVault. Every hub link now follows your current hostname instead.',
+  ],
   '2.19.1': [
     'Security fix: the per-user app-access block shipped in 2.19.0 only stopped a denied user from reaching LogVault pages — a valid session could still call the API directly and get full data. The API now enforces the same check.',
     'Security fix: LogVault\'s legacy direct-login path (unused by the UI, but still reachable) never carried the allowed-apps claim, so a user denied LogVault could log in that way and bypass the block entirely. It now resolves and enforces the same claim as SSO login.',

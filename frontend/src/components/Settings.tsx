@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
 import { useToast } from '@/components/Toast';
+import { getHubUrl } from '@/lib/publicUrl';
 import { PageHeader } from './ui';
 
 interface Settings {
@@ -1016,7 +1017,7 @@ export default function Settings() {
                 <div style={{ marginTop: 12, fontSize: 'var(--text-base)', color: 'var(--primary)' }}>
                   ⚠ License expired — updates disabled. Renew your license to receive updates.{' '}
                   <a
-                    href={(process.env.NEXT_PUBLIC_NOCVAULT_HUB_URL || '') + '/settings/license'}
+                    href={getHubUrl() + '/settings/license'}
                     style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'underline' }}
                   >
                     Manage License →

@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { getHubUrl } from '@/lib/publicUrl';
 
-const HUB_URL = process.env.NEXT_PUBLIC_NOCVAULT_HUB_URL || 'http://localhost:3000';
 const WARNING_MS = 60 * 1000; // show warning 60s before expiry
 
 // Manual CSRF sign-out — same flow as Header. Do NOT use the next-auth
 // signOut helper (breaks the SSO cookie flow). Clears the session then returns to
-// the hub login with a timeout reason.
+// the hub login with a timeout reason. getHubUrl() is called here (not a
+// module-level constant) so it always reflects the CURRENT window.location.
 async function csrfSignOut() {
   try {
     const csrfRes = await fetch('/api/auth/csrf');
@@ -18,7 +19,7 @@ async function csrfSignOut() {
       body: `csrfToken=${csrfToken}&callbackUrl=/`,
     });
   } catch {}
-  window.location.replace(`${HUB_URL}/login?reason=timeout`);
+  window.location.replace(`${getHubUrl()}/login?reason=timeout`);
 }
 
 export default function IdleTimeout() {
@@ -84,7 +85,7 @@ export default function IdleTimeout() {
 
     const init = async () => {
       try {
-        const res = await fetch(`${HUB_URL}/api/settings`, { credentials: 'include' });
+        const res = await fetch(`${getHubUrl()}/api/settings`, { credentials: 'include' });
         if (!res.ok) return;
         const settings = await res.json();
         const raw = settings && settings['idle_timeout_minutes'];

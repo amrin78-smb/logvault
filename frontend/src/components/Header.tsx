@@ -2,12 +2,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTheme } from './ThemeContext';
 import { useSession } from 'next-auth/react';
-
-
-const HUB_URL = process.env.NEXT_PUBLIC_NOCVAULT_HUB_URL || 'http://localhost:3000';
+import { getHubUrl } from '@/lib/publicUrl';
 
 // Manual CSRF sign-out — clears the NextAuth session then returns to the hub
 // login. Do NOT use the next-auth signOut helper (breaks the SSO cookie flow).
+// getHubUrl() is called here (not a module-level constant) so it always
+// reflects the CURRENT window.location at click time.
 async function handleSignOut() {
   try {
     const csrfRes = await fetch('/api/auth/csrf');
@@ -18,7 +18,7 @@ async function handleSignOut() {
       body: `csrfToken=${csrfToken}&callbackUrl=/`,
     });
   } catch {}
-  window.location.replace(HUB_URL + '/login');
+  window.location.replace(getHubUrl() + '/login');
 }
 
 function SunIcon() {
@@ -44,6 +44,9 @@ function MoonIcon() {
 
 export default function Header() {
   const { theme, toggle } = useTheme();
+  // Computed per-render (cheap) so it reflects the current window.location
+  // rather than a value cached at module-load time.
+  const hubUrl = getHubUrl();
   const { data: session } = useSession();
   const user = session?.user as any;
   const role = (user?.role as string) || 'user';
@@ -264,7 +267,7 @@ export default function Header() {
 
               <div style={{ padding: '6px 0' }}>
                 {/* NocVault Hub */}
-                <a href={`${HUB_URL}/launcher`}
+                <a href={`${hubUrl}/launcher`}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px',
                     textDecoration: 'none', color: 'var(--text-secondary)', fontSize: 'var(--text-base)', transition: 'background 0.1s' }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-primary)'; }}

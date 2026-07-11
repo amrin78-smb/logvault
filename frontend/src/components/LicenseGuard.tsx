@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { getHubUrl } from '@/lib/publicUrl';
 
 interface LicenseState {
   mode: 'active' | 'trial' | 'grace' | 'disabled' | 'unlicensed' | 'unreachable' | 'unknown';
@@ -81,7 +82,7 @@ export function LicenseGate({ children }: { children: ReactNode }) {
 
 export function LicenseBanner() {
   const { license, state } = useLicense();
-  const hubUrl = process.env.NEXT_PUBLIC_NOCVAULT_HUB_URL || 'http://localhost:3000';
+  const hubUrl = getHubUrl();
   if (!license || state.mode === 'active') return null;
 
   const configs: Record<string, { bg: string; message: string }> = {
@@ -118,7 +119,7 @@ export function LicenseBanner() {
 }
 
 export function LicenseDisabledScreen({ mode }: { mode?: string }) {
-  const hubUrl = process.env.NEXT_PUBLIC_NOCVAULT_HUB_URL || 'http://localhost:3000';
+  const hubUrl = getHubUrl();
   const unlicensed = mode === 'unlicensed';
   const heading = unlicensed ? 'LogVault Not Licensed' : 'License Expired';
   const body = unlicensed

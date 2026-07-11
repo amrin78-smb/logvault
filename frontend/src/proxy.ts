@@ -29,9 +29,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
+import { resolveOrigin } from '@/lib/publicUrl';
 
 const API_BASE = process.env.LV_API_URL || 'http://127.0.0.1:3005';
-const HUB = process.env.NOCVAULT_HUB_URL || 'http://localhost:3000';
+// Legacy static fallback — kept ONLY for the rare case a request doesn't carry
+// a usable Host (resolveOrigin() falls back to this). NetVault (the hub) always
+// runs on port 3000, regardless of this app's own port.
+const HUB_FALLBACK = process.env.NOCVAULT_HUB_URL || 'http://localhost:3000';
 
 const TOKEN_OPTS = {
   secret: process.env.NEXTAUTH_SECRET,
@@ -103,13 +107,15 @@ export default async function proxy(req: NextRequest) {
   // 2. Page-route auth guard.
   const token = await getToken({ req, ...TOKEN_OPTS });
   if (!token) {
-    return NextResponse.redirect(`${HUB}/login`);
+    const hub = resolveOrigin(req, 3000, HUB_FALLBACK);
+    return NextResponse.redirect(`${hub}/login`);
   }
   // Per-user app-access enforcement: a valid session whose allowed-apps claim
   // omits logvault is bounced to the hub launcher with a denied banner. The
   // launcher lives on the hub origin, so this never loops inside LogVault.
   if (!appAllowed((token as { apps?: unknown }).apps, 'logvault')) {
-    return NextResponse.redirect(`${HUB}/launcher?denied=logvault`);
+    const hub = resolveOrigin(req, 3000, HUB_FALLBACK);
+    return NextResponse.redirect(`${hub}/launcher?denied=logvault`);
   }
   return NextResponse.next();
 }
