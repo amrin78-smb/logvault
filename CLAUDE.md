@@ -115,6 +115,9 @@ const x = value;
 C:\Apps\logvault\                    ← repo root = app root
   api\
     server.js                        ← Express REST API (port 3005)
+    rbac.js                          ← RBAC middleware + getSiteFilter/getStatsSiteFilter/getAlertSiteFilter
+    licenseCheck.js                  ← License enforcement (getLicense/getLicenseState)
+    auditLog.js                      ← Audit trail writer (audit_log table)
     netvaultSync.js                  ← NetVault asset sync for API
   collector\
     collector.js                     ← Syslog collector (514/1514)
@@ -122,6 +125,15 @@ C:\Apps\logvault\                    ← repo root = app root
     netvaultSync.js                  ← NetVault asset sync for collector
     dnsLookup.js                     ← Reverse DNS lookup utility
     emailer.js                       ← SMTP email alerting
+    geoEnrich.js                     ← GeoIP + AbuseIPDB threat enrichment
+    mitreMapper.js                   ← MITRE ATT&CK technique tagging
+    taxonomy.js                      ← Universal event category assignment
+    riskScorer.js                    ← 0-100 risk score per log entry
+    analytics\                       ← Phase 2 intelligence: UEBA / anomaly detection
+      baselineBuilder.js             ← Per-entity behavioral baselines
+      anomalyDetector.js             ← Deviation-from-baseline anomaly scoring
+      uebaRollup.js                  ← Entity risk rollup
+      relayHosts.js                  ← Shared relay/log-source exclusion list (UEBA_RELAY_HOSTS)
   parsers\
     fortinet.js
     cisco.js
@@ -134,9 +146,6 @@ C:\Apps\logvault\                    ← repo root = app root
     windows.js
     sonicwall.js
     generic.js
-  collector\
-    taxonomy.js                      ← Universal event category assignment
-    riskScorer.js                    ← 0-100 risk score per log entry
   frontend\
     src\
       app\
@@ -145,29 +154,23 @@ C:\Apps\logvault\                    ← repo root = app root
         globals.css                  ← CSS variables + design tokens
         sso\page.tsx                 ← SSO landing page
         api\auth\[...nextauth]\route.ts
-      components\
-        Header.tsx                   ← Top bar with avatar dropdown
-        ThemeContext.tsx             ← Dark mode context
-        Toast.tsx                    ← Toast notifications
-        LogExplorer.tsx             ← Log search with smart filters
-        LogDetailPanel.tsx          ← Slide-over detail panel
-        DashboardWidgets.tsx        ← All dashboard chart widgets
-        StorageWidget.tsx           ← Storage & capacity widget
-        KnownHosts.tsx              ← Known hosts with NetVault sync
-        Settings.tsx                ← Settings page (branding, DNS, SMTP)
-        AlertsPanel.tsx             ← Alert events panel
-        SeverityChart.tsx           ← Severity distribution chart
-        TopTalkers.tsx              ← Top talkers widget
-        VendorBreakdown.tsx         ← Vendor breakdown chart
-      auth.ts                       ← NextAuth config
-      proxy.ts                      ← Auth middleware (replaces middleware.ts)
+      components\                   ← ~30 components: LogExplorer/LogDetailPanel, DashboardWidgets,
+                                       AlertEvents/AlertDetailPanel/AlertBanner, IntelligenceConsole
+                                       (UEBA), SecurityAnalysis, ThreatIntel, LicenseGuard,
+                                       UpdateNotifier, KnownHosts, Settings, Header, plus shared
+                                       mitre.tsx / ui.tsx / severity.tsx modules
+      lib\
+        publicUrl.ts                 ← resolveOrigin()/getHubUrl() — request-derived hub URL
+      auth.ts                       ← NextAuth config (SSO + credentials, carries the `apps` claim)
+      proxy.ts                      ← Edge middleware: /api/* proxy + RBAC headers + page/API auth guard
       types\next-auth.d.ts
     package.json                    ← Frontend dependencies
-    next.config.js                  ← Rewrites /api/* → port 3005
+    next.config.js                  ← env passthrough only — /api/* proxying lives in proxy.ts, not here
     .next\                          ← Built output (next start)
   scripts\
     schema.sql                      ← SINGLE SOURCE OF TRUTH for DB schema
     cleanup.js                      ← Data retention cleanup
+    verify-integrity.js             ← Tamper-chain verifier
   installer\
     Update-LogVault.ps1             ← Deployment update script
   logs\                             ← NSSM service logs
@@ -384,6 +387,8 @@ NETVAULT_DB_USER=netvault
 NETVAULT_DB_PASS=<set-in-NSSM-env>
 LOG_INTEGRITY_KEY=<set-in-NSSM-env>   # HMAC key for the tamper-evident hash chain; unset = chain disabled
 SPOOL_DIR=                            # optional; defaults to <repo>/logs/spool for the durable ingest spool
+RETENTION_DAYS=30                     # optional; days of syslog_entries partitions to retain (scripts/cleanup.js, runs in-process)
+UEBA_RELAY_HOSTS=FGT200E_TUS          # optional; comma-separated relay/log-source hostnames excluded from UEBA 'device' entity scoring
 ```
 
 > `LOG_INTEGRITY_KEY` must be the SAME value when running `scripts/verify-integrity.js`,
@@ -496,7 +501,7 @@ Users, roles, and site assignments are managed **in NetVault**. LogVault only
 | `admin` | Everything (all sites, all logs) — but not Settings writes |
 | `user` | Only logs from devices in their assigned sites (`netvault.user_sites`) |
 
-### How identity reaches the API — header proxy (NOT cookie decode)
+### How identity reaches the API — edge middleware (NOT cookie decode, NOT a route.ts proxy)
 
 `next-auth` v4 with `session.strategy: 'jwt'` stores the session cookie as an
 **encrypted JWE** (A256GCM, key derived from `NEXTAUTH_SECRET`). A plain
@@ -504,34 +509,52 @@ Users, roles, and site assignments are managed **in NetVault**. LogVault only
 API does **not** parse the cookie, and `cookie-parser` / `jsonwebtoken` are
 **not** added to the backend.
 
-Instead, identity flows through a server-side proxy:
+Identity flows through Next.js **edge middleware** — `frontend/src/proxy.ts`
+(`export default async function proxy(req)`). This is the SECOND refactor of
+this mechanism: an original `next.config.js` rewrite couldn't attach headers,
+so it was replaced by a per-request `getServerSession()` proxy route at
+`frontend/src/app/api/[...path]/route.ts`; that route.ts file no longer
+exists — it was replaced by this edge middleware (one cheap `getToken()` JWE
+decode + `NextResponse.rewrite()`, instead of a full session decrypt inside an
+extra Node hop on every call). See `proxy.ts`'s own header comment for the
+full history.
 
 ```
-Browser → /api/*  →  frontend/src/app/api/[...path]/route.ts
-                       (reads session via getServerSession — decrypts the JWE)
-                       attaches X-User-Id + X-User-Role headers
-                     → Express API (localhost:3005)
-                       rbacMiddleware reads those headers → req.rbac
+Browser → /api/*  →  proxy.ts (edge middleware, matcher excludes /api/auth/*)
+                       getToken({ req, cookieName: 'nexvault.session-token', ... })
+                       strips any client-supplied X-User-* headers, then sets
+                       X-User-Id + X-User-Role from the VERIFIED token
+                       NextResponse.rewrite() → Express API (localhost:3005)
+                     → rbacMiddleware reads those headers → req.rbac
 ```
 
-- The old `/api/*` rewrite in `next.config.js` was **removed** — a rewrite
-  cannot attach per-request session headers. `/api/auth/*` is still served by
-  the more-specific next-auth route.
-- The API is internal-only (port 3005, never firewalled open), so the proxy is
-  the sole trusted caller of those headers.
+- No session + path not on the small `PUBLIC_API_PATHS` allow-list
+  (`/api/license-status`, `/api/health`, `/api/stats`,
+  `/api/system/update-available`) → `proxy.ts` returns a `401` itself, before
+  Express is ever hit. An earlier version proxied unauthenticated calls
+  through anyway (relying on Express to "fail closed"), but that only holds
+  for routes that actually check `req.rbac` — a route with no guard was wide
+  open. Rejecting at the edge removed that whole bug class.
+- `/api/auth/*` is excluded by `proxy.ts`'s `config.matcher` and served by the
+  more-specific next-auth route.
+- The API is internal-only (port 3005, never firewalled open), so `proxy.ts`
+  is the sole trusted caller of `X-User-Id`/`X-User-Role`.
 
-> **No `next.config.js` rewrite for `/api/*`.** The authenticated proxy route
-> at `frontend/src/app/api/[...path]/route.ts` is the *only* path browser API
-> calls take to Express — it reads the session server-side, forwards
-> `X-User-Id` + `X-User-Role` to `http://localhost:3005`, and relays the
-> upstream status (so e.g. a `402` license response passes through). New API
-> endpoints work automatically; do **not** re-add an `/api/*` rewrite.
+> **There is no `frontend/src/app/api/[...path]/route.ts` file and no
+> `next.config.js` rewrite for `/api/*`.** `frontend/src/proxy.ts` is the
+> *only* path browser API calls take to Express — it verifies the token at
+> the edge, forwards `X-User-Id` + `X-User-Role` to `http://localhost:3005`,
+> and relays the upstream status (so e.g. a `402` license response passes
+> through). New API endpoints work automatically; do **not** recreate the old
+> route.ts proxy or re-add an `/api/*` rewrite.
 
 ### `api/rbac.js`
 
 - `rbacMiddleware` — sets `req.rbac = { userId, role, isSuperAdmin, isAdmin, allowedSiteIds }`.
   `allowedSiteIds` is `null` for admins (no filter), `[]` for a user with no
   sites (sees nothing), or an array of site IDs. User→site lookups are cached 5 min.
+- `requireAdmin` — 403s the `user` role (allows `admin`/`super_admin`). Applied to
+  `/api/alerts/rules` (GET/POST/PATCH), `/api/alert-rules`, `PUT /api/hosts`, `/api/sites`.
 - `requireSuperAdmin` — 403s non-super-admins. Applied to `POST /api/settings`,
   `POST /api/settings/test-email`, `POST /api/hosts/sync-netvault`.
 - Fails **open** on lookup errors (logs, then treats as admin/no-filter) so a
@@ -561,10 +584,54 @@ if (sf.clause) { conditions.push(sf.clause.replace(/^AND\s+/i, '')); params.push
   returns an empty clause.
 - Site filtering links logs → sites via
   `syslog_entries.source_ip → known_hosts.ip_address → known_hosts.site_id`.
-- Applied to: `/api/logs`, `/api/logs/export`, `/api/stats/summary`,
-  `/api/stats/timeline`, `/api/stats/top-talkers`, `/api/stats/top-blocked`,
-  `/api/stats/top-failures`, `/api/stats/top-security-events`,
-  `/api/alerts/events` (filtered by `ae.source_ip`).
+- Applied to detail-level queries: `/api/logs`, `/api/logs/export`, and the
+  event-side of alert-detail / security-drilldown endpoints.
+
+### `getStatsSiteFilter(rbac, startParamIndex, tableAlias)` — permissive variant for dashboard aggregates
+
+Same shape/params as `getSiteFilter`, but a row is visible when its `source_ip`
+belongs to one of the user's sites **OR** `source_ip` is NOT assigned to any
+site in `known_hosts` (unregistered/unassigned devices stay visible to
+everyone). Needed because these widgets are firewall-centric — the strict
+`getSiteFilter` matched ZERO rows for every non-admin when the relaying
+firewall device itself has no site assigned, even though `super_admin` (no
+filter) saw data. Applied to `/api/stats/summary`, `/api/stats/timeline`,
+`/api/stats/top-talkers`, `/api/stats/top-blocked`, `/api/stats/top-failures`,
+`/api/stats/top-security-events`, and other dashboard-aggregate endpoints.
+
+### `getAlertSiteFilter(rbac, startParamIndex, tableAlias = 'ae')` — alert-branch site scoping
+
+`alert_events` are scoped by the **relay hostname, not `source_ip`**: the
+clause filters on `ae.source_host → known_hosts.hostname → known_hosts.site_id`
+(same clause shapes as `getSiteFilter`: `''` / `AND 1=0` / an `IN (...)`
+subquery). `alert_events.source_ip` is the internal actor IP and is almost
+never registered in `known_hosts` with a site, so filtering on it would
+collapse alert visibility to zero for every site-scoped user. Scoping by the
+firewall/relay hostname instead keeps alert visibility consistent with the
+event branch (same physical device, same site mapping) without leaking
+another site's data. Applied to `/api/alerts/events` and other alert-derived
+endpoints (e.g. MITRE coverage).
+
+### Per-user app access (separate from role/site RBAC)
+
+Independent of the role/site RBAC above, NetVault SSO can also restrict
+**which apps** a user is allowed to open at all. The allowed-apps list rides
+in the SSO JWT as `apps: string[]` (absent/empty = default-all — **fail
+open**, so tokens minted before this feature never lock anyone out). `auth.ts`
+carries the claim into LogVault's own NextAuth session (`jwt`/`session`
+callbacks persist `token.apps`/`session.user.apps`); the direct
+email/password login path resolves the same claim itself via
+`resolveDirectLoginApps()` (queries `netvault.user_apps`), **failing closed**
+to a deny-all sentinel array on a DB error so that path can't silently grant
+unrestricted access. `proxy.ts`'s `appAllowed(apps, slug)` enforces it:
+- **Page routes:** a session whose `apps` claim omits `logvault` is redirected
+  to `${hub}/launcher?denied=logvault`.
+- **API routes:** the same check runs in the `/api/*` proxy branch — a denied
+  session gets a JSON `403 { error: 'forbidden', reason: 'app_access_denied' }`
+  instead of a redirect (a `fetch()` caller can't follow a redirect to a login
+  page). Added after an audit found page navigation was gated but a direct
+  API call with the same cookie sailed through.
+- `netvault` (the hub) is always allowed regardless of the claim.
 
 ### Frontend
 
@@ -765,19 +832,22 @@ process.on('unhandledRejection', (reason) => {
 
 ---
 
-## next.config.js — API Proxy
+## next.config.js — no API rewrite (proxying lives in proxy.ts)
 
-The frontend proxies all `/api/*` requests to the Express API on port 3005. This is why port 3005 does not need to be open in the firewall.
+`next.config.js` does **not** proxy `/api/*` — there is no `rewrites()` block. All
+`/api/*` requests are intercepted by the edge middleware in `frontend/src/proxy.ts`
+(`NextResponse.rewrite()`), which is also what stamps the verified `X-User-Id` /
+`X-User-Role` headers before forwarding to the Express API on port 3005 — a static
+`next.config.js` rewrite can't attach per-request session headers or strip
+client-spoofed ones. `next.config.js` itself only passes `NEXTAUTH_URL` and
+`NEXT_PUBLIC_NOCVAULT_HUB_URL` (with a legacy `NEXT_PUBLIC_NETVAULT_HUB_URL`
+fallback) through via its `env` block.
 
-```javascript
-async rewrites() {
-  return [
-    { source: '/api/:path*', destination: 'http://localhost:3005/api/:path*' }
-  ];
-}
-```
+Port 3005 does not need to be open in the firewall — the browser never calls it
+directly, only `proxy.ts` does (server-side).
 
-If this rewrite is missing, all API calls return 404.
+If `/api/*` calls start 404ing (or 401ing unexpectedly), check `frontend/src/proxy.ts`'s
+`config.matcher` and `PUBLIC_API_PATHS`, **not** `next.config.js`.
 
 ---
 
@@ -950,6 +1020,15 @@ $env:PGPASSWORD = "<set-in-NSSM-env>"
 | `smtp_pass` | (empty) | SMTP password |
 | `smtp_from` | (empty) | From email address |
 | `smtp_enabled` | false | Enable email alerts |
+| `email_notify_enabled` | true | Master on/off switch for alert emails, independent of `smtp_enabled` |
+| `email_notify_severities` | `["0","1","2","3"]` | JSON array of severities that trigger an email. Empty array = all severities |
+| `email_notify_categories` | `[]` | JSON array of taxonomy categories to email on. Empty = all categories |
+| `email_notify_vendors` | `[]` | JSON array of vendors to email on. Empty = all vendors |
+| `email_notify_min_risk` | 40 | Minimum `risk_score` (0-100) required to send an email. `0` = no minimum |
+| `email_notify_digest_mode` | instant | Digest-mode selector, stored/exposed in Settings; `collector/emailer.js` does not yet branch on it — every eligible alert is sent instantly regardless of this value |
+| `email_notify_digest_hour` | 8 | Hour (0-23) reserved for a future daily digest send; not yet consumed by the emailer |
+| `email_notify_recipients` | (empty) | Comma-separated recipients added to every alert email, in addition to each rule's own `notify_email` |
+| `email_notify_cooldown_mins` | 30 | Minimum minutes between emails for the same alert rule, tracked in-memory (resets on collector restart) — separate from the alert dedup/suppression window |
 | `collector_allowed_sources` | (empty) | Comma-separated IPs/CIDRs the collector accepts syslog from. **Empty = allow ALL** (default). IPv4/CIDR only — non-IPv4 sources fail open. |
 | `collector_rate_limit_enabled` | false | Enable per-source-IP ingestion rate limiting |
 | `collector_rate_limit_pps` | 0 | Max packets/sec per source IP. `0` = unlimited (sentinel). Only applies when `collector_rate_limit_enabled` is true |
@@ -991,6 +1070,10 @@ $env:PGPASSWORD = "<set-in-NSSM-env>"
 | Audit trail | `audit_log` append-only table + `api/auditLog.js`; settings/export/ack/sync/update actions; `GET /api/audit` (super-admin) |
 | Collector ingestion hardening | Opt-in source allow-list + per-source rate limit (default off) |
 | MITRE ATT&CK mapping | Technique tags on alerts (`alert_rules.mitre_techniques` + 8 correlation rules via `MITRE_BY_RULE`) and on events at ingest (`collector/mitreMapper.js` → `structured_data.mitre`, technique-level); `/api/logs?technique=` filter; ATT&CK Coverage tactic-matrix in the Security tab; `GET /api/stats/mitre-coverage` (RBAC-filtered); shared catalog `frontend/src/components/mitre.tsx`; `scripts/backfill-mitre-tags.js`. Tuned for Fortinet/Cisco; Windows/Palo Alto/other vendor structured signals deferred until those logs arrive. **T1110/brute-force is determined at the correlation altitude, NOT per-event** (mirrors the T1133 decision): a single failed login is never tagged T1110 — event-level T1110 is kept only when one message itself attests repetition/lockout ("account locked", "password spray", "repeated/multiple/N failed"), otherwise brute force comes from BRUTE_FORCE_SUCCESS / VPN_BRUTE_FORCE correlation rules. The **Fortinet parser maps VPN `remip` → `srcip`** (the real remote client IP for SSL-VPN/auth logs that have no native srcip) and captures `user`/`srccountry`/`reason`/`logdesc` into `structured_data`, so the real remote source is surfaced and VPN brute-force correlation can group by the attacker IP. `scripts/fix-mitre-t1110-single.js` backfills (strips) the old single-failure T1110 tags |
+| Per-app license-module gating | `api/licenseCheck.js` / `getLicenseState()` locks LogVault when an ACTIVE NocVault license explicitly lists modules and omits `logvault` (`enforceLicense` middleware returns 402); fail-open for trial/grace/expired/hub-unreachable so trials and legacy keys are never bricked (v2.18.0-2.18.1) |
+| Phase 1/2 intelligence — UEBA, anomaly detection, risk explainability | `collector/analytics/` (`baselineBuilder.js`, `anomalyDetector.js`, `uebaRollup.js`) builds per-entity behavioral baselines, flags deviations, and rolls up entity risk (relay hosts excluded via `UEBA_RELAY_HOSTS`); Intelligence Console UI, plain-language MITRE, on-prem forecasting/what's-changed, activity heatmaps |
+| Granular email-notification preferences | Per-severity/category/vendor/min-risk email filters, cooldown, and extra recipients (`app_settings` `email_notify_*` keys, enforced in `collector/emailer.js`'s `shouldSendEmail()`) |
+| Per-user app access | NetVault SSO's `apps` claim is carried into LogVault's own session (`auth.ts`) and enforced by `proxy.ts`'s `appAllowed()` for both page routes and API calls; a denied user is redirected to the hub launcher (pages) or gets a JSON 403 (API) (v2.19.0-2.19.2) |
 
 ## Pending / Planned
 

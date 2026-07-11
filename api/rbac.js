@@ -8,9 +8,9 @@
  *   - user               → restricted to sites assigned in netvault.user_sites
  *
  * User identity reaches this Express API via the X-User-Id / X-User-Role
- * request headers, which are set server-side by the Next.js proxy route
- * (frontend/src/app/api/[...path]/route.ts) AFTER it validates the NextAuth
- * session. The API is internal-only (port 3005, never firewalled open), so
+ * request headers, which are set by the Next.js edge middleware
+ * (frontend/src/proxy.ts) AFTER it verifies the NextAuth session token via
+ * getToken(). The API is internal-only (port 3005, never firewalled open), so
  * the proxy is the sole trusted caller. We deliberately do NOT decode the
  * NextAuth session cookie here: next-auth v4 JWE-encrypts the JWT, so a plain
  * jsonwebtoken.decode() cannot read it.
