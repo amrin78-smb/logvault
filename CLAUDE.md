@@ -612,6 +612,18 @@ event branch (same physical device, same site mapping) without leaking
 another site's data. Applied to `/api/alerts/events` and other alert-derived
 endpoints (e.g. MITRE coverage).
 
+### When you add a site-scope check, audit every sibling route too
+
+Across the NocVault suite recently, an IDOR/site-scoping bug was fixed on one
+route while the identical missing-check bug sat untouched on a sibling route
+with the exact same shape (same resource type, same site-scoped entity) —
+caught only later, by a separate audit. This pattern has recurred at least 3
+times suite-wide. **The rule:** the moment you add or fix a site-scope check
+(`getSiteFilter`, `getStatsSiteFilter`, or `getAlertSiteFilter` — see below)
+on one endpoint in `api/server.js`, grep for every other route touching the
+same table/entity and confirm each one calls the equivalent helper. A fix
+that only patches the reported route, and not its siblings, is not done.
+
 ### Per-user app access (separate from role/site RBAC)
 
 Independent of the role/site RBAC above, NetVault SSO can also restrict
@@ -632,6 +644,13 @@ unrestricted access. `proxy.ts`'s `appAllowed(apps, slug)` enforces it:
   page). Added after an audit found page navigation was gated but a direct
   API call with the same cookie sailed through.
 - `netvault` (the hub) is always allowed regardless of the claim.
+
+**General rule for any future access-control gate:** verify it against BOTH
+the page-rendering path and any API/proxy path reachable with the same
+session, in the same change. A UI redirect is not a security boundary by
+itself — "page guarded, API wide open" is the default failure mode when a
+gate is added to only one of the two paths, and it's exactly the bug fixed
+above.
 
 ### Frontend
 
@@ -848,6 +867,26 @@ directly, only `proxy.ts` does (server-side).
 
 If `/api/*` calls start 404ing (or 401ing unexpectedly), check `frontend/src/proxy.ts`'s
 `config.matcher` and `PUBLIC_API_PATHS`, **not** `next.config.js`.
+
+### Adding a new intentionally-public (no-session) API route
+
+LogVault gates unauthenticated `/api/*` calls with **two** independent
+allow-lists that must be updated TOGETHER, in the same change, or the route
+passes one gate and still gets blocked by the other:
+
+1. **`frontend/src/proxy.ts`'s `PUBLIC_API_PATHS`** — otherwise the edge
+   middleware 401s the request before Express is ever reached.
+2. **`api/server.js`'s `enforceLicense()` `exemptPaths`** — otherwise the
+   route 402s whenever the license is in a disabled state (grace-expired, or
+   an active key that explicitly excludes this module).
+
+There is no third gate here: `api/rbac.js`'s `rbacMiddleware` only *attaches*
+`req.rbac`, it never blocks by itself — individual routes opt into blocking
+via `requireAdmin`/`requireSuperAdmin` per-route, there's no global write-gate
+in front of everything. Sibling app SpanVault has a THIRD, independent gate in
+its equivalent middleware stack, so don't assume this 2-gate list is
+universal across the suite — recheck the sibling app's own proxy/license/RBAC
+files before porting a "make this route public" change over there.
 
 ---
 
@@ -1108,6 +1147,12 @@ Examples of what counts as each type:
 Rules:
 - ALWAYS bump version as part of the same commit as the changes
 - NEVER skip the version bump
+- **Exception: pure documentation changes do NOT require a version bump.**
+  `CLAUDE.md`-only edits, and source-comment-only fixes with zero logic
+  change (e.g. a stale comment corrected in `api/rbac.js`), have no
+  runtime/user-facing effect — bumping would misleadingly imply a functional
+  change occurred. Anything that touches actual runtime behavior, however
+  small (a copy string, a default value, a log line), still needs the bump.
 - Run npm version BEFORE npm run build
 - The app reads version from package.json via /api/health
 - NocVault suite itself has no version number — only the 4 apps
