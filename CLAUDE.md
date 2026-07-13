@@ -622,8 +622,10 @@ carries the claim into LogVault's own NextAuth session (`jwt`/`session`
 callbacks persist `token.apps`/`session.user.apps`); the direct
 email/password login path resolves the same claim itself via
 `resolveDirectLoginApps()` (queries `netvault.user_apps`), **failing closed**
-to a deny-all sentinel array on a DB error so that path can't silently grant
-unrestricted access. `proxy.ts`'s `appAllowed(apps, slug)` enforces it:
+on a DB error to a non-empty deny-all sentinel (`['__db_error_deny_all__']`)
+— note it can't be an empty array, because `appAllowed([])` means allow-all,
+so a closed failure must be a non-empty array holding no real app slug — so
+that path can't silently grant unrestricted access. `proxy.ts`'s `appAllowed(apps, slug)` enforces it:
 - **Page routes:** a session whose `apps` claim omits `logvault` is redirected
   to `${hub}/launcher?denied=logvault`.
 - **API routes:** the same check runs in the `/api/*` proxy branch — a denied
@@ -960,7 +962,7 @@ const BRAND_TO_VENDOR = {
 | Stack traces to client | Always return generic `Internal server error` |
 | `any` types unchecked | Define proper interfaces in TypeScript |
 | `.env.local` not at runtime | Set vars in NSSM `AppEnvironmentExtra` |
-| Next.js API 404 | Add rewrites in `next.config.js` |
+| Next.js API 404 / 401 | Check `proxy.ts`'s `config.matcher` + `PUBLIC_API_PATHS` — NOT `next.config.js` (there is no `/api/*` rewrite; proxying is edge middleware) |
 | `middleware.ts` deprecated | Use `proxy.ts` in Next.js 16 |
 | `useSearchParams` without Suspense | Wrap in `<Suspense>` |
 | Port 3005 exposed | Internal only — never open in firewall |
@@ -973,6 +975,7 @@ const BRAND_TO_VENDOR = {
 | Alert threshold `===` (never fires on burst) | Compare `fresh.length >= rule.threshold_count` — count can jump past threshold in one tick |
 | Hardcoded credential fallback (`\|\| 'secret'`) in code | Read secrets from `process.env` only; fail fast if missing — never bake a literal default |
 | Cookie `secure: false` hardcoded | Derive from `NEXTAUTH_URL.startsWith('https')` so HTTPS auto-enables Secure without breaking HTTP |
+| App-access gate on the page route only | Enforce `appAllowed()` in BOTH `proxy.ts` branches — the page-route guard AND the `/api/*` proxy branch. Page-only gating leaves the whole API reachable by any valid session cookie (2.19.1) |
 
 ---
 
