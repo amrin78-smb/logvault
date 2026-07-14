@@ -2246,6 +2246,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.19.3': [
+    'Hardened the in-app "Update" button: it now writes a full transcript of the update run to installer\\logs\\ — previously a failed in-app-triggered update left no record of what happened (only a handful of start/fail/complete milestone lines), since that button runs fully in the background with no live output.',
+  ],
   '2.19.2': [
     'Fixed: links back to the NocVault hub (sign-out, home button, license page, session-expiry redirect) always pointed at the server\'s original install-time IP address, regardless of what hostname you actually used to reach LogVault. Every hub link now follows your current hostname instead.',
   ],

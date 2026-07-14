@@ -54,6 +54,21 @@ $AppDir      = Get-TrueCasePath $AppDir
 $FrontendDir = "$AppDir\frontend"
 $LogDir      = "$AppDir\logs"
 
+# The in-app updater (Settings -> Updates) is fire-and-forget: api/server.js schedules
+# this script as a SYSTEM scheduled task (schtasks /create ... /ru SYSTEM, then
+# schtasks /run) and immediately returns { started: true } to the browser, with no
+# live output stream. Without a transcript, a run triggered that way leaves NO
+# durable record of what happened - update.log below only captures a handful of
+# milestone lines (start/fail/complete), not the full Write-Step/Write-OK/Write-Err
+# narrative. Start it as early as possible (before the Admin pre-flight check) so
+# even an early failure is captured. Best-effort: a transcript that fails to start
+# (e.g. one is already open in this session) must never block the actual update.
+if (-not (Test-Path $LogDir)) {
+    New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+}
+$transcriptPath = "$LogDir\update-transcript-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
+try { Start-Transcript -Path $transcriptPath -Append | Out-Null } catch { Write-Warning "Could not start transcript: $($_.Exception.Message)" }
+
 # Helper functions
 function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Write-OK($msg)   { Write-Host "    [OK] $msg" -ForegroundColor Green }
@@ -355,3 +370,7 @@ if ($allOK) {
     Add-Content -Path "$LogDir\update.log" -Value "[$timestamp] Update completed with warnings - $commitHash"
 }
 Write-Host ""
+
+# Best-effort - if Start-Transcript never succeeded (see top of script), this
+# throws harmlessly; never let it mask the update's own success/failure.
+try { Stop-Transcript | Out-Null } catch {}
