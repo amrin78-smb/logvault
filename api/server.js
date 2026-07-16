@@ -16,6 +16,7 @@ const { testEmail } = require('../collector/emailer');
 const { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter, getStatsSiteFilter, getAlertSiteFilter } = require('./rbac');
 const { getLicense, getLicenseState } = require('./licenseCheck');
 const { writeAudit } = require('./auditLog');
+const { createReportsRouter } = require('./reports');
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env.local') });
 
 // App version — single source of truth is the root package.json.
@@ -131,6 +132,13 @@ async function enforceLicense(req, res, next) {
 }
 
 app.use(enforceLicense);
+
+// ── REPORTING (Phase 1) ──────────────────────────────────────
+// Mounted after rbacMiddleware (req.rbac exists) and enforceLicense (gated
+// identically to the /api/stats/* routes below — same license-exempt path
+// prefix list does NOT include /api/reports, so it follows the normal
+// license gate, matching every other business route in this file).
+app.use('/api/reports', createReportsRouter(pool));
 
 // ── DASHBOARD STATS ──────────────────────────────────────────
 
@@ -2246,6 +2254,11 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.20.0': [
+    'New: a Reports tab with 3 exportable report types — Security Summary (severity/category breakdown, top talkers/blocked/failures, log-volume trend), Site/Device Activity (per-site log volume, vendor breakdown, top devices, active alerts), and MITRE ATT&CK Coverage (technique-level event/alert counts). Each is available as a live in-app preview or a downloadable CSV/PDF.',
+    'Reports are automatically scoped to your assigned sites, same as every other page in LogVault — there is no separate site picker to configure.',
+    'Every report generation (preview, CSV, or PDF) is logged to a new report history table for future auditing.',
+  ],
   '2.19.3': [
     'Hardened the in-app "Update" button: it now writes a full transcript of the update run to installer\\logs\\ — previously a failed in-app-triggered update left no record of what happened (only a handful of start/fail/complete milestone lines), since that button runs fully in the background with no live output.',
   ],

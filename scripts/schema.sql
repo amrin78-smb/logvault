@@ -583,6 +583,43 @@ CREATE INDEX IF NOT EXISTS idx_entity_risk_score ON entity_risk (risk_score DESC
 GRANT ALL ON ALL TABLES IN SCHEMA public TO logvault_user;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO logvault_user;
 
+-- ============================================================
+-- REPORTING ENGINE (Phase 1) — api/reports.js
+-- Named saved report "views" (report type + filter params) and a best-effort
+-- server-side history of every report generation (manual export via
+-- GET /api/reports/:type?format=). Mirrors the ddivault reports.js pattern.
+-- A failed INSERT into report_run_history must never break the actual
+-- export — api/reports.js's logRun() wraps it in try/catch.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS saved_reports (
+  id           SERIAL PRIMARY KEY,
+  name         TEXT        NOT NULL,
+  report_type  TEXT        NOT NULL,
+  params       JSONB       DEFAULT '{}'::jsonb,
+  created_by   TEXT,                      -- req.rbac.userId (NetVault user id as text)
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_saved_reports_type ON saved_reports (report_type);
+
+CREATE TABLE IF NOT EXISTS report_run_history (
+  id            BIGSERIAL PRIMARY KEY,
+  report_type   TEXT        NOT NULL,
+  format        TEXT        NOT NULL,       -- 'json' | 'csv' | 'pdf'
+  params        JSONB       DEFAULT '{}'::jsonb,
+  row_count     INTEGER,
+  status        TEXT        DEFAULT 'success',
+  trigger_type  TEXT        DEFAULT 'manual',
+  generated_by  TEXT,                        -- req.rbac.userId (NetVault user id as text)
+  generated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_report_run_history_type ON report_run_history (report_type, generated_at DESC);
+
+-- Re-grant so the app role owns the new reporting tables/sequences on
+-- existing installs (idempotent; harmless on fresh installs).
+GRANT ALL ON ALL TABLES IN SCHEMA public TO logvault_user;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO logvault_user;
+
 -- ── Hub cross-DB read role ───────────────────────────────────────
 -- The Hub reads across all suite DBs via the shared `nocvault_readonly`
 -- role. The suite installer grants it SELECT once, but a table added by a

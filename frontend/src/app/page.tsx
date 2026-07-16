@@ -17,6 +17,7 @@ import SecurityAnalysis from '@/components/SecurityAnalysis';
 import IntelligenceConsole from '@/components/IntelligenceConsole';
 import StorageWidget   from '@/components/StorageWidget';
 import KnownHosts      from '@/components/KnownHosts';
+import ReportsTab      from '@/components/ReportsTab';
 import Settings        from '@/components/Settings';
 import Header          from '@/components/Header';
 import AlertBanner     from '@/components/AlertBanner';
@@ -27,7 +28,7 @@ import { useLicense, LicenseDisabledScreen, LicenseBanner } from '@/components/L
 import { PageHeader }  from '@/components/ui';
 import { version as APP_VERSION } from '../../package.json';
 
-type Tab = 'dashboard' | 'explorer' | 'livetail' | 'alerts' | 'health' | 'security' | 'intelligence' | 'hosts' | 'settings';
+type Tab = 'dashboard' | 'explorer' | 'livetail' | 'alerts' | 'health' | 'security' | 'intelligence' | 'hosts' | 'reports' | 'settings';
 export interface ExplorerFilter { severity?: string; vendor?: string; host?: string; hours?: string; category?: string; q?: string; technique?: string; threat?: string; }
 
 const Icons: Record<Tab, JSX.Element> = {
@@ -39,6 +40,7 @@ const Icons: Record<Tab, JSX.Element> = {
   security:  (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.4L2.6 3.7v4.4c0 3.3 2.3 5.5 5.4 6.5 3.1-1 5.4-3.2 5.4-6.5V3.7L8 1.4z" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round"/><polyline points="5.4,7.8 7.2,9.6 10.6,5.9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>),
   intelligence: (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.6c-2.5 0-4.4 1.9-4.4 4.2 0 1.5.8 2.6 1.6 3.4.5.5.8 1 .8 1.7v.3h4v-.3c0-.7.3-1.2.8-1.7.8-.8 1.6-1.9 1.6-3.4C12.4 3.5 10.5 1.6 8 1.6z" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round"/><line x1="6" y1="13.4" x2="10" y2="13.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><line x1="6.6" y1="14.8" x2="9.4" y2="14.8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
   hosts:     (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" fill="none"/><line x1="5" y1="13" x2="11" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><line x1="8" y1="10" x2="8" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
+  reports:   (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="1.5" width="11" height="13" rx="1.3" stroke="currentColor" strokeWidth="1.3" fill="none"/><line x1="5" y1="5" x2="11" y2="5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><line x1="5" y1="8" x2="11" y2="8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><line x1="5" y1="11" x2="9" y2="11" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>),
   settings:  (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>),
 };
 
@@ -53,6 +55,7 @@ const NAV_COLORS: Record<Tab, { color: string; bg: string }> = {
   security:  { color: '#a78bfa', bg: 'rgba(167,139,250,0.20)' },
   intelligence: { color: '#f472b6', bg: 'rgba(244,114,182,0.20)' },
   hosts:     { color: '#38bdf8', bg: 'rgba(56,189,248,0.20)' },
+  reports:   { color: '#fb923c', bg: 'rgba(251,146,60,0.20)' },
   settings:  { color: '#9ca3af', bg: 'rgba(156,163,175,0.20)' },
 };
 
@@ -187,6 +190,7 @@ export default function Home() {
     { id: 'health',    label: 'Network Health' }, { id: 'security', label: 'Security' },
     { id: 'intelligence', label: 'Intelligence' },
     { id: 'hosts',     label: 'Known Hosts' },
+    { id: 'reports',   label: 'Reports' },
     // Settings is admin-only (super_admin / admin)
     ...(isAdmin ? [{ id: 'settings' as Tab, label: 'Settings' }] : []),
   ];
@@ -450,6 +454,7 @@ export default function Home() {
           {tab === 'security'  && <ErrorBoundary name="Security"><SecurityAnalysis hours={hours} onHoursChange={setHours} refreshInterval={refreshInterval} onRefreshChange={setRefreshInterval} onTechnique={(t, info) => (info && info.alerts > 0 ? openAlerts(t) : openExplorer({ technique: t }))} onDrill={openExplorer} /></ErrorBoundary>}
           {tab === 'intelligence' && <ErrorBoundary name="Intelligence"><IntelligenceConsole openExplorer={openExplorer} hours={String(hours)} /></ErrorBoundary>}
           {tab === 'hosts'     && <ErrorBoundary name="Known Hosts"><KnownHosts /></ErrorBoundary>}
+          {tab === 'reports'   && <ErrorBoundary name="Reports"><ReportsTab /></ErrorBoundary>}
           {tab === 'settings'  && isAdmin && <ErrorBoundary name="Settings"><Settings /></ErrorBoundary>}
           </div>
         </div>

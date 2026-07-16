@@ -1116,14 +1116,62 @@ $env:PGPASSWORD = "<set-in-NSSM-env>"
 | Phase 1/2 intelligence — UEBA, anomaly detection, risk explainability | `collector/analytics/` (`baselineBuilder.js`, `anomalyDetector.js`, `uebaRollup.js`) builds per-entity behavioral baselines, flags deviations, and rolls up entity risk (relay hosts excluded via `UEBA_RELAY_HOSTS`); Intelligence Console UI, plain-language MITRE, on-prem forecasting/what's-changed, activity heatmaps |
 | Granular email-notification preferences | Per-severity/category/vendor/min-risk email filters, cooldown, and extra recipients (`app_settings` `email_notify_*` keys, enforced in `collector/emailer.js`'s `shouldSendEmail()`) |
 | Per-user app access | NetVault SSO's `apps` claim is carried into LogVault's own session (`auth.ts`) and enforced by `proxy.ts`'s `appAllowed()` for both page routes and API calls; a denied user is redirected to the hub launcher (pages) or gets a JSON 403 (API) (v2.19.0-2.19.2) |
+| Reporting engine — Phase 1 | `api/reports.js` + `frontend/src/components/ReportsTab.tsx`: 3 report types (Security Summary, Site/Device Activity, MITRE ATT&CK Coverage), each previewable in-app or exportable as CSV/PDF. See "Reporting Engine" section below (v2.20.0) |
 
 ## Pending / Planned
 
 | Feature | Priority |
 |---|---|
 | Top talkers showing device names from NetVault | Next up |
-| Compliance reports (PCI-DSS, ISO 27001) | Medium |
+| Compliance reports (PCI-DSS, ISO 27001) | Medium — Phase 2 of the reporting engine below; not yet built |
+| Scheduled report email delivery | Low — Phase 1 shipped on-demand export only; `report_schedules`/`report_email_log` tables deliberately deferred |
 | Dashboard customization | Low |
+
+---
+
+## Reporting Engine (Phase 1, added v2.20.0)
+
+`api/reports.js` ported DDIVault's proven report-engine pattern: a `REPORTS`
+registry `{ key: { title, gather(db, query, rbac) } }`, one generic router
+(`GET /api/reports/:type?hours=<int>&format=json|csv|pdf`, mounted at
+`app.use('/api/reports', ...)` after both `rbacMiddleware` and
+`enforceLicense`), shared pdfkit rendering (cover page, summary tiles, vector
+charts, zebra-striped table — all portrait). `api/pdfCharts.js` and
+`api/csv.js` were ported alongside it (both fully portable, no
+DDIVault-specific coupling). The 3 report types (`security-summary`,
+`site-activity`, `mitre-coverage`) reuse the exact query logic already in the
+`/api/stats/*` dashboard endpoints — no new analysis, just packaged for
+export. `saved_reports` / `report_run_history` tables log every generation
+(best-effort, wrapped so a logging failure never breaks the export).
+
+**RBAC CONTRACT DIFFERS FROM DDIVAULT — do not "fix" it to match.** DDIVault's
+router passes a plain `allowedSiteIds` array into `gather()`. LogVault's
+`rbacMiddleware` instead attaches the WHOLE `req.rbac` object; every
+`gather(db, query, rbac)` here takes that full object and calls
+`getSiteFilter`/`getStatsSiteFilter`/`getAlertSiteFilter` itself per-query —
+exactly like the `/api/stats/*` endpoints these reports reuse. Passing a bare
+array instead would silently drop the site-scoping shape those helpers
+expect.
+
+**Chart rendering uses a generic `drawChart` ChartSpec primitive
+(`{type:'line'|'bar', title, x, series, yFormat}`), not `pdfCharts.js`'s
+`renderTrendChart`.** `renderTrendChart` is a single-series, 0-100%,
+time-axis primitive (DDIVault only uses it for DHCP scope-utilization
+blocks). LogVault's Phase 1 charts are multi-series/bar/categorical
+(severity distribution, category/vendor breakdown, top techniques), so
+`drawChart` — the same generic primitive DDIVault's own trend reports use
+for this exact shape — is co-located in `reports.js` instead. `renderTrendChart`
+stays ported and available for a future single-series per-device/per-site
+trend block, but isn't wired into any Phase 1 report.
+
+**No site/scope picker in the frontend** — every report is scoped
+server-side to the viewing user's assigned sites automatically, identical to
+every other LogVault page. Only a time-range control (`hours`, reusing the
+existing `TimeRangePicker`) is exposed. Exports use the same plain
+`window.open('/api/reports/:type?...', '_blank')` pattern as the existing
+`/api/logs/export` (`LogExplorer.tsx`) — identity rides the session cookie
+through `proxy.ts`, so no fetch→blob indirection is needed (unlike DDIVault's
+old client-injected-header model).
 
 ---
 
