@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { PageHeader, EmptyState, TableSkeleton } from '@/components/ui';
 import TimeRangePicker from '@/components/TimeRangePicker';
 
@@ -20,7 +20,7 @@ import TimeRangePicker from '@/components/TimeRangePicker';
 interface ReportColumn { key: string; label: string; align?: 'left' | 'right' | 'center'; }
 interface ReportSummary { label: string; value: string | number; color?: string; }
 interface ReportChartSeries { label: string; points: number[]; color?: string; }
-interface ReportChart { type: 'line' | 'bar'; title: string; x: string[]; series: ReportChartSeries[]; yFormat?: string; }
+interface ReportChart { type: 'line' | 'bar' | 'area'; title: string; x: string[]; series: ReportChartSeries[]; yFormat?: string; }
 interface ReportData {
   title: string;
   columns: ReportColumn[];
@@ -71,6 +71,24 @@ const REPORTS: ReportDef[] = [
 const CARD: React.CSSProperties = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)' };
 const MUTED: React.CSSProperties = { fontSize: 'var(--text-sm)', color: 'var(--text-muted)' };
 
+// A report's `summary` array is always a fixed 4 tiles (never shortened when
+// there's no data), so `summary.length === 0` can never be true — checking it
+// as an emptiness signal was dead code. security-summary's `rows` also isn't
+// a reliable signal on its own (its top-talkers/blocked/failures list can be
+// empty while totalLogs/the trend chart still have real data from a separate
+// query) — so "no data" is judged across rows, chart points, AND summary
+// values together, not any single field.
+function isEmptyReport(p: ReportData): boolean {
+  const hasRows = (p.rows?.length ?? 0) > 0;
+  const hasChartData = (p.charts ?? []).some((c) => c.series.some((s) => s.points.some((v) => v !== 0)));
+  const hasMeaningfulSummary = (p.summary ?? []).some((s) => {
+    if (typeof s.value === 'number') return s.value !== 0;
+    const v = String(s.value).trim();
+    return v !== '' && v !== '0' && v !== '—' && v !== '-';
+  });
+  return !hasRows && !hasChartData && !hasMeaningfulSummary;
+}
+
 // ── Chart preview (Recharts line chart matching the JSON contract) ─────────
 function ReportChartView({ chart }: { chart: ReportChart }) {
   const data = chart.x.map((xVal, i) => {
@@ -94,6 +112,18 @@ function ReportChartView({ chart }: { chart: ReportChart }) {
                   fill={s.color || CHART_PALETTE[i % CHART_PALETTE.length]} radius={[3, 3, 0, 0]} />
               ))}
             </BarChart>
+          ) : chart.type === 'area' ? (
+            <AreaChart data={data} margin={{ top: 4, right: 8, left: -18, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
+              <XAxis dataKey="x" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border)' }} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }} />
+              {chart.series.map((s, i) => (
+                <Area key={s.label} type="monotone" dataKey={s.label} name={s.label}
+                  stroke={s.color || CHART_PALETTE[i % CHART_PALETTE.length]}
+                  fill={s.color || CHART_PALETTE[i % CHART_PALETTE.length]} fillOpacity={0.15} strokeWidth={1.75} dot={false} />
+              ))}
+            </AreaChart>
           ) : (
             <LineChart data={data} margin={{ top: 4, right: 8, left: -18, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
@@ -242,7 +272,7 @@ export default function ReportsTab() {
                   background: 'var(--tint-danger)', color: 'var(--tint-danger-fg)', fontSize: 'var(--text-base)' }}>
                   {error}
                 </div>
-              ) : preview && (preview.rows?.length ?? 0) === 0 && (preview.summary?.length ?? 0) === 0 ? (
+              ) : preview && isEmptyReport(preview) ? (
                 <EmptyState title="No data" message="No records matched the selected time range." />
               ) : preview ? (
                 <div>

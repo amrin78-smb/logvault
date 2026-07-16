@@ -2254,6 +2254,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.20.1': [
+    'Reports tab: added support for area-style charts in the live preview (a PDF-export chart type that had no matching preview renderer yet), and fixed the "No data" message so it actually shows for a genuinely empty report instead of never appearing.',
+  ],
   '2.20.0': [
     'New: a Reports tab with 3 exportable report types — Security Summary (severity/category breakdown, top talkers/blocked/failures, log-volume trend), Site/Device Activity (per-site log volume, vendor breakdown, top devices, active alerts), and MITRE ATT&CK Coverage (technique-level event/alert counts). Each is available as a live in-app preview or a downloadable CSV/PDF.',
     'Reports are automatically scoped to your assigned sites, same as every other page in LogVault — there is no separate site picker to configure.',
