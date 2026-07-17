@@ -13,7 +13,7 @@ const { Pool } = require('pg');
 const http     = require('http');
 const { WebSocketServer } = require('ws');
 const { testEmail } = require('../collector/emailer');
-const { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter, getStatsSiteFilter, getAlertSiteFilter } = require('./rbac');
+const { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter, getStatsSiteFilter, getAlertSiteFilter, getRollupSiteFilter } = require('./rbac');
 const { getLicense, getLicenseState } = require('./licenseCheck');
 const { writeAudit } = require('./auditLog');
 const { createReportsRouter } = require('./reports');
@@ -144,15 +144,20 @@ app.use('/api/reports', createReportsRouter(pool));
 
 app.get('/api/stats/summary', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const sf = getStatsSiteFilter(req.rbac, 2, 'syslog_entries');
+  // Reads the pre-aggregated hourly rollup (scripts/schema.sql "HOURLY ROLLUP
+  // TABLES") instead of scanning raw syslog_entries — site_id is already
+  // resolved on the rollup row, so getRollupSiteFilter is a plain column
+  // filter (no known_hosts join needed at read time).
+  const sf = getRollupSiteFilter(req.rbac, 2);
   const cacheKey = `summary:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 30000, async () => {
     const { rows } = await pool.query(`
-      SELECT severity, severity_label, COUNT(*) AS log_count
-      FROM syslog_entries
-      WHERE received_at > NOW() - make_interval(hours => $1)
+      SELECT severity, severity_label, SUM(log_count)::bigint AS log_count
+      FROM syslog_stats_rollup
+      WHERE hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
       ${sf.clause}
-      GROUP BY severity, severity_label ORDER BY severity
+      GROUP BY severity, severity_label
+      ORDER BY severity
     `, [hours, ...sf.params]);
     return { hours, data: rows };
   });
@@ -164,17 +169,37 @@ app.get('/api/stats/timeline', asyncHandler(async (req, res) => {
   const bucket = hours <= 6 ? '5 minutes' : hours <= 48 ? '1 hour' : '6 hours';
   const trunc  = hours <= 6 ? 'minute' : 'hour';
   const mod    = hours <= 6 ? 5 : hours <= 48 ? 1 : 6;
-  const sf = getStatsSiteFilter(req.rbac, 3, 'syslog_entries');
   const cacheKey = `timeline:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 30000, async () => {
+    if (hours <= 6) {
+      // 5-minute bucket granularity — the hourly rollup can't serve this, so
+      // this branch is unchanged: raw syslog_entries scan + getStatsSiteFilter.
+      const sf = getStatsSiteFilter(req.rbac, 3, 'syslog_entries');
+      const { rows } = await pool.query(`
+        SELECT
+          date_trunc('minute', received_at)
+            - (EXTRACT(MINUTE FROM received_at)::int % $2) * INTERVAL '1 minute' AS bucket,
+          severity_label,
+          COUNT(*) AS log_count
+        FROM syslog_entries
+        WHERE received_at > NOW() - make_interval(hours => $1)
+        ${sf.clause}
+        GROUP BY bucket, severity_label
+        ORDER BY bucket
+      `, [hours, mod, ...sf.params]);
+      return { hours, bucket, data: rows };
+    }
+    // 1-hour / 6-hour bucket granularity — served from the pre-aggregated
+    // hourly rollup (scripts/schema.sql "HOURLY ROLLUP TABLES"). hour_bucket
+    // is already hour-truncated at write time, so no need to re-truncate it.
+    const sf = getRollupSiteFilter(req.rbac, 3);
     const { rows } = await pool.query(`
       SELECT
-        date_trunc('${trunc}', received_at)
-          - (EXTRACT(${trunc === 'minute' ? 'MINUTE' : 'HOUR'} FROM received_at)::int % $2) * INTERVAL '1 ${trunc}' AS bucket,
+        hour_bucket - (EXTRACT(HOUR FROM hour_bucket)::int % $2) * INTERVAL '1 hour' AS bucket,
         severity_label,
-        COUNT(*) AS log_count
-      FROM syslog_entries
-      WHERE received_at > NOW() - make_interval(hours => $1)
+        SUM(log_count)::bigint AS log_count
+      FROM syslog_stats_rollup
+      WHERE hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
       ${sf.clause}
       GROUP BY bucket, severity_label
       ORDER BY bucket
@@ -187,33 +212,39 @@ app.get('/api/stats/timeline', asyncHandler(async (req, res) => {
 app.get('/api/stats/top-talkers', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const limit = safeInt(req.query.limit, 10, 50);
-  const sf = getStatsSiteFilter(req.rbac, 3, 'se');
+  // RBAC site-scoping (on the relay device) reads from the pre-aggregated
+  // syslog_talker_rollup (scripts/schema.sql "HOURLY ROLLUP TABLES"), keyed by
+  // the ACTOR ip (srcip) — the collector already resolves site_id per-actor at
+  // rollup-build time, so getRollupSiteFilter is a plain column filter here.
+  // Display enrichment (hostname/vendor fallback/geo/threat) stays a LIVE join
+  // to known_hosts, independent of site-scoping, so it always reflects current
+  // enrichment rather than a stale rollup snapshot.
+  const sf = getRollupSiteFilter(req.rbac, 3);
   const cacheKey = `top-talkers:${hours}:${limit}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 30000, async () => {
-    // Group by the REAL actor (structured_data.srcip), falling back to the syslog
-    // sender only when no srcip was parsed. Joining/grouping on source_ip alone
-    // collapses every relayed log to the single forwarding device (the firewall),
-    // so the geo/known-bad enrichment is attributed to the relay, not the actor.
     const { rows } = await pool.query(`
       SELECT
-        COALESCE(kh.hostname, src.actor) AS host,
-        src.actor AS source_ip,
-        COALESCE(kh.vendor, MAX(src.vendor)) AS vendor,
+        COALESCE(kh.hostname, agg.actor) AS host,
+        agg.actor AS source_ip,
+        COALESCE(kh.vendor, agg.vendor) AS vendor,
         kh.country_code, kh.country_name, kh.asn_org,
         kh.abuse_score, kh.is_known_bad, kh.is_external,
-        COUNT(*) AS log_count,
-        MAX(src.received_at) AS last_seen
+        agg.log_count,
+        -- NOTE (intentional trade-off): last_seen is now MAX(hour_bucket) — the
+        -- HOUR this actor was last active in, not an exact timestamp like the
+        -- old MAX(received_at). Acceptable for a live-refreshing dashboard
+        -- widget; do not "fix" this by joining back to raw syslog_entries —
+        -- that would defeat the entire purpose of reading from the rollup.
+        agg.last_hour AS last_seen
       FROM (
-        SELECT COALESCE(NULLIF(btrim(se.structured_data->>'srcip'), ''), host(se.source_ip)) AS actor,
-               se.vendor, se.received_at, se.source_ip
-        FROM syslog_entries se
-        WHERE se.received_at > NOW() - make_interval(hours => $1)
+        SELECT srcip AS actor, MAX(vendor) AS vendor, SUM(log_count) AS log_count, MAX(hour_bucket) AS last_hour
+        FROM syslog_talker_rollup
+        WHERE hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
         ${sf.clause}
-      ) src
-      LEFT JOIN known_hosts kh ON src.actor ~ '^[0-9.]+$' AND host(kh.ip_address) = src.actor
-      GROUP BY src.actor, kh.hostname, kh.vendor, kh.country_code, kh.country_name,
-        kh.asn_org, kh.abuse_score, kh.is_known_bad, kh.is_external
-      ORDER BY log_count DESC
+        GROUP BY srcip
+      ) agg
+      LEFT JOIN known_hosts kh ON agg.actor ~ '^[0-9.]+$' AND host(kh.ip_address) = agg.actor
+      ORDER BY agg.log_count DESC
       LIMIT $2
     `, [hours, limit, ...sf.params]);
     return { hours, data: rows };
@@ -266,17 +297,22 @@ app.get('/api/stats/top-destinations', asyncHandler(async (req, res) => {
 
 app.get('/api/stats/by-vendor', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const sf = getStatsSiteFilter(req.rbac, 2, 'syslog_entries');
+  // Reads the pre-aggregated hourly rollup (scripts/schema.sql "HOURLY ROLLUP
+  // TABLES") instead of scanning raw syslog_entries. No getCached wrapper here
+  // — matches the pre-existing (uncached) behavior of this endpoint.
+  const sf = getRollupSiteFilter(req.rbac, 2);
   const { rows } = await pool.query(`
     SELECT
-      vendor, COUNT(*) AS log_count,
-      COUNT(*) FILTER (WHERE severity <= 2) AS critical_count,
-      COUNT(*) FILTER (WHERE severity = 3)  AS error_count,
-      COUNT(*) FILTER (WHERE severity = 4)  AS warning_count
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
+      vendor,
+      SUM(log_count)::bigint AS log_count,
+      SUM(log_count) FILTER (WHERE severity <= 2) AS critical_count,
+      SUM(log_count) FILTER (WHERE severity = 3)  AS error_count,
+      SUM(log_count) FILTER (WHERE severity = 4)  AS warning_count
+    FROM syslog_stats_rollup
+    WHERE hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
     ${sf.clause}
-    GROUP BY vendor ORDER BY log_count DESC
+    GROUP BY vendor
+    ORDER BY log_count DESC
   `, [hours, ...sf.params]);
   res.json({ hours, data: rows });
 }));
@@ -2254,6 +2290,11 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.21.0': [
+    'Performance: the dashboard\'s Severity Summary, Timeline (24h+ ranges), Top Talkers, and Vendor Breakdown widgets no longer scan the full raw log table on every load. A live investigation found the Top Talkers widget alone taking 1.6+ seconds and spilling ~300MB to disk on a single request; these 4 widgets now read from small, pre-aggregated hourly summary tables maintained automatically in the background instead.',
+    'This is the first step toward keeping the dashboard fast as more devices are added — these widgets\' load time is no longer directly tied to total log volume.',
+    'IMPORTANT (server operator only): after updating, run "node scripts/backfill-rollups.js" once to populate historical data for the new summary tables — widgets will show partial data for the last 30 days until it completes (a few minutes). See CLAUDE.md "Dashboard-widget hourly rollups" for full detail and a recommended one-time Postgres tuning step.',
+  ],
   '2.20.1': [
     'Reports tab: added support for area-style charts in the live preview (a PDF-export chart type that had no matching preview renderer yet), and fixed the "No data" message so it actually shows for a genuinely empty report instead of never appearing.',
   ],

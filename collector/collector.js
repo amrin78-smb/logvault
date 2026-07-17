@@ -351,6 +351,7 @@ function serializeEntry(entry) {
     is_parsed:       entry.is_parsed,
     category:        entry.category || null,
     risk_score:      entry.risk_score || 0,
+    srcip:           entry.srcip || null,
     prev_hash:       entry.prev_hash  ? entry.prev_hash.toString('hex')  : null,
     entry_hash:      entry.entry_hash ? entry.entry_hash.toString('hex') : null,
   };
@@ -376,6 +377,7 @@ function deserializeEntry(o) {
     is_parsed:       o.is_parsed,
     category:        o.category || null,
     risk_score:      o.risk_score || 0,
+    srcip:           o.srcip || null,
     prev_hash:       o.prev_hash  ? Buffer.from(o.prev_hash,  'hex') : null,
     entry_hash:      o.entry_hash ? Buffer.from(o.entry_hash, 'hex') : null,
   };
@@ -500,11 +502,11 @@ let buffer      = [];
 let retryBuffer = []; // Holds failed batches for retry
 let flushTimer  = null;
 
-// Max rows per INSERT. 18 params/row → keep total params well under PostgreSQL's
+// Max rows per INSERT. 19 params/row → keep total params well under PostgreSQL's
 // 65,535-per-query protocol limit, even when toFlush grows large under DB
 // backpressure (buffer is not size-capped). Exceeding the limit surfaces as the
 // wire-protocol error "bind message has N parameter formats but 0 parameters".
-const MAX_INSERT_ROWS = 1000; // 1000 × 18 = 18,000 params — safe margin
+const MAX_INSERT_ROWS = 1000; // 1000 × 19 = 19,000 params — safe margin
 
 async function flushBuffer() {
   // Combine retry buffer with current buffer
@@ -520,14 +522,14 @@ async function flushBuffer() {
     let p = 1;
 
     for (const row of chunk) {
-      values.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
+      values.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
       params.push(
         row.received_at, row.log_timestamp, row.source_ip, row.source_host,
         row.facility, row.severity, row.severity_label, row.facility_label,
         row.vendor, row.program, row.message, row.raw_message,
         JSON.stringify(row.structured_data || {}), row.is_parsed,
         row.category || null, row.risk_score || 0,
-        row.prev_hash || null, row.entry_hash || null
+        row.prev_hash || null, row.entry_hash || null, row.srcip || null
       );
     }
 
@@ -536,7 +538,7 @@ async function flushBuffer() {
         INSERT INTO syslog_entries
           (received_at, log_timestamp, source_ip, source_host, facility, severity,
            severity_label, facility_label, vendor, program, message, raw_message,
-           structured_data, is_parsed, category, risk_score, prev_hash, entry_hash)
+           structured_data, is_parsed, category, risk_score, prev_hash, entry_hash, srcip)
         VALUES ${values.join(',')}
       `, params);
       // Confirm these entries are durably in the DB so their spool segments
@@ -724,6 +726,15 @@ function processMessage(rawMsg, sourceIp) {
   // column or INSERT param-count change is needed. Empty arrays are omitted.
   const mitre = mapTechniques(entry);
   if (mitre.length) entry.structured_data.mitre = mitre;
+
+  // Precompute srcip ONCE at insert time (perf pass, 2026-07) — same formula
+  // every dashboard widget previously computed ad hoc at read time via
+  // COALESCE(NULLIF(btrim(structured_data->>'srcip'), ''), host(source_ip)).
+  // Prefer a non-empty parser-captured structured_data.srcip (the real
+  // client/attacker IP — see the "Parser source-field contract" in
+  // CLAUDE.md), falling back to the syslog sender's source_ip.
+  entry.srcip = (entry.structured_data && entry.structured_data.srcip && String(entry.structured_data.srcip).trim())
+    || entry.source_ip;
 
   entry.received_at = new Date();
 
@@ -926,6 +937,65 @@ async function fireAlert(rule, entry, matchCount, actorIp) {
   } catch (err) { console.error('[Alert] Failed to insert/update alert event:', err.message); }
 }
 
+// ── Rollup maintenance (perf pass, 2026-07) ──────────────────
+// Recomputes syslog_stats_rollup + syslog_talker_rollup for ONLY the current
+// hour bucket and the previous hour bucket, every 5 minutes. Deliberately a
+// "recompute the recent window from the raw source of truth" model, NOT
+// increment-on-insert — idempotent and self-healing (a missed cycle, restart,
+// or double-run can never double-count or drift). See the extensive rationale
+// comment above the two CREATE TABLE statements in scripts/schema.sql.
+//
+// site_id in BOTH tables is resolved via known_hosts.ip_address = source_ip
+// (the relay/firewall device that sent the log) — mirroring exactly how
+// getStatsSiteFilter() in api/rbac.js scopes dashboard aggregates. srcip is
+// stored in syslog_talker_rollup purely as the display/grouping key for
+// "who's talking", never for RBAC — do not swap these.
+//
+// Never throws — wrapped in try/catch by every call site (matches runCleanup)
+// so a rollup failure can never block or slow down log ingestion.
+async function recomputeRollupBucket(pool, hourBucket) {
+  await pool.query(`DELETE FROM syslog_stats_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_stats_rollup (hour_bucket, severity, severity_label, category, vendor, site_id, log_count)
+    SELECT date_trunc('hour', se.received_at), se.severity, se.severity_label,
+           COALESCE(se.category, 'uncategorized'), se.vendor, kh.site_id, COUNT(*)
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+    GROUP BY 1, 2, 3, 4, 5, 6
+  `, [hourBucket]);
+
+  await pool.query(`DELETE FROM syslog_talker_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_talker_rollup (hour_bucket, srcip, vendor, site_id, log_count)
+    SELECT date_trunc('hour', se.received_at),
+           COALESCE(se.srcip, host(se.source_ip)) AS srcip,
+           se.vendor, kh.site_id, COUNT(*)
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+    GROUP BY 1, 2, 3, 4
+  `, [hourBucket]);
+}
+
+// Runs against the supplied pool. Never throws — caller (the timer callbacks
+// in start()) still wraps this in .catch(), but the internal try/catch here
+// means a failure on ONE bucket never skips the other, and this function
+// itself never rejects the process into an unhandledRejection.
+async function runRollupMaintenance(pool) {
+  const now         = new Date();
+  const currentHour = new Date(now); currentHour.setMinutes(0, 0, 0);
+  const prevHour    = new Date(currentHour.getTime() - 60 * 60 * 1000);
+
+  for (const bucket of [currentHour, prevHour]) {
+    try {
+      await recomputeRollupBucket(pool, bucket);
+    } catch (err) {
+      console.error(`[Rollup] Failed to recompute bucket ${bucket.toISOString()}:`, err.message);
+    }
+  }
+}
+
 // ── UDP Server ────────────────────────────────────────────────
 function startUDP(port) {
   const server = dgram.createSocket('udp4');
@@ -1014,6 +1084,20 @@ async function main() {
   setInterval(() => {
     runCleanup(pool).catch(err => console.error('[Cleanup] error:', err.message));
   }, DAILY_MS);
+
+  // Rollup-table maintenance, in-process — recomputes the current + previous
+  // hour bucket of syslog_stats_rollup/syslog_talker_rollup every 5 minutes so
+  // dashboard widgets read small pre-aggregated tables instead of scanning raw
+  // syslog_entries. Separate timer from the daily cleanup job above — do not
+  // merge them. Runs ~60s after startup (let ingestion settle) then every 5m.
+  // Reuses the collector's pool; never blocks ingestion, never exits on error.
+  const ROLLUP_INTERVAL_MS = 5 * 60 * 1000;
+  setTimeout(() => {
+    runRollupMaintenance(pool).catch(err => console.error('[Rollup] error:', err.message));
+  }, 60 * 1000);
+  setInterval(() => {
+    runRollupMaintenance(pool).catch(err => console.error('[Rollup] error:', err.message));
+  }, ROLLUP_INTERVAL_MS);
 
   // ── Phase 2 intelligence jobs — in-process, reuse the pool, never exit on
   // error (same scheduled-job pattern as runCleanup/syncFromNetVault above).

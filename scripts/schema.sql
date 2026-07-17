@@ -88,17 +88,35 @@ CREATE INDEX IF NOT EXISTS idx_syslog_structured     ON syslog_entries USING GIN
 CREATE INDEX IF NOT EXISTS idx_syslog_message        ON syslog_entries USING GIN (to_tsvector('english', message));
 CREATE INDEX IF NOT EXISTS idx_syslog_received       ON syslog_entries (received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_syslog_category       ON syslog_entries (category, received_at DESC);
-CREATE INDEX IF NOT EXISTS idx_syslog_risk_score     ON syslog_entries (risk_score DESC, received_at DESC);
+-- idx_syslog_risk_score was here (risk_score DESC, received_at DESC) — DROPPED
+-- below (perf pass, 2026-07) after a usage audit showed 6 total scans across
+-- all 35 partitions over 6+ weeks. Do NOT re-add this CREATE line without also
+-- removing the DROP INDEX below it — leaving both would rebuild-then-drop this
+-- index (a full table scan) on every single schema.sql apply.
 
 -- Composite indexes for time-ordered dashboard stat queries (received_at DESC
 -- leading column). Plain CREATE INDEX — CONCURRENTLY is not allowed on a
 -- partitioned parent.
-CREATE INDEX IF NOT EXISTS idx_syslog_received_vendor
-  ON syslog_entries (received_at DESC, vendor);
 CREATE INDEX IF NOT EXISTS idx_syslog_received_severity
   ON syslog_entries (received_at DESC, severity);
-CREATE INDEX IF NOT EXISTS idx_syslog_received_category
-  ON syslog_entries (received_at DESC, category);
+
+-- idx_syslog_received_vendor (received_at, vendor) and idx_syslog_received_category
+-- (received_at, category) were DROPPED (perf pass, 2026-07) after a live
+-- pg_stat_user_indexes audit across all 35 partitions showed 1 and 19 total
+-- scans respectively over 6+ weeks of production traffic — effectively dead.
+-- idx_syslog_vendor (vendor, received_at) and idx_syslog_category (category,
+-- received_at), the reverse-column-order siblings already above, carry the
+-- real load (11,688 and 2,861 scans) and are kept. Every partition carried 17
+-- indexes, and each one is write overhead on every collector INSERT — don't
+-- re-add either of these without fresh evidence a query actually needs the
+-- received_at-leading column order.
+DROP INDEX IF EXISTS idx_syslog_received_vendor;
+DROP INDEX IF EXISTS idx_syslog_received_category;
+
+-- idx_syslog_risk_score (risk_score DESC, received_at DESC) was also DROPPED
+-- in the same pass — 6 total scans across all partitions over 6+ weeks. If a
+-- future "sort by risk score" feature needs it, re-add with fresh evidence.
+DROP INDEX IF EXISTS idx_syslog_risk_score;
 
 -- Slow-query fixes (perf EXPLAIN audit). Plain CREATE INDEX on the partitioned
 -- parent (CONCURRENTLY not allowed here); they cascade to every partition.
@@ -122,6 +140,122 @@ CREATE INDEX IF NOT EXISTS idx_syslog_message_trgm
 CREATE INDEX IF NOT EXISTS idx_syslog_subcategory
   ON syslog_entries ((structured_data->>'subcategory'))
   WHERE structured_data->>'subcategory' IS NOT NULL;
+
+-- ============================================================
+-- srcip COLUMN (perf pass, 2026-07) — a real, indexed column instead of
+-- extracting structured_data->>'srcip' (falling back to host(source_ip)) on
+-- every row of every dashboard-widget query. Same value every widget was
+-- already computing ad hoc via
+--   COALESCE(NULLIF(btrim(structured_data->>'srcip'), ''), host(source_ip))
+-- now computed ONCE by the collector at insert time (collector/collector.js)
+-- and stored, so reads become a plain indexed column instead of a per-row
+-- JSONB extraction + text function inside a GROUP BY/JOIN key (which also
+-- blocked the planner from using any index on that expression at all).
+-- Nullable + no default: adding it is a fast metadata-only change on this
+-- partitioned table; existing rows are backfilled by
+-- scripts/backfill-rollups.js (also populates the two rollup tables below),
+-- run ONCE, manually, after deploying this schema change.
+-- NOTE: building this index is a full, non-concurrent scan of all 35+
+-- partitions (CREATE INDEX CONCURRENTLY is not allowed on a partitioned
+-- parent, same constraint as every other syslog_entries index above) — the
+-- schema-apply step of this particular update may take noticeably longer
+-- than usual on a live install with the current ~22GB of data.
+-- ============================================================
+ALTER TABLE syslog_entries ADD COLUMN IF NOT EXISTS srcip TEXT;
+CREATE INDEX IF NOT EXISTS idx_syslog_srcip ON syslog_entries (srcip, received_at DESC);
+
+-- ============================================================
+-- HOURLY ROLLUP TABLES (perf pass, 2026-07)
+-- Dashboard widgets (Severity Summary, Timeline, Vendor Breakdown, Top
+-- Talkers) were re-scanning raw syslog_entries on every cache-miss — a live
+-- EXPLAIN ANALYZE audit showed a 24h severity-distribution query reading
+-- ~560MB from disk (61% DB-wide cache hit ratio, should be >99%), and the
+-- top-talkers query taking 1.6s with ~300MB spilled to disk temp files
+-- (work_mem too small for the sort). These two tables are small,
+-- pre-aggregated, INDEXED-BY-DESIGN summaries maintained incrementally by
+-- the collector (collector/collector.js, every 5 min) instead of computed
+-- fresh from millions of raw rows on every widget load.
+--
+-- MAINTENANCE MODEL — recompute-window, not increment-on-insert:
+-- Every cycle, the collector DELETEs and re-INSERTs rows for ONLY the
+-- current + previous hour_bucket (a full re-aggregation of just those ~2
+-- hours of raw data, cheap). Hours older than that are never touched again
+-- once written — matching syslog_entries' own append-only/immutable nature.
+-- This is deliberately idempotent and self-healing: a missed cycle, a
+-- collector restart, or a double-run can never double-count or drift,
+-- because each cycle always recomputes from the raw source of truth rather
+-- than adding a delta to a running total.
+--
+-- SITE ATTRIBUTION is a SNAPSHOT, not live-joined at read time: site_id is
+-- resolved from known_hosts.ip_address at ROLLUP-BUILD time and stored in
+-- the row. If a device's site assignment changes later, only the next ~2
+-- hours of NEW rollup rows pick up the new site_id — already-closed
+-- historical hours keep reflecting the site mapping that was true when that
+-- data was written (rollup or backfill time). This is intentional (matches
+-- how you'd want historical attribution to work — a device's move next
+-- month shouldn't retroactively change what site last month's logs are
+-- attributed to), not a bug to "fix" into a live join.
+--
+-- RBAC: site_id is NULL for a source_ip with no known_hosts match, exactly
+-- mirroring getStatsSiteFilter()'s permissive semantics (an unassigned
+-- device stays visible to every site-scoped user) — so a rollup read filters
+-- with `site_id = ANY($allowed) OR site_id IS NULL`, no raw-table join
+-- needed at read time.
+--
+-- SCOPE: these two tables cover exactly the 4 widget queries named above.
+-- Top Blocked/Failures/Destinations/Security-Events and MITRE coverage rely
+-- on message-text ILIKE patterns and destination-IP fields that don't map
+-- cleanly onto these dimensions without a much larger, sparser table — they
+-- stay on raw syslog_entries for now (still benefit from the work_mem fix;
+-- see the Postgres tuning note in installer/README, applied manually).
+-- ============================================================
+
+-- Severity / category / vendor breakdown (Severity Summary, Timeline,
+-- Vendor Breakdown widgets). NOT sliced by source IP — kept low-cardinality
+-- on purpose so aggregation across a wide time range stays cheap.
+-- NOTE: no PRIMARY KEY here on purpose — a Postgres PRIMARY KEY implicitly
+-- forces NOT NULL on every one of its columns, which would make site_id
+-- (deliberately nullable = unassigned) reject the exact rows this table
+-- exists to hold. A COALESCE-wrapped UNIQUE index below gives the same
+-- duplicate-row protection (treating NULL site_id as a fixed sentinel for
+-- uniqueness purposes only) without that conflict; reads still see a real
+-- NULL, matching getStatsSiteFilter()'s own NULL-is-unassigned semantics.
+CREATE TABLE IF NOT EXISTS syslog_stats_rollup (
+  hour_bucket     TIMESTAMPTZ NOT NULL,
+  severity        SMALLINT,
+  severity_label  TEXT,
+  category        TEXT,
+  vendor          TEXT,
+  site_id         INTEGER,                      -- NULL = unassigned/unknown device
+  log_count       BIGINT      NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_stats_rollup_dims
+  ON syslog_stats_rollup (hour_bucket, severity, category, vendor, COALESCE(site_id, -1));
+CREATE INDEX IF NOT EXISTS idx_stats_rollup_hour
+  ON syslog_stats_rollup (hour_bucket DESC);
+CREATE INDEX IF NOT EXISTS idx_stats_rollup_site_hour
+  ON syslog_stats_rollup (site_id, hour_bucket DESC);
+
+-- Per-source-IP hourly counts (Top Talkers widget). Kept as a SEPARATE table
+-- from syslog_stats_rollup rather than adding srcip as another dimension
+-- there — crossing srcip with the full severity/category/vendor dimension
+-- set would blow up row cardinality for no benefit, since Top Talkers only
+-- ever needs a total count per host, not a severity/category breakdown.
+-- No PRIMARY KEY here either — same nullable-site_id-vs-PK conflict as
+-- syslog_stats_rollup above. Same COALESCE-wrapped UNIQUE index fix.
+CREATE TABLE IF NOT EXISTS syslog_talker_rollup (
+  hour_bucket TIMESTAMPTZ NOT NULL,
+  srcip       TEXT        NOT NULL,
+  vendor      TEXT,
+  site_id     INTEGER,                          -- NULL = unassigned/unknown device
+  log_count   BIGINT      NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_talker_rollup_dims
+  ON syslog_talker_rollup (hour_bucket, srcip, vendor, COALESCE(site_id, -1));
+CREATE INDEX IF NOT EXISTS idx_talker_rollup_hour
+  ON syslog_talker_rollup (hour_bucket DESC);
+CREATE INDEX IF NOT EXISTS idx_talker_rollup_site_hour
+  ON syslog_talker_rollup (site_id, hour_bucket DESC);
 
 
 -- ============================================================

@@ -238,4 +238,41 @@ function getAlertSiteFilter(rbac, startParamIndex, tableAlias = 'ae') {
   };
 }
 
-module.exports = { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter, getStatsSiteFilter, getAlertSiteFilter };
+/**
+ * SQL helper for the HOURLY ROLLUP TABLES (syslog_stats_rollup /
+ * syslog_talker_rollup — see scripts/schema.sql "HOURLY ROLLUP TABLES").
+ *
+ * Unlike getStatsSiteFilter (which live-joins syslog_entries.source_ip against
+ * known_hosts on every read), the rollup tables already carry a PRE-RESOLVED
+ * site_id column, computed by the collector at rollup-build time using the
+ * SAME site-scoping logic as getStatsSiteFilter (site_id = the device's
+ * known_hosts.site_id, or NULL when source_ip has no site-assigned match in
+ * known_hosts). So filtering a rollup read needs only a plain column
+ * comparison, not a subquery/join — but it must preserve getStatsSiteFilter's
+ * exact permissive semantics: a row is visible when site_id is one of the
+ * user's allowed sites OR site_id IS NULL (unassigned/unregistered devices
+ * stay visible to everyone).
+ *
+ * Same parameter footprint as getStatsSiteFilter (one $N array param, or none).
+ *
+ * @param rbac            req.rbac object (may be undefined)
+ * @param startParamIndex next free $N parameter index for the query
+ * @returns { clause, params, nextParamIndex }
+ */
+function getRollupSiteFilter(rbac, startParamIndex) {
+  if (!rbac || rbac.allowedSiteIds === null || rbac.allowedSiteIds === undefined) {
+    return { clause: '', params: [], nextParamIndex: startParamIndex };
+  }
+  if (rbac.allowedSiteIds.length === 0) {
+    // User has no sites — still sees unassigned/unregistered devices (site_id IS NULL),
+    // matching getStatsSiteFilter's permissive semantics exactly.
+    return { clause: `AND site_id IS NULL`, params: [], nextParamIndex: startParamIndex };
+  }
+  return {
+    clause: `AND (site_id = ANY($${startParamIndex}::int[]) OR site_id IS NULL)`,
+    params: [rbac.allowedSiteIds],
+    nextParamIndex: startParamIndex + 1,
+  };
+}
+
+module.exports = { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter, getStatsSiteFilter, getAlertSiteFilter, getRollupSiteFilter };

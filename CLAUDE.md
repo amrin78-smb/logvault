@@ -913,6 +913,91 @@ async function getSettings() {
 
 ---
 
+## Dashboard-widget hourly rollups (perf pass, added 2.20.x)
+
+Four dashboard widget endpoints (`/api/stats/summary`, `/api/stats/timeline` for
+`hours > 6`, `/api/stats/top-talkers`, `/api/stats/by-vendor`) read from two small
+pre-aggregated tables — `syslog_stats_rollup` and `syslog_talker_rollup`
+(`scripts/schema.sql`, extensive design-rationale comments live right above the
+`CREATE TABLE` statements — read those before changing anything here) — instead of
+scanning raw `syslog_entries`. This was a real, measured production problem, not a
+guess: a live `EXPLAIN ANALYZE` audit found a 24h severity-distribution query reading
+~560MB from disk on every cache-miss (DB-wide cache hit ratio was 61%, healthy is
+>99%) and the top-talkers query taking 1.6s with ~300MB spilled to disk temp files
+(`work_mem` too small for the sort). `/api/stats/top-destinations`,
+`/api/stats/top-security-events`, `/api/stats/top-failures`, `/api/stats/top-blocked`,
+and `/api/reports`' `mitre-coverage`/`security-summary` still query raw
+`syslog_entries` — they rely on message-text `ILIKE` patterns and destination-IP
+fields the rollup doesn't cover; they still benefit from the Postgres `work_mem` fix
+below, just not from the rollup itself.
+
+**`srcip` column.** `syslog_entries` also gained a real, indexed `srcip TEXT` column —
+the collector (`collector/collector.js`'s `processMessage()`) now computes it ONCE at
+insert time (`COALESCE(structured_data.srcip, source_ip)`, same formula every widget
+used to compute ad hoc per row at read time) instead of every query re-extracting it
+from JSONB. It's also round-tripped through the disk spool (`serializeEntry`/
+`deserializeEntry`) so a crash-restart replay doesn't silently drop it.
+
+**Maintenance model — recompute-window, NOT increment-on-insert.** The collector's
+`runRollupMaintenance()` (a separate 5-minute timer, does not touch the existing 24h
+`runCleanup` timer) DELETEs and re-INSERTs ONLY the current + previous hour bucket
+every cycle — a full re-aggregation of just ~2 hours of raw data, cheap. Hours older
+than that are never touched again once written. This is deliberately idempotent and
+self-healing: a missed cycle, a collector restart, or a double-run can never
+double-count or drift, because each cycle always recomputes from the raw source of
+truth rather than adding a delta to a running total. **Do not "optimize" this into an
+increment-on-insert model** — it looks like an obvious efficiency win and quietly
+reintroduces double-counting/drift risk on every collector restart or retry.
+
+**RBAC.** `site_id` in BOTH rollup tables is resolved via
+`known_hosts.ip_address = source_ip` — the RELAY/firewall device, exactly matching how
+`getStatsSiteFilter()` in `api/rbac.js` scopes dashboard aggregates — **never** via
+`srcip` (the actor), even in `syslog_talker_rollup` where `srcip` is the grouping key.
+Mixing these up would silently break site-scoped users' visibility. Reading a rollup
+uses a new, simpler helper, `getRollupSiteFilter(rbac, startParamIndex)` (`api/rbac.js`)
+— a plain `site_id = ANY($n) OR site_id IS NULL` column filter, since the join to
+`known_hosts` already happened at rollup-build time; verified byte-for-byte equivalent
+to `getStatsSiteFilter`'s three branches (admin/no-filter, no-sites-user, scoped-user).
+**`top-talkers` keeps a SEPARATE, LIVE join to `known_hosts`** (keyed on the actor's
+`srcip`, not `source_ip`) purely for DISPLAY enrichment (hostname/vendor
+fallback/country/ASN/abuse score) — this is intentionally NOT baked into the rollup, so
+threat/geo data always reflects current enrichment rather than a stale snapshot. One
+disclosed precision trade-off: `top-talkers`' `last_seen` is now `MAX(hour_bucket)`
+(hour-granularity), not an exact timestamp — acceptable for a live-refreshing widget;
+don't "fix" this by joining back to raw `syslog_entries`, that defeats the whole point.
+
+**No `PRIMARY KEY` on either rollup table — this is deliberate, not an oversight.** A
+Postgres `PRIMARY KEY` implicitly forces `NOT NULL` on every one of its columns, which
+would reject every row for an unassigned device (`site_id IS NULL` is a legitimate,
+common value here, not an edge case). Each table instead has a `COALESCE`-wrapped
+`UNIQUE INDEX` (e.g. `... (hour_bucket, severity, category, vendor, COALESCE(site_id,
+-1))`) — same duplicate-row protection, without conflicting with the nullable column.
+
+**Deploy sequencing — READ BEFORE DEPLOYING.** Schema, collector, and API changes all
+land in one git push/update. The moment the updated API is live, these 4 endpoints
+read from the rollup tables — which are EMPTY for every hour except whatever the live
+5-minute job has caught since deploy. Run `node scripts/backfill-rollups.js` (as
+`postgres` — reads `POSTGRES_PASSWORD` from `.env.local`, needed because part (a)
+UPDATEs the append-only `syslog_entries` table) **immediately after deploying**, before
+relying on the dashboard — it backfills `srcip` + both rollup tables for the last 30
+days (~5.8M rows, batched by day; takes a few minutes, logs progress). Until it
+finishes, widgets will show partial/mostly-empty data for ranges beyond the last couple
+of hours — not a bug, just the expected pre-backfill window. Idempotent — safe to
+re-run if interrupted (`BACKFILL_DAYS` env var overrides the 30-day default).
+
+**Postgres tuning (Phase 0, applied manually — Claude has no DB-write access to
+production).** `work_mem` was only 16MB, which is what forced the ~300MB disk-spill
+sort in the pre-rewrite `top-talkers` query (now moot for that specific query, but
+still applies to the raw-table endpoints listed above, and to any future heavy query).
+Recommended: `ALTER ROLE logvault_user SET work_mem = '64MB';` run once as `postgres`
+— scoped to LogVault's own DB role only (not `ALTER SYSTEM`, which would affect
+NetVault/DDIVault/SpanVault too, sharing the same Postgres instance). Takes effect on
+the role's next new connection, no server restart needed. `shared_buffers` (currently
+1GB, DB-wide cache hit ratio was 61%) is a further, separate lever contingent on
+confirming actual server RAM — not applied here, deliberately left as a follow-up.
+
+---
+
 ## Alert System
 
 ### Deduplication rules
