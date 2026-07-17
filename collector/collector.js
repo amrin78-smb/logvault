@@ -978,6 +978,7 @@ async function recomputeRollupBucket(pool, hourBucket) {
   `, [hourBucket]);
 
   await recomputePhase2RollupBucket(pool, hourBucket);
+  await recomputePhase3RollupBucket(pool, hourBucket);
 }
 
 // Phase 2 rollups (perf pass, 2026-07): Top Security Events / Top Blocked /
@@ -1069,6 +1070,88 @@ async function recomputePhase2RollupBucket(pool, hourBucket) {
       AND (se.structured_data->>'subtype' = 'vpn' OR se.message ILIKE '%vpn%'
         OR se.message ILIKE '%ipsec%' OR se.message ILIKE '%ssl%')
     GROUP BY 1, 2
+  `, [hourBucket]);
+}
+
+// Phase 3 rollups (perf pass, 2026-07): Top Destinations / silent-devices half
+// of Capacity & Ingestion Health / What's New-Changed's 4 dimensions / Known-
+// Bad Sources' hit counts. Same DELETE+INSERT-per-bucket model as Phase 1/2 —
+// see scripts/schema.sql's "PHASE 3 HOURLY ROLLUP TABLES" comment for the
+// full rationale, table shapes, and WHY each of these needed its own new
+// table (none of the existing rollups had the right dimension).
+async function recomputePhase3RollupBucket(pool, hourBucket) {
+  // Top Destinations — symmetric to syslog_talker_rollup, keyed on dstip.
+  await pool.query(`DELETE FROM syslog_dest_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_dest_rollup (hour_bucket, dstip, vendor, site_id, log_count)
+    SELECT date_trunc('hour', se.received_at), btrim(se.structured_data->>'dstip'), se.vendor, kh.site_id, COUNT(*)
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+      AND se.structured_data->>'dstip' ~ '^[0-9.]+$'
+    GROUP BY 1, 2, 3, 4
+  `, [hourBucket]);
+
+  // Silent devices — keyed on source_host (the relay hostname), which no
+  // existing rollup carries. source_ip is a representative value (MAX, not a
+  // grouping key) purely for the widget's drill-through action.
+  await pool.query(`DELETE FROM syslog_source_host_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_source_host_rollup (hour_bucket, source_host, source_ip, site_id, log_count)
+    SELECT date_trunc('hour', se.received_at), se.source_host, MAX(host(se.source_ip)), kh.site_id, COUNT(*)
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+      AND se.source_host IS NOT NULL AND se.source_host <> ''
+    GROUP BY 1, 2, 4
+  `, [hourBucket]);
+
+  // What's New/Changed — 4 dimensions into one table with a discriminator.
+  // Expressions are byte-identical to the ones the endpoint used to run live
+  // (see api/server.js) — including new_sources' COALESCE(srcip,
+  // source_ip::text) WITHOUT host(), an existing quirk (leaves the /32 mask
+  // in place) preserved on purpose so behavior doesn't change.
+  await pool.query(`DELETE FROM syslog_distinct_value_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  const DIST_VALUE_DIMS = [
+    { dim: 'country', expr: `se.structured_data->>'srccountry'` },
+    { dim: 'user',     expr: `se.structured_data->>'user'` },
+    { dim: 'source',   expr: `COALESCE(se.structured_data->>'srcip', se.source_ip::text)` },
+    { dim: 'service',  expr: `se.structured_data->>'service'` },
+  ];
+  for (const { dim, expr } of DIST_VALUE_DIMS) {
+    await pool.query(`
+      INSERT INTO syslog_distinct_value_rollup (hour_bucket, dimension, value, site_id, log_count)
+      SELECT date_trunc('hour', se.received_at), $2, ${expr}, kh.site_id, COUNT(*)
+      FROM syslog_entries se
+      LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+      WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+        AND ${expr} IS NOT NULL AND ${expr} NOT IN ('', 'N/A')
+      GROUP BY 1, 3, 4
+    `, [hourBucket, dim]);
+  }
+
+  // Known-Bad Sources — hit counts for CURRENTLY known-bad/high-abuse-score
+  // IPs only (not every IP ever seen — this table is meant to stay small and
+  // targeted). Replaces a per-known_hosts-row correlated subquery (measured
+  // ~130s live) with one grouped pass over syslog_entries per cycle. The
+  // LATERAL unnests each row's up-to-3 IP-bearing fields (srcip/dstip/relay
+  // source_ip) with DISTINCT so a row where two fields coincidentally match
+  // the SAME known-bad IP is still counted once for that IP — matching the
+  // original query's OR-semantics exactly, not summed/double-counted.
+  await pool.query(`DELETE FROM syslog_known_bad_hit_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_known_bad_hit_rollup (hour_bucket, ip_address, site_id, hit_count)
+    SELECT date_trunc('hour', se.received_at), kb.ip_address, relay.site_id, COUNT(*)
+    FROM syslog_entries se
+    CROSS JOIN LATERAL (
+      SELECT DISTINCT v.ip
+      FROM (VALUES (se.structured_data->>'srcip'), (se.structured_data->>'dstip'), (host(se.source_ip))) AS v(ip)
+      WHERE v.ip IS NOT NULL
+    ) AS touched(ip)
+    JOIN known_hosts kb ON host(kb.ip_address) = touched.ip AND (kb.is_known_bad = TRUE OR kb.abuse_score >= 50)
+    LEFT JOIN known_hosts relay ON relay.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+    GROUP BY 1, 2, 3
   `, [hourBucket]);
 }
 

@@ -281,35 +281,40 @@ app.get('/api/stats/top-talkers', asyncHandler(async (req, res) => {
 // top-blocked/top-failures. Efficient on the big partitioned table: the inner
 // scan is bounded by received_at (the partition key) and only touches the dstip
 // JSONB field; the geo join is a LEFT JOIN on a shape-guarded text key.
+// Reads syslog_dest_rollup (scripts/schema.sql "PHASE 3 HOURLY ROLLUP
+// TABLES") instead of scanning raw syslog_entries. This endpoint was measured
+// at 3.6s (24h) up to 76s (168h) live — identical disk-spilled-sort shape to
+// the pre-fix syslog_talker_rollup problem, just on the destination side
+// (see CLAUDE.md's Phase 3 write-up). Geo/threat enrichment stays a LIVE join
+// to known_hosts, same as top-talkers. One disclosed precision trade-off,
+// same as top-talkers: last_seen is now MAX(hour_bucket) (hour-granularity),
+// not an exact timestamp — don't "fix" this by joining back to raw
+// syslog_entries, that defeats the point of the rollup.
 app.get('/api/stats/top-destinations', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const limit = safeInt(req.query.limit, 10, 50);
-  const sf = getStatsSiteFilter(req.rbac, 3, 'se');
+  const sf = getRollupSiteFilter(req.rbac, 3);
   const cacheKey = `top-destinations:${hours}:${limit}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 30000, async () => {
     const { rows } = await pool.query(`
       SELECT
-        COALESCE(kh.hostname, dst.dstip) AS host,
-        dst.dstip AS dst_ip,
+        COALESCE(kh.hostname, agg.dstip) AS host,
+        agg.dstip AS dst_ip,
         kh.country_code, kh.country_name, kh.asn_org,
         kh.abuse_score, kh.is_known_bad, kh.is_external,
-        COUNT(*) AS log_count,
-        MAX(dst.received_at) AS last_seen
+        agg.log_count,
+        agg.last_hour AS last_seen
       FROM (
-        SELECT btrim(se.structured_data->>'dstip') AS dstip, se.received_at
-        FROM syslog_entries se
-        WHERE se.received_at > NOW() - make_interval(hours => $1)
-          AND se.structured_data->>'dstip' ~ '^[0-9.]+$'
+        SELECT dstip, SUM(log_count) AS log_count, MAX(hour_bucket) AS last_hour
+        FROM syslog_dest_rollup
+        WHERE hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
         ${sf.clause}
-      ) dst
-      -- Join geo/threat on the destination IP (the external side). host() strips
-      -- the /32 that known_hosts.ip_address (INET) renders. LEFT JOIN keeps rows
-      -- with no enrichment (geo cols NULL).
-      LEFT JOIN known_hosts kh ON host(kh.ip_address) = dst.dstip
-      WHERE dst.dstip IS NOT NULL AND dst.dstip <> ''
-      GROUP BY dst.dstip, kh.hostname, kh.country_code, kh.country_name,
-        kh.asn_org, kh.abuse_score, kh.is_known_bad, kh.is_external
-      ORDER BY log_count DESC
+        GROUP BY dstip
+      ) agg
+      -- host() strips the /32 that known_hosts.ip_address (INET) renders.
+      -- LEFT JOIN keeps rows with no enrichment (geo cols NULL).
+      LEFT JOIN known_hosts kh ON host(kh.ip_address) = agg.dstip
+      ORDER BY agg.log_count DESC
       LIMIT $2
     `, [hours, limit, ...sf.params]);
     return { hours, data: rows };
@@ -584,6 +589,12 @@ function formatBytes(bytes) {
 // any logged-in role, not admin-restricted (this powers StorageWidget.tsx on
 // the general dashboard, not an admin-only page).
 app.get('/api/stats/storage', asyncHandler(async (req, res) => {
+  // Perf pass (2026-07, Phase 3): this endpoint had no caching at all, unlike
+  // every other stat endpoint in this file — added the same getCached wrapper,
+  // 60s TTL (matches /api/stats/forecast's TTL; these are slow-changing,
+  // whole-database-scale numbers, not per-request-sensitive). Not RBAC-scoped
+  // (see comment above this handler), so a single global cache key is correct.
+  const data = await getCached('storage-stats', 60000, async () => {
   const [sizes, growth, oldest, retention] = await Promise.all([
     // table_size must SUM the partition tree: syslog_entries is a PARTITIONED parent
     // (Phase 3), so pg_total_relation_size() on the parent alone returns 0 bytes — the
@@ -598,14 +609,46 @@ app.get('/api/stats/storage', asyncHandler(async (req, res) => {
     // trade-off Postgres's own \dt+ and pg_stat_user_tables use) is the right
     // call here. rows_24h/rows_7d stay exact — those are bounded, cheap scans
     // via the received_at index on only the last 1-7 days of partitions.
-    pool.query(`SELECT pg_size_pretty(pg_database_size('logvault')) AS db_size, pg_database_size('logvault') AS db_size_bytes, pg_size_pretty(GREATEST(pg_total_relation_size('syslog_entries'), COALESCE((SELECT SUM(pg_total_relation_size(relid)) FROM pg_partition_tree('syslog_entries')), 0))) AS table_size, GREATEST(pg_total_relation_size('syslog_entries'), COALESCE((SELECT SUM(pg_total_relation_size(relid)) FROM pg_partition_tree('syslog_entries')), 0)) AS table_size_bytes, (SELECT COALESCE(SUM(c.reltuples), 0)::bigint FROM pg_partition_tree('syslog_entries') pt JOIN pg_class c ON c.oid = pt.relid) AS total_rows, (SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => 24)) AS rows_24h, (SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - make_interval(days => 7)) AS rows_7d`),
-    pool.query(`SELECT DATE_TRUNC('day', received_at) AS day, COUNT(*) AS log_count FROM syslog_entries WHERE received_at > NOW() - make_interval(days => 7) GROUP BY day ORDER BY day`),
+    //
+    // Perf pass (2026-07, Phase 3): GREATEST(pg_total_relation_size(...)) used to
+    // be written out TWICE in this query (once for the pretty table_size, again
+    // for the raw table_size_bytes) — Postgres does NOT common-subexpression-
+    // eliminate STABLE functions across separate call sites in the same SQL
+    // text, so each pg_total_relation_size() call (real filesystem stat() calls
+    // per relation, ×37 partitions) was paid twice, live-measured at 2.4-4.0s.
+    // `WITH sz AS MATERIALIZED` forces single evaluation regardless of how many
+    // times `sz.bytes` is referenced below.
+    pool.query(`
+      WITH sz AS MATERIALIZED (
+        SELECT GREATEST(
+          pg_total_relation_size('syslog_entries'),
+          COALESCE((SELECT SUM(pg_total_relation_size(relid)) FROM pg_partition_tree('syslog_entries')), 0)
+        ) AS bytes
+      )
+      SELECT
+        pg_size_pretty(pg_database_size('logvault')) AS db_size,
+        pg_database_size('logvault') AS db_size_bytes,
+        pg_size_pretty(sz.bytes) AS table_size,
+        sz.bytes AS table_size_bytes,
+        (SELECT COALESCE(SUM(c.reltuples), 0)::bigint FROM pg_partition_tree('syslog_entries') pt JOIN pg_class c ON c.oid = pt.relid) AS total_rows,
+        (SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => 24)) AS rows_24h,
+        (SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - make_interval(days => 7)) AS rows_7d
+      FROM sz
+    `),
+    // Reads syslog_stats_rollup (Phase 1) instead of raw syslog_entries — legitimate
+    // work either way (not a bug, ~920-1057ms live scanning ~2M rows via index-only
+    // scans across 7 partitions), but the rollup already answers this exactly and
+    // trivially. No RBAC filter here (matches this endpoint's existing not-site-
+    // scopable design — see the comment above this handler).
+    pool.query(`SELECT DATE_TRUNC('day', hour_bucket) AS day, SUM(log_count) AS log_count FROM syslog_stats_rollup WHERE hour_bucket > NOW() - make_interval(days => 7) GROUP BY day ORDER BY day`),
     pool.query(`SELECT MIN(received_at) AS oldest_log FROM syslog_entries`),
     pool.query(`SELECT EXTRACT(DAY FROM (NOW() - MIN(received_at))) AS days_stored FROM syslog_entries`),
   ]);
   const s = sizes.rows[0];
   const avgPerDay = s.rows_7d > 0 ? Math.round(parseInt(s.table_size_bytes) / Math.max(parseFloat(retention.rows[0]?.days_stored || 1), 1)) : 0;
-  res.json({ db_size: s.db_size, db_size_bytes: parseInt(s.db_size_bytes), table_size: s.table_size, table_size_bytes: parseInt(s.table_size_bytes), total_rows: parseInt(s.total_rows), rows_24h: parseInt(s.rows_24h), rows_7d: parseInt(s.rows_7d), oldest_log: oldest.rows[0]?.oldest_log, days_stored: parseFloat(retention.rows[0]?.days_stored || 0).toFixed(1), avg_bytes_per_day: avgPerDay, avg_size_per_day: avgPerDay > 0 ? formatBytes(avgPerDay) : 'N/A', daily_breakdown: growth.rows });
+  return { db_size: s.db_size, db_size_bytes: parseInt(s.db_size_bytes), table_size: s.table_size, table_size_bytes: parseInt(s.table_size_bytes), total_rows: parseInt(s.total_rows), rows_24h: parseInt(s.rows_24h), rows_7d: parseInt(s.rows_7d), oldest_log: oldest.rows[0]?.oldest_log, days_stored: parseFloat(retention.rows[0]?.days_stored || 0).toFixed(1), avg_bytes_per_day: avgPerDay, avg_size_per_day: avgPerDay > 0 ? formatBytes(avgPerDay) : 'N/A', daily_breakdown: growth.rows };
+  });
+  res.json(data);
 }));
 
 // ── LOG SEARCH ───────────────────────────────────────────────
@@ -1116,6 +1159,13 @@ app.post('/api/hosts/sync-netvault', requireSuperAdmin, asyncHandler(async (req,
 // per-source-IP getSiteFilter clause IS still used for the total_hits subquery
 // (which reads syslog_entries.source_ip) so a user only counts hits from their
 // own sites, matching the other per-source endpoints.
+// Reads syslog_known_bad_hit_rollup (scripts/schema.sql "PHASE 3 HOURLY
+// ROLLUP TABLES") instead of a correlated per-known_hosts-row subquery — the
+// old shape re-scanned syslog_entries ONCE PER matching host (O(known_bad_
+// hosts × matching rows)), measured at ~130 SECONDS live, and was ALSO
+// starving the API's 10-connection pool long enough to make unrelated
+// widgets (e.g. Riskiest Entities) look slow purely from queueing behind it.
+// See CLAUDE.md's Phase 3 write-up.
 app.get('/api/threats/known-bad', asyncHandler(async (req, res) => {
   const limit = safeInt(req.query.limit, 100, 500);
   const rbac = req.rbac;
@@ -1134,8 +1184,9 @@ app.get('/api/threats/known-bad', asyncHandler(async (req, res) => {
     }
   }
 
-  // Site filter for the correlated 24h hit count (per-source on syslog_entries).
-  const sf = getSiteFilter(rbac, p, 'se');
+  // Rollup site filter for the hit-count join (site_id already resolved at
+  // rollup-build time — see getRollupSiteFilter's doc comment in api/rbac.js).
+  const sf = getRollupSiteFilter(rbac, p);
   params.push(...sf.params);
   p = sf.nextParamIndex;
 
@@ -1153,18 +1204,15 @@ app.get('/api/threats/known-bad', asyncHandler(async (req, res) => {
       kh.threat_tags,
       kh.last_enriched,
       kh.last_seen,
-      COALESCE((
-        SELECT COUNT(*)
-        FROM syslog_entries se
-        WHERE (
-              se.structured_data->>'srcip' = host(kh.ip_address)
-           OR se.structured_data->>'dstip' = host(kh.ip_address)
-           OR se.source_ip = kh.ip_address
-        )
-          AND se.received_at > NOW() - INTERVAL '24 hours'
-          ${sf.clause}
-      ), 0) AS total_hits
+      COALESCE(hits.total_hits, 0) AS total_hits
     FROM known_hosts kh
+    LEFT JOIN (
+      SELECT ip_address, SUM(hit_count) AS total_hits
+      FROM syslog_known_bad_hit_rollup
+      WHERE hour_bucket >= date_trunc('hour', NOW() - INTERVAL '24 hours')
+      ${sf.clause}
+      GROUP BY ip_address
+    ) hits ON hits.ip_address = host(kh.ip_address)
     WHERE (kh.is_known_bad = TRUE OR kh.abuse_score >= 50)
     ${khWhere}
     ORDER BY kh.abuse_score DESC NULLS LAST
@@ -1362,7 +1410,13 @@ app.get('/api/health/summary', asyncHandler(async (req, res) => {
       pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='cisco' AND structured_data->>'category'='interface' ${sf.clause}`, [hours, ...sf.params]),
       pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='cisco' AND structured_data->>'category' IN ('stp','loop') ${sf.clause}`, [hours, ...sf.params]),
       pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND structured_data->>'subcategory'='mac_flap' ${sf.clause}`, [hours, ...sf.params]),
-      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND (structured_data->>'subcategory'='config_change' OR message ILIKE '%configured from%') ${sf.clause}`, [hours, ...sf.params]),
+      // message ILIKE fallback removed (perf pass, 2026-07 Phase 3): a live
+      // 30-day recall check confirmed it catches zero rows beyond what
+      // subcategory='config_change' already covers, while forcing an
+      // expensive BitmapOr across the message-trigram index on every
+      // partition — same verified-zero-extra-recall pattern already applied
+      // to /api/security/summary. Do not re-add without fresh evidence.
+      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND structured_data->>'subcategory'='config_change' ${sf.clause}`, [hours, ...sf.params]),
       pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='cisco' AND structured_data->>'category'='routing' ${sf.clause}`, [hours, ...sf.params]),
     ]);
     return { hours, interface_events: parseInt(iface.rows[0].count), stp_loop_events: parseInt(stp.rows[0].count), mac_flap_events: parseInt(mac.rows[0].count), config_changes: parseInt(cfg.rows[0].count), routing_events: parseInt(rt.rows[0].count) };
@@ -2009,18 +2063,71 @@ app.get('/api/stats/geo', asyncHandler(async (req, res) => {
 //    devices (active before, quiet now).
 app.get('/api/stats/forecast', asyncHandler(async (req, res) => {
   const days = safeInt(req.query.days, 30, 365);
-  const sf = getSiteFilter(req.rbac, 2, 'se');
+  // a/c read syslog_stats_rollup (Phase 1) — accurate for "today so far" too,
+  // since every past hour of today was already finalized as it went from
+  // "current" to "previous" hour in two consecutive 5-min recompute cycles.
+  // d reads syslog_source_host_rollup (Phase 3, scripts/schema.sql "PHASE 3
+  // HOURLY ROLLUP TABLES") — no existing rollup carried source_host (the
+  // relay hostname), only srcip (the actor), so silent-device detection
+  // needed a new table. All 3 sub-queries used to run SEQUENTIALLY on raw
+  // syslog_entries (14-20s live, see CLAUDE.md's Phase 3 write-up); now
+  // parallel reads of small pre-aggregated tables.
+  const sfDaily  = getRollupSiteFilter(req.rbac, 2);
+  const sfToday  = getRollupSiteFilter(req.rbac, 2);
+  const sfSilent = getRollupSiteFilter(req.rbac, 2);
   const cacheKey = `forecast:${days}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 60000, async () => {
-    // a) Daily volume series over the requested window.
-    const dailyRes = await pool.query(`
-      SELECT date_trunc('day', se.received_at) AS d, COUNT(*)::bigint AS c
-      FROM syslog_entries se
-      WHERE se.received_at > NOW() - make_interval(days => $1)
-      ${sf.clause}
-      GROUP BY 1
-      ORDER BY 1
-    `, [days, ...sf.params]);
+    const [dailyRes, todayRes, silentRes] = await Promise.all([
+      // a) Daily volume series over the requested window.
+      pool.query(`
+        SELECT date_trunc('day', hour_bucket) AS d, SUM(log_count)::bigint AS c
+        FROM syslog_stats_rollup
+        WHERE hour_bucket >= date_trunc('day', NOW() - make_interval(days => $1))
+        ${sfDaily.clause}
+        GROUP BY 1
+        ORDER BY 1
+      `, [days, ...sfDaily.params]),
+
+      // c) Ingestion spike — today's count so far vs avg daily count.
+      pool.query(`
+        SELECT COALESCE(SUM(log_count), 0)::bigint AS c
+        FROM syslog_stats_rollup
+        WHERE hour_bucket >= date_trunc('day', NOW())
+        ${sfToday.clause}
+      `, sfToday.params),
+
+      // d) Silent devices — source_hosts active in the prior week but silent in
+      //    the last 24h. Same 8-day-window / >=50-prior / 0-recent thresholds as
+      //    before, just at hour granularity (rollup's native precision) instead
+      //    of exact timestamps — a boundary difference of at most ~1h either
+      //    side, acceptable for this "silent" heuristic.
+      pool.query(`
+        SELECT
+          source_host,
+          MAX(source_ip) AS source_ip,
+          COALESCE(SUM(log_count) FILTER (
+            WHERE hour_bucket BETWEEN date_trunc('hour', NOW() - interval '8 days')
+                                  AND date_trunc('hour', NOW() - interval '1 day')
+          ), 0)::bigint AS prior_count,
+          COALESCE(SUM(log_count) FILTER (
+            WHERE hour_bucket >= date_trunc('hour', NOW() - interval '24 hours')
+          ), 0)::bigint AS recent_count,
+          MAX(hour_bucket) AS last_seen
+        FROM syslog_source_host_rollup
+        WHERE hour_bucket >= date_trunc('hour', NOW() - interval '8 days')
+        ${sfSilent.clause}
+        GROUP BY source_host
+        HAVING COALESCE(SUM(log_count) FILTER (
+                 WHERE hour_bucket BETWEEN date_trunc('hour', NOW() - interval '8 days')
+                                       AND date_trunc('hour', NOW() - interval '1 day')
+               ), 0) >= 50
+           AND COALESCE(SUM(log_count) FILTER (
+                 WHERE hour_bucket >= date_trunc('hour', NOW() - interval '24 hours')
+               ), 0) = 0
+        ORDER BY prior_count DESC
+        LIMIT 20
+      `, sfSilent.params),
+    ]);
 
     const daily = dailyRes.rows.map(r => ({
       date: r.d, count: parseInt(r.c, 10) || 0,
@@ -2063,39 +2170,12 @@ app.get('/api/stats/forecast', asyncHandler(async (req, res) => {
     else if (n >= 7) confidence = 'medium';
 
     // c) Ingestion spike — today's count so far vs avg daily count.
-    const todayRes = await pool.query(`
-      SELECT COUNT(*)::bigint AS c
-      FROM syslog_entries se
-      WHERE se.received_at >= date_trunc('day', NOW())
-      ${sf.clause}
-    `, sf.params);
     const today = parseInt(todayRes.rows[0]?.c, 10) || 0;
     const avgDaily = n ? Math.round(meanY) : 0;
     const spike = avgDaily > 0 ? today > avgDaily * 1.5 : false;
 
-    // d) Silent devices — source_hosts active in the prior week but silent in the
-    //    last 24h. Over an 8-day window, FILTER recent vs prior per source_host.
-    const silentRes = await pool.query(`
-      SELECT
-        se.source_host,
-        host(MAX(se.source_ip)) AS source_ip,
-        COUNT(*) FILTER (
-          WHERE se.received_at BETWEEN NOW() - interval '8 days' AND NOW() - interval '1 day'
-        )::bigint AS prior_count,
-        COUNT(*) FILTER (WHERE se.received_at > NOW() - interval '24 hours')::bigint AS recent_count,
-        MAX(se.received_at) AS last_seen
-      FROM syslog_entries se
-      WHERE se.received_at > NOW() - interval '8 days'
-        AND se.source_host IS NOT NULL AND se.source_host <> ''
-      ${sf.clause}
-      GROUP BY se.source_host
-      HAVING COUNT(*) FILTER (
-               WHERE se.received_at BETWEEN NOW() - interval '8 days' AND NOW() - interval '1 day'
-             ) >= 50
-         AND COUNT(*) FILTER (WHERE se.received_at > NOW() - interval '24 hours') = 0
-      ORDER BY prior_count DESC
-      LIMIT 20
-    `, sf.params);
+    // d) Silent devices — source_hosts active in the prior week but silent in
+    //    the last 24h (query itself now runs above, in the Promise.all).
     const silent = silentRes.rows.map(r => ({
       source_host: r.source_host,
       source_ip:   r.source_ip,
@@ -2120,6 +2200,16 @@ app.get('/api/stats/forecast', asyncHandler(async (req, res) => {
 
 // 4) What changed vs baseline — values seen in the recent `days` window that did
 //    NOT appear in the prior 30 days, via a NOT EXISTS anti-join, per dimension.
+// Reads syslog_distinct_value_rollup (scripts/schema.sql "PHASE 3 HOURLY
+// ROLLUP TABLES") instead of raw syslog_entries. This was the worst offender
+// found in the Phase 3 audit: one dimension alone measured 216+ SECONDS live
+// — the 30-day baseline filter matches ~100% of every daily partition it
+// touches (same "filter has no selectivity, no index can help" shape as
+// Phase 2's top-security-events), and there's no expression index at all on
+// the JSONB fields involved, so each of the 4 dimensions independently
+// scanned ~20GB from disk. The anti-join now runs against a few thousand
+// pre-aggregated (hour, value) rows per dimension instead. See CLAUDE.md's
+// Phase 3 write-up.
 app.get('/api/stats/whats-changed', asyncHandler(async (req, res) => {
   const days = safeInt(req.query.days, 1, 30);
   const cacheKey = `whats-changed:${days}:${rbacCacheKey(req.rbac)}`;
@@ -2128,42 +2218,42 @@ app.get('/api/stats/whats-changed', asyncHandler(async (req, res) => {
     // against the set of values seen in the 30 days BEFORE the recent window. The
     // RBAC site filter is applied to BOTH the recent (r) and baseline (b) scans so a
     // restricted user only ever compares within their own sites. Param order:
-    // $1 = days (recent window), $2..$2+k = site params for r, then again for b.
-    function buildAntiJoin(expr, extraRecent) {
-      const sfR = getSiteFilter(req.rbac, 2, 'r');
-      const sfB = getSiteFilter(req.rbac, 2 + sfR.params.length, 'b');
+    // $1 = days (recent window), $2 = dimension, $3..$3+k = site params for r, then
+    // again for b.
+    function buildAntiJoin(dimension) {
+      const sfR = getRollupSiteFilter(req.rbac, 3);
+      const sfB = getRollupSiteFilter(req.rbac, 3 + sfR.params.length);
       // COUNT(*) OVER() = total distinct NEW values after the anti-join but before
       // LIMIT, so the UI can show an honest "+N more" / tile total beyond the top 15.
       const sql = `
         SELECT v AS value, cnt AS count, COUNT(*) OVER()::bigint AS total FROM (
-          SELECT ${expr.replace(/\bse\./g, 'r.')} AS v, COUNT(*)::bigint AS cnt
-          FROM syslog_entries r
-          WHERE r.received_at > NOW() - make_interval(days => $1)
-            AND ${expr.replace(/\bse\./g, 'r.')} IS NOT NULL
-            AND ${expr.replace(/\bse\./g, 'r.')} NOT IN ('', 'N/A')
-            ${extraRecent ? extraRecent.replace(/\bse\./g, 'r.') : ''}
+          SELECT value AS v, SUM(log_count)::bigint AS cnt
+          FROM syslog_distinct_value_rollup r
+          WHERE r.dimension = $2
+            AND r.hour_bucket >= date_trunc('hour', NOW() - make_interval(days => $1))
           ${sfR.clause}
-          GROUP BY 1
+          GROUP BY value
         ) recent
         WHERE NOT EXISTS (
-          SELECT 1 FROM syslog_entries b
-          WHERE b.received_at BETWEEN NOW() - make_interval(days => $1) - interval '30 days'
-                                  AND NOW() - make_interval(days => $1)
-            AND ${expr.replace(/\bse\./g, 'b.')} = recent.v
-            ${sfB.clause}
+          SELECT 1 FROM syslog_distinct_value_rollup b
+          WHERE b.dimension = $2
+            AND b.hour_bucket >= date_trunc('hour', NOW() - make_interval(days => $1) - interval '30 days')
+            AND b.hour_bucket <  date_trunc('hour', NOW() - make_interval(days => $1))
+            AND b.value = recent.v
+          ${sfB.clause}
         )
         ORDER BY count DESC, value
         LIMIT 15
       `;
-      const params = [days, ...sfR.params, ...sfB.params];
+      const params = [days, dimension, ...sfR.params, ...sfB.params];
       return { sql, params };
     }
 
     const dims = {
-      new_countries: buildAntiJoin(`se.structured_data->>'srccountry'`),
-      new_users:     buildAntiJoin(`se.structured_data->>'user'`),
-      new_sources:   buildAntiJoin(`COALESCE(se.structured_data->>'srcip', se.source_ip::text)`),
-      new_services:  buildAntiJoin(`se.structured_data->>'service'`),
+      new_countries: buildAntiJoin('country'),
+      new_users:     buildAntiJoin('user'),
+      new_sources:   buildAntiJoin('source'),
+      new_services:  buildAntiJoin('service'),
     };
 
     const [countries, users, sources, services] = await Promise.all([
@@ -2288,6 +2378,10 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.24.0': [
+    'Performance: a full pass over every remaining dashboard widget found and fixed several more slow spots — the worst were Known-Bad Sources (measured taking up to 130 seconds) and What\'s New/Changed (over 200 seconds for one part of it). Both were re-scanning the full log history live on every page load; they now read from small pre-aggregated summary tables kept up to date in the background, the same technique already used for the other dashboard widgets. Top Destinations (previously up to 76 seconds on a 7-day view) and Capacity & Ingestion Health got the same fix. The Known-Bad Sources fix also indirectly speeds up Riskiest Entities, which was being slowed down by the other widget tying up shared database connections behind the scenes.',
+    'The Storage panel now caches its results briefly instead of recalculating on every single check, and a duplicated calculation inside it was removed — shaves roughly another second or two off that widget.',
+  ],
   '2.23.0': [
     'Performance: 4 dashboard widgets — Top Security Events, Top Blocked Destinations, Top Connection Failures, and VPN Status — were classifying every matching log line live on each page load. Top Security Events alone was measured taking 17-29 seconds because its filter matches nearly every log line in a typical day, so there was no way to speed it up with a better index — it needed pre-computed data instead. All 4 now read from small, pre-aggregated summary tables kept up to date in the background, the same technique already used for the main dashboard KPIs. Typical load time for these 4 widgets drops from several seconds (up to ~29s for the worst case) to well under a second.',
     'The "Total logs stored" figure on the Storage panel now uses the database\'s own fast built-in estimate instead of recounting every row on every check — shaves a further ~5 seconds off that widget with no meaningful loss of accuracy for a number that\'s purely informational.',

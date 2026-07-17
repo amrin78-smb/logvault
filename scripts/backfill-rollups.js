@@ -1,28 +1,31 @@
 /**
  * One-time backfill for the srcip perf pass (2026-07) — since extended for
- * the Phase 2 rollup tables (2026-07):
+ * the Phase 2 and Phase 3 rollup tables (2026-07):
  *
  *   (a) Backfills the new syslog_entries.srcip column on existing rows —
  *       ~5.8M rows, batched by DAY (the table is partitioned daily,
  *       syslog_entries_pYYYYMMDD, so a day-scoped UPDATE naturally stays
  *       within one partition's lock scope; never one giant UPDATE across
  *       the whole table).
- *   (b) Backfills syslog_stats_rollup + syslog_talker_rollup (Phase 1) AND
+ *   (b) Backfills syslog_stats_rollup + syslog_talker_rollup (Phase 1),
  *       syslog_security_event_rollup + syslog_dest_event_rollup +
- *       syslog_vpn_rollup (Phase 2) for every hour in the same window, using
- *       the EXACT same DELETE+INSERT-per-bucket logic as the live collector
- *       job (collector/collector.js's runRollupMaintenance /
- *       recomputeRollupBucket / recomputePhase2RollupBucket), just looped
- *       across every hour instead of only the current+previous hour.
+ *       syslog_vpn_rollup (Phase 2), and syslog_dest_rollup +
+ *       syslog_source_host_rollup + syslog_distinct_value_rollup +
+ *       syslog_known_bad_hit_rollup (Phase 3, the "check ALL widgets" pass —
+ *       see scripts/schema.sql's "PHASE 3 HOURLY ROLLUP TABLES" comment) for
+ *       every hour in the same window, using the EXACT same DELETE+INSERT-
+ *       per-bucket logic as the live collector job (collector/collector.js's
+ *       runRollupMaintenance / recomputeRollupBucket /
+ *       recomputePhase2RollupBucket / recomputePhase3RollupBucket), just
+ *       looped across every hour instead of only the current+previous hour.
  *
  * (b) for a given day always runs AFTER (a) for that same day, so srcip is
  * populated before that day's talker rollup reads it.
  *
- * MUST run once after deploying the Phase 2 rollup tables, or Top Security
- * Events / Top Blocked / Top Connection Failures / VPN Status will show
- * empty/"No data" for any time range older than the collector's own 5-minute
- * maintenance cycle has had a chance to fill in (i.e. everything before the
- * last ~2 hours) until this has run.
+ * MUST run once after deploying new rollup tables (Phase 2 or Phase 3), or
+ * the widgets reading from them will show empty/"No data" for any time range
+ * older than the collector's own 5-minute maintenance cycle has had a chance
+ * to fill in (i.e. everything before the last ~2 hours) until this has run.
  *
  * All parts are idempotent (safe to re-run):
  *   - (a) only touches rows where srcip IS NULL.
@@ -93,6 +96,7 @@ async function backfillRollupForHour(pool, hourBucket) {
   `, [hourBucket]);
 
   await backfillPhase2RollupForHour(pool, hourBucket);
+  await backfillPhase3RollupForHour(pool, hourBucket);
 }
 
 // Phase 2 rollups (perf pass, 2026-07): Top Security Events / Top Blocked /
@@ -182,6 +186,71 @@ async function backfillPhase2RollupForHour(pool, hourBucket) {
       AND (se.structured_data->>'subtype' = 'vpn' OR se.message ILIKE '%vpn%'
         OR se.message ILIKE '%ipsec%' OR se.message ILIKE '%ssl%')
     GROUP BY 1, 2
+  `, [hourBucket]);
+}
+
+// Phase 3 rollups (perf pass, 2026-07): Top Destinations / silent-devices /
+// What's New-Changed / Known-Bad Sources hit counts. Byte-identical SQL to
+// collector/collector.js's recomputePhase3RollupBucket — see that function's
+// comment and scripts/schema.sql's "PHASE 3 HOURLY ROLLUP TABLES" comment
+// for the full rationale. Kept in sync manually (same duplication pattern
+// this file already uses for Phase 1/2 above).
+async function backfillPhase3RollupForHour(pool, hourBucket) {
+  await pool.query(`DELETE FROM syslog_dest_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_dest_rollup (hour_bucket, dstip, vendor, site_id, log_count)
+    SELECT date_trunc('hour', se.received_at), btrim(se.structured_data->>'dstip'), se.vendor, kh.site_id, COUNT(*)
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+      AND se.structured_data->>'dstip' ~ '^[0-9.]+$'
+    GROUP BY 1, 2, 3, 4
+  `, [hourBucket]);
+
+  await pool.query(`DELETE FROM syslog_source_host_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_source_host_rollup (hour_bucket, source_host, source_ip, site_id, log_count)
+    SELECT date_trunc('hour', se.received_at), se.source_host, MAX(host(se.source_ip)), kh.site_id, COUNT(*)
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+      AND se.source_host IS NOT NULL AND se.source_host <> ''
+    GROUP BY 1, 2, 4
+  `, [hourBucket]);
+
+  await pool.query(`DELETE FROM syslog_distinct_value_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  const DIST_VALUE_DIMS = [
+    { dim: 'country', expr: `se.structured_data->>'srccountry'` },
+    { dim: 'user',     expr: `se.structured_data->>'user'` },
+    { dim: 'source',   expr: `COALESCE(se.structured_data->>'srcip', se.source_ip::text)` },
+    { dim: 'service',  expr: `se.structured_data->>'service'` },
+  ];
+  for (const { dim, expr } of DIST_VALUE_DIMS) {
+    await pool.query(`
+      INSERT INTO syslog_distinct_value_rollup (hour_bucket, dimension, value, site_id, log_count)
+      SELECT date_trunc('hour', se.received_at), $2, ${expr}, kh.site_id, COUNT(*)
+      FROM syslog_entries se
+      LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+      WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+        AND ${expr} IS NOT NULL AND ${expr} NOT IN ('', 'N/A')
+      GROUP BY 1, 3, 4
+    `, [hourBucket, dim]);
+  }
+
+  await pool.query(`DELETE FROM syslog_known_bad_hit_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_known_bad_hit_rollup (hour_bucket, ip_address, site_id, hit_count)
+    SELECT date_trunc('hour', se.received_at), kb.ip_address, relay.site_id, COUNT(*)
+    FROM syslog_entries se
+    CROSS JOIN LATERAL (
+      SELECT DISTINCT v.ip
+      FROM (VALUES (se.structured_data->>'srcip'), (se.structured_data->>'dstip'), (host(se.source_ip))) AS v(ip)
+      WHERE v.ip IS NOT NULL
+    ) AS touched(ip)
+    JOIN known_hosts kb ON host(kb.ip_address) = touched.ip AND (kb.is_known_bad = TRUE OR kb.abuse_score >= 50)
+    LEFT JOIN known_hosts relay ON relay.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+    GROUP BY 1, 2, 3
   `, [hourBucket]);
 }
 

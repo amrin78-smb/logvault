@@ -1071,6 +1071,105 @@ partial/empty data for any range beyond whatever the live 5-minute job has
 caught since deploy (same expected-empty-until-backfilled window as Phase 1,
 not a bug).
 
+**Phase 3 (added 2.24.x): "check ALL dashboard widgets" pass.** After Phase 2
+shipped, a user reported the dashboard was "considerably faster but 4 more
+widgets still slow" (Capacity & Ingestion Health, What's New/Changed,
+Riskiest Entities, Known-Bad Sources), then separately flagged Severity
+Distribution too. Rather than diagnose one at a time, 4 agents were fanned
+out in parallel to `EXPLAIN ANALYZE` every remaining dashboard endpoint
+against live production data. Findings (full detail in each endpoint's
+comment in `api/server.js`):
+
+- **`/api/threats/known-bad` (Known-Bad Sources): ~130 SECONDS.** A
+  correlated subquery re-scanned `syslog_entries` ONCE PER matching
+  `known_hosts` row (O(known_bad_hosts × matching rows)) — no single index
+  can fix an architecture shaped like that, only pre-aggregation can. This
+  was also STARVING the API's 10-connection pool long enough that Riskiest
+  Entities (`/api/ueba/top`, whose own query is a healthy 116ms) appeared
+  slow purely from queueing behind it — a reminder that "widget X looks
+  slow" doesn't always mean "endpoint X's query is slow"; check for pool
+  contention from a NEIGHBOR before assuming the obvious endpoint is at
+  fault.
+- **`/api/stats/whats-changed` (What's New/Changed): 216+ SECONDS for a
+  single one of its 4 dimensions.** Its 30-day baseline filter matches
+  ~100% of every daily partition it touches — the exact same "filter has no
+  selectivity, no index can help" shape as Phase 2's `top-security-events`
+  — and there's no expression index at all on the JSONB fields involved, so
+  each dimension independently scanned ~20GB from disk (confirmed via
+  `EXPLAIN (ANALYZE, BUFFERS)`).
+- **`/api/stats/top-destinations` (Top Destinations): 3.6s at 24h, 76
+  SECONDS at a 7-day range.** Identical disk-spilled-sort shape to the
+  pre-Phase-1 `top-talkers` problem (`work_mem` too small for a huge sort) —
+  this is the symmetric destination-side case of the exact same bug,
+  discovered late because this endpoint's own doc comment said it was
+  "staying on raw `syslog_entries` for now" — that note was accurate when
+  written and became stale as data volume grew; don't trust an old
+  "intentionally not optimized" comment without re-measuring.
+- **`/api/stats/forecast` (Capacity & Ingestion Health): 14-20s, and NOT
+  EVEN PARALLELIZED** — 3 sequential `pool.query()` calls where nothing
+  depended on a prior result. One of the 3 (`daily volume`) was redundant
+  work `syslog_stats_rollup` (Phase 1) already answered; a second
+  (`silent devices`) needed a genuinely new dimension (`source_host`, the
+  relay hostname — different from `syslog_talker_rollup`'s `srcip`, the
+  actor) that no existing rollup carried.
+- **`/api/stats/summary` (Severity Distribution) and all 7 already-rollup-
+  based endpoints from Phase 1/2: confirmed healthy, no regression.** The
+  user's report of this widget being slow was real but not caused by its own
+  query — almost certainly downstream of `/api/stats/storage` loading on the
+  same page (below).
+- **`/api/stats/storage`: two real but much smaller issues.** `sizes`
+  computed `GREATEST(pg_total_relation_size(...))` TWICE in the same SQL
+  text (once for the pretty `table_size`, again for raw `table_size_bytes`)
+  — Postgres does not common-subexpression-eliminate `STABLE` functions
+  across separate call sites, so real filesystem `stat()` work across 37
+  partitions was paid twice (2.4-4.0s measured). Fixed with
+  `WITH sz AS MATERIALIZED (...)`, which forces single evaluation regardless
+  of how many times it's referenced (isolated before/after comparison:
+  ~660-829ms → ~330-386ms for that one piece). `growth` (~920-1057ms) wasn't
+  a bug — legitimate index-only-scan work — but `syslog_stats_rollup`
+  already answers the same 7-day daily total trivially, so it was switched
+  over anyway. This endpoint also had NO `getCached` wrapper at all, unlike
+  every other stat endpoint in the file, despite computing whole-database-
+  scale numbers that don't need to be request-fresh — added one (60s TTL).
+- **`/api/health/summary`'s `config_changes` sub-query: same verified-zero-
+  extra-recall `message ILIKE` fallback pattern already fixed elsewhere
+  (2.21.x).** A fresh 30-day recall check (`WHERE message ILIKE '%configured
+  from%' AND subcategory IS DISTINCT FROM 'config_change'`) confirmed 0 rows
+  — dropped the fallback, no rollup needed for this one.
+
+4 new rollup tables (`scripts/schema.sql`, "PHASE 3 HOURLY ROLLUP TABLES"),
+same recompute-window maintenance model, same `getRollupSiteFilter()` RBAC
+pattern, same live-known_hosts-join-for-enrichment principle as Phase 1/2:
+`syslog_dest_rollup` (Top Destinations, symmetric to `syslog_talker_rollup`),
+`syslog_source_host_rollup` (silent devices, one representative `source_ip`
+per hour+host carried as a `MAX()`, not a grouping key, purely for the
+widget's drill-through action), `syslog_distinct_value_rollup` (What's
+New/Changed's 4 dimensions sharing one table with a `dimension`
+discriminator — including `new_sources`' intentional `COALESCE(srcip,
+source_ip::text)` WITHOUT `host()`, an existing quirk that leaves the `/32`
+mask in the value; preserved on purpose so behavior doesn't change), and
+`syslog_known_bad_hit_rollup` (Known-Bad Sources — deliberately scoped to
+only CURRENTLY known-bad/`abuse_score >= 50` IPs at rollup-build time, unlike
+`syslog_talker_rollup`/`syslog_dest_rollup` which intentionally cover every
+actor/destination — this table is meant to stay small and targeted, matching
+exactly what the endpoint needs; a host crossing the known-bad threshold
+between cycles picks up correct hit history within ~2 hours, same
+self-healing property as every other rollup here).
+
+Every new SELECT shape was validated against live production data (read-only
+access) BEFORE shipping — both the collector-side aggregation queries (dry-
+run as bare SELECTs, since the new tables didn't exist yet to actually
+INSERT into) and, where the target table already existed
+(`syslog_stats_rollup` for forecast's daily-volume/today-count), the exact
+read-side query. All returned sensible results in tens of milliseconds per
+hour bucket, consistent with Phase 1/2's measured maintenance cost.
+
+**Deploy sequencing for THIS phase — same rule as Phase 1/2, read it again.**
+Apply `scripts/schema.sql` (creates the 4 new tables) before deploying the
+new `collector`/`api` code, then run `node scripts/backfill-rollups.js`
+immediately after — until it finishes, these widgets show partial/empty data
+for any range beyond whatever the live 5-minute job has caught since deploy.
+
 **Security/Network Health tabs (added 2.21.x) — a DIFFERENT class of fix.** Unlike the
 dashboard's clean severity/category/vendor dimensions, these tabs' ~20 query shapes
 (`/api/security/*`, `/api/health/*`) are too varied for a rollup-table rewrite to be

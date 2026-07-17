@@ -338,6 +338,115 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_vpn_rollup_dims
 CREATE INDEX IF NOT EXISTS idx_vpn_rollup_hour
   ON syslog_vpn_rollup (hour_bucket DESC);
 
+-- ============================================================
+-- PHASE 3 HOURLY ROLLUP TABLES (perf pass, 2026-07)
+-- A follow-up "check ALL dashboard widgets" pass found 4 more endpoints doing
+-- expensive live work on raw syslog_entries, some far worse than anything
+-- found in Phase 1/2: /api/threats/known-bad measured at ~130 SECONDS live
+-- (a correlated per-row subquery, O(known_bad_hosts × matching rows) — see
+-- CLAUDE.md's Phase 3 write-up), /api/stats/whats-changed measured at 200+
+-- SECONDS for a single one of its 4 dimensions (each independently re-scans
+-- a 20+GB, 30-day baseline window with no usable index), /api/stats/
+-- top-destinations at up to 76 seconds (identical disk-spilled-sort shape
+-- to the pre-fix syslog_talker_rollup problem, just on the destination side,
+-- never fixed), and /api/stats/forecast at 14-20s (sequential raw scans,
+-- one of which duplicates work syslog_stats_rollup already answers).
+-- Same maintenance model, RBAC pattern, and live-enrichment-stays-at-read-
+-- time principle as Phase 1/2 — see those sections' comments above for the
+-- full rationale, not repeated here.
+-- ============================================================
+
+-- Top Destinations. Symmetric to syslog_talker_rollup (source/actor side) but
+-- keyed on the DESTINATION ip instead — the exact same fix, just never
+-- applied to this widget originally. Geo/threat enrichment stays a LIVE join
+-- to known_hosts at read time, same as syslog_talker_rollup/
+-- syslog_dest_event_rollup.
+CREATE TABLE IF NOT EXISTS syslog_dest_rollup (
+  hour_bucket TIMESTAMPTZ NOT NULL,
+  dstip       TEXT        NOT NULL,
+  vendor      TEXT,
+  site_id     INTEGER,                          -- NULL = unassigned/unknown device
+  log_count   BIGINT      NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_dest_rollup_dims
+  ON syslog_dest_rollup (hour_bucket, dstip, vendor, COALESCE(site_id, -1));
+CREATE INDEX IF NOT EXISTS idx_dest_rollup_hour
+  ON syslog_dest_rollup (hour_bucket DESC);
+CREATE INDEX IF NOT EXISTS idx_dest_rollup_site_hour
+  ON syslog_dest_rollup (site_id, hour_bucket DESC);
+
+-- Silent-devices half of Capacity & Ingestion Health (Top Security Events'
+-- sibling problem: no existing rollup is keyed by source_host — syslog_
+-- talker_rollup is keyed by srcip, the ACTOR, not the relay hostname). One
+-- representative source_ip per (hour, source_host) is carried along (MAX, not
+-- a grouping key) purely so the widget's "drill into Log Explorer" action has
+-- an IP to filter by — a DHCP relay changing IP mid-window is a cosmetic,
+-- not correctness, edge case here.
+CREATE TABLE IF NOT EXISTS syslog_source_host_rollup (
+  hour_bucket TIMESTAMPTZ NOT NULL,
+  source_host TEXT        NOT NULL,
+  source_ip   TEXT,
+  site_id     INTEGER,                          -- NULL = unassigned/unknown device
+  log_count   BIGINT      NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_source_host_rollup_dims
+  ON syslog_source_host_rollup (hour_bucket, source_host, COALESCE(site_id, -1));
+CREATE INDEX IF NOT EXISTS idx_source_host_rollup_hour
+  ON syslog_source_host_rollup (hour_bucket DESC);
+CREATE INDEX IF NOT EXISTS idx_source_host_rollup_site_hour
+  ON syslog_source_host_rollup (site_id, hour_bucket DESC);
+
+-- What's New/Changed's 4 dimensions (country/user/source/service) share one
+-- table with a `dimension` discriminator — same reasoning as syslog_dest_
+-- event_rollup sharing 'blocked'/'failure'. Each dimension's "value" is the
+-- exact same expression the endpoint used to compute live (see api/server.js
+-- for the byte-identical expressions, particularly new_sources' intentional
+-- COALESCE(srcip, source_ip::text) WITHOUT host() — that /32-suffixed
+-- quirk is preserved on purpose, not a bug, to keep behavior identical to
+-- before this rewrite). The endpoint's anti-join then runs against thousands
+-- of aggregated distinct-value rows instead of the raw 30-day, 20+GB table.
+CREATE TABLE IF NOT EXISTS syslog_distinct_value_rollup (
+  hour_bucket TIMESTAMPTZ NOT NULL,
+  dimension   TEXT        NOT NULL,              -- 'country' | 'user' | 'source' | 'service'
+  value       TEXT        NOT NULL,
+  site_id     INTEGER,                          -- NULL = unassigned/unknown device
+  log_count   BIGINT      NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_distinct_value_rollup_dims
+  ON syslog_distinct_value_rollup (hour_bucket, dimension, value, COALESCE(site_id, -1));
+CREATE INDEX IF NOT EXISTS idx_distinct_value_rollup_dim_hour
+  ON syslog_distinct_value_rollup (dimension, hour_bucket DESC);
+CREATE INDEX IF NOT EXISTS idx_distinct_value_rollup_site_hour
+  ON syslog_distinct_value_rollup (site_id, hour_bucket DESC);
+
+-- Known-Bad Sources. Pre-computes, per hour, how many syslog_entries rows
+-- TOUCH each currently-known-bad/high-abuse-score IP in ANY of its 3 possible
+-- roles (structured_data.srcip, structured_data.dstip, or the raw relay
+-- source_ip) — replacing a correlated subquery that used to run once PER
+-- known_hosts row (O(known_bad_hosts × matching syslog rows), measured at
+-- ~130s live). Scoped to only currently is_known_bad/abuse_score>=50 hosts
+-- at rollup-build time (not every IP ever seen) to keep this table small and
+-- targeted — matches exactly what the endpoint needs, unlike syslog_talker_
+-- rollup/syslog_dest_rollup which intentionally cover every actor/destination.
+-- A host that CROSSES the known-bad threshold between rollup cycles picks up
+-- correct hit history within ~2 hours (the next current/previous-hour
+-- recompute), fully corrected by the next scripts/backfill-rollups.js run —
+-- same self-healing property as every other rollup here.
+CREATE TABLE IF NOT EXISTS syslog_known_bad_hit_rollup (
+  hour_bucket TIMESTAMPTZ NOT NULL,
+  ip_address  TEXT        NOT NULL,              -- unmasked, e.g. host(known_hosts.ip_address)
+  site_id     INTEGER,                          -- NULL = unassigned/unknown device
+  hit_count   BIGINT      NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_known_bad_hit_rollup_dims
+  ON syslog_known_bad_hit_rollup (hour_bucket, ip_address, COALESCE(site_id, -1));
+CREATE INDEX IF NOT EXISTS idx_known_bad_hit_rollup_hour
+  ON syslog_known_bad_hit_rollup (hour_bucket DESC);
+CREATE INDEX IF NOT EXISTS idx_known_bad_hit_rollup_ip
+  ON syslog_known_bad_hit_rollup (ip_address, hour_bucket DESC);
+CREATE INDEX IF NOT EXISTS idx_vpn_rollup_hour
+  ON syslog_vpn_rollup (hour_bucket DESC);
+
 
 -- ============================================================
 -- DAILY PARTITION MANAGEMENT (SECURITY DEFINER)
