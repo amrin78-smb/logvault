@@ -996,6 +996,81 @@ the role's next new connection, no server restart needed. `shared_buffers` (curr
 1GB, DB-wide cache hit ratio was 61%) is a further, separate lever contingent on
 confirming actual server RAM — not applied here, deliberately left as a follow-up.
 
+**Phase 2 (added 2.22.x): Top Security Events, Top Blocked, Top Connection
+Failures, VPN Status.** The paragraph above ("`/api/stats/top-security-events`,
+`/api/stats/top-failures`, `/api/stats/top-blocked` ... still query raw
+`syslog_entries`") described the state BEFORE this phase — it's now
+out of date for those three (plus `/api/stats/vpn-summary`, not listed
+there originally). A live production report of dashboard widgets taking
+"20 seconds or more" led to an `EXPLAIN ANALYZE` audit that found
+`top-security-events` alone taking **17-29 seconds**: its `severity <= 4`
+filter matches **~100% of a typical day's rows** (259,276 of 259,393 rows
+in one live partition), so the filter has essentially zero selectivity —
+Postgres correctly chose a sequential scan over any index, because for a
+predicate this unselective an index scan really would be slower. No index
+design can fix that; only pre-aggregation can. `top-blocked` (~6.5s),
+`top-failures` (~2.3s), and `vpn-summary` (~2.9s) had the same root shape
+(live `ILIKE`/action classification over the full raw window on every
+widget load) at smaller scale.
+
+Three new purpose-built rollup tables (`scripts/schema.sql`, "PHASE 2 HOURLY
+ROLLUP TABLES" — read the comments there before changing anything):
+- **`syslog_security_event_rollup`** — `(hour_bucket, event_type, site_id) →
+  log_count`. `event_type` is the exact same classification `CASE` the
+  endpoint used to run live (SSL Alert / SSL Exit Error / IPSec Phase 1
+  Error / Login Failed / Traffic Denied / IPS Threat / VPN Negotiate /
+  `structured_data.subtype` / Other), pre-filtered to `severity <= 4` at
+  rollup-build time since the endpoint never varies that threshold.
+- **`syslog_dest_event_rollup`** — `(hour_bucket, event_class, dstip,
+  service, vendor, site_id) → log_count`, shared by Top Blocked
+  (`event_class = 'blocked'`) and Top Connection Failures (`event_class =
+  'failure'`) — one table instead of two near-duplicates, since both widgets
+  group by the same shape and differ only in classification predicate + the
+  `event_class` value. Geo/threat enrichment (country/ASN/abuse score/
+  known-bad) is **not** stored here — same as `top-talkers`/
+  `top-destinations`, it stays a LIVE join to `known_hosts` on `dstip` at
+  read time, so enrichment always reflects current threat-intel data, not a
+  rollup-time snapshot.
+- **`syslog_vpn_rollup`** — `(hour_bucket, site_id) → total, failures,
+  successes, ssl_alerts`. Unlike the other two, this stores pre-computed
+  SUMS rather than a dimension to `GROUP BY` — the 4 metrics are
+  independent, overlapping classifications of the same row (a message can
+  match both `fail` and `ssl-alert` at once), mirroring the source query's
+  four `COUNT(*) FILTER(...)` clauses exactly. The endpoint just `SUM`s each
+  column across the window.
+
+Same maintenance model as Phase 1 (recompute-window DELETE+INSERT for
+current+previous hour, every 5 minutes, in `collector/collector.js`'s
+`recomputePhase2RollupBucket()` — called from `recomputeRollupBucket()`
+alongside the Phase 1 tables) and same `getRollupSiteFilter()` RBAC read
+pattern. `scripts/backfill-rollups.js` was extended (not replaced) to also
+backfill these 3 tables for the same 30-day window, in the same per-hour
+loop as the Phase 1 tables — **run it again after this deploy** even if
+you've run it before; it's idempotent (DELETEs a bucket before
+re-INSERTing), so re-running is always safe and just recomputes the Phase 1
+tables' numbers a second time as a side effect.
+
+`/api/stats/storage`'s `total_rows` (StorageWidget, purely informational
+display, never used for filtering/pagination) switched from an exact
+`COUNT(*)` over the full multi-GB partitioned table (~5s live) to
+`pg_class.reltuples` (planner statistics, refreshed by autovacuum/`ANALYZE`)
+summed across the partition tree — the same approximate-count trade-off
+Postgres's own `\dt+`/`pg_stat_user_tables` make. `rows_24h`/`rows_7d` stay
+exact `COUNT(*)` — those are already cheap, bounded scans via the
+`received_at` index over only 1-7 days of partitions.
+
+`/api/stats/top-destinations` and `/api/reports`' `mitre-coverage`/
+`security-summary` still query raw `syslog_entries` — still true, unchanged
+by this phase.
+
+**Deploy sequencing for THIS phase — same rule as Phase 1, read it again.**
+Apply `scripts/schema.sql` (creates the 3 new tables) before deploying the
+new `collector`/`api` code, then run `node scripts/backfill-rollups.js`
+immediately after deploying — until it finishes, these 4 widgets will show
+partial/empty data for any range beyond whatever the live 5-minute job has
+caught since deploy (same expected-empty-until-backfilled window as Phase 1,
+not a bug).
+
 **Security/Network Health tabs (added 2.21.x) — a DIFFERENT class of fix.** Unlike the
 dashboard's clean severity/category/vendor dimensions, these tabs' ~20 query shapes
 (`/api/security/*`, `/api/health/*`) are too varied for a rollup-table rewrite to be

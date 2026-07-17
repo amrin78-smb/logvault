@@ -1,21 +1,30 @@
 /**
- * One-time backfill for the srcip perf pass (2026-07):
+ * One-time backfill for the srcip perf pass (2026-07) — since extended for
+ * the Phase 2 rollup tables (2026-07):
  *
  *   (a) Backfills the new syslog_entries.srcip column on existing rows —
  *       ~5.8M rows, batched by DAY (the table is partitioned daily,
  *       syslog_entries_pYYYYMMDD, so a day-scoped UPDATE naturally stays
  *       within one partition's lock scope; never one giant UPDATE across
  *       the whole table).
- *   (b) Backfills syslog_stats_rollup + syslog_talker_rollup for every hour
- *       in the same window, using the EXACT same DELETE+INSERT-per-bucket
- *       logic as the live collector job (collector/collector.js's
- *       runRollupMaintenance / recomputeRollupBucket), just looped across
- *       every hour instead of only the current+previous hour.
+ *   (b) Backfills syslog_stats_rollup + syslog_talker_rollup (Phase 1) AND
+ *       syslog_security_event_rollup + syslog_dest_event_rollup +
+ *       syslog_vpn_rollup (Phase 2) for every hour in the same window, using
+ *       the EXACT same DELETE+INSERT-per-bucket logic as the live collector
+ *       job (collector/collector.js's runRollupMaintenance /
+ *       recomputeRollupBucket / recomputePhase2RollupBucket), just looped
+ *       across every hour instead of only the current+previous hour.
  *
  * (b) for a given day always runs AFTER (a) for that same day, so srcip is
  * populated before that day's talker rollup reads it.
  *
- * Both halves are idempotent (safe to re-run):
+ * MUST run once after deploying the Phase 2 rollup tables, or Top Security
+ * Events / Top Blocked / Top Connection Failures / VPN Status will show
+ * empty/"No data" for any time range older than the collector's own 5-minute
+ * maintenance cycle has had a chance to fill in (i.e. everything before the
+ * last ~2 hours) until this has run.
+ *
+ * All parts are idempotent (safe to re-run):
  *   - (a) only touches rows where srcip IS NULL.
  *   - (b) DELETEs a bucket before re-INSERTing it, so a re-run recomputes
  *     the same numbers rather than double-counting.
@@ -81,6 +90,98 @@ async function backfillRollupForHour(pool, hourBucket) {
     LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
     WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
     GROUP BY 1, 2, 3, 4
+  `, [hourBucket]);
+
+  await backfillPhase2RollupForHour(pool, hourBucket);
+}
+
+// Phase 2 rollups (perf pass, 2026-07): Top Security Events / Top Blocked /
+// Top Connection Failures / VPN Status. Byte-identical SQL to
+// collector/collector.js's recomputePhase2RollupBucket — see that function's
+// comment and scripts/schema.sql's "PHASE 2 HOURLY ROLLUP TABLES" comment
+// for the full rationale. Kept in sync manually (same duplication pattern
+// this file already uses for the Phase 1 tables above).
+async function backfillPhase2RollupForHour(pool, hourBucket) {
+  await pool.query(`DELETE FROM syslog_security_event_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_security_event_rollup (hour_bucket, event_type, site_id, log_count)
+    SELECT date_trunc('hour', se.received_at),
+      CASE
+        WHEN se.message ILIKE '%ssl-alert%'      THEN 'SSL Alert'
+        WHEN se.message ILIKE '%ssl exit error%' THEN 'SSL Exit Error'
+        WHEN se.message ILIKE '%ipsec%phase 1%'  THEN 'IPSec Phase 1 Error'
+        WHEN se.message ILIKE '%login failed%'   THEN 'Login Failed'
+        WHEN se.message ILIKE '%action=deny%'    THEN 'Traffic Denied'
+        WHEN se.message ILIKE '%utm/ips%'        THEN 'IPS Threat'
+        WHEN se.message ILIKE '%negotiate%'      THEN 'VPN Negotiate'
+        WHEN se.structured_data->>'subtype' IS NOT NULL THEN se.structured_data->>'subtype'
+        ELSE 'Other'
+      END,
+      kh.site_id, COUNT(*)
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+      AND se.severity <= 4
+    GROUP BY 1, 2, 3
+  `, [hourBucket]);
+
+  await pool.query(`DELETE FROM syslog_dest_event_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_dest_event_rollup (hour_bucket, event_class, dstip, service, vendor, site_id, log_count)
+    SELECT date_trunc('hour', se.received_at), 'blocked',
+      se.structured_data->>'dstip', COALESCE(se.structured_data->>'service', ''), se.vendor, kh.site_id, COUNT(*)
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+      AND (
+        LOWER(se.structured_data->>'action') IN ('deny','denied','block','blocked','drop','dropped')
+        OR se.message ILIKE '%action=deny%'
+        OR se.message ILIKE '%action=block%'
+        OR se.message ILIKE '%action=blocked%'
+        OR se.message ILIKE '%action=drop%'
+        OR se.message ILIKE '%denied%'
+        OR se.message ILIKE '%ACL%deny%'
+      )
+      AND se.structured_data->>'dstip' IS NOT NULL
+    GROUP BY 1, 3, 4, 5, 6
+  `, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_dest_event_rollup (hour_bucket, event_class, dstip, service, vendor, site_id, log_count)
+    SELECT date_trunc('hour', se.received_at), 'failure',
+      se.structured_data->>'dstip', COALESCE(se.structured_data->>'service', ''), se.vendor, kh.site_id, COUNT(*)
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+      AND (
+        (se.vendor = 'fortinet' AND se.message ILIKE '%Connection Failed%')
+        OR (se.vendor = 'paloalto' AND se.message ILIKE '%session_end%' AND se.message ILIKE '%bytes%0%')
+        OR (se.vendor = 'cisco' AND (se.message ILIKE '%unreachable%' OR se.message ILIKE '%timed out%'))
+        OR (se.vendor NOT IN ('fortinet','paloalto','cisco') AND (
+          se.message ILIKE '%connection failed%'
+          OR se.message ILIKE '%connection refused%'
+          OR se.message ILIKE '%host unreachable%'
+          OR se.message ILIKE '%timed out%'
+        ))
+      )
+      AND se.structured_data->>'dstip' IS NOT NULL
+    GROUP BY 1, 3, 4, 5, 6
+  `, [hourBucket]);
+
+  await pool.query(`DELETE FROM syslog_vpn_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_vpn_rollup (hour_bucket, site_id, total, failures, successes, ssl_alerts)
+    SELECT date_trunc('hour', se.received_at), kh.site_id,
+      COUNT(*),
+      COUNT(*) FILTER (WHERE se.message ILIKE '%fail%' OR se.message ILIKE '%error%'),
+      COUNT(*) FILTER (WHERE se.message ILIKE '%success%' OR se.message ILIKE '%connected%'),
+      COUNT(*) FILTER (WHERE se.message ILIKE '%ssl-alert%' OR se.message ILIKE '%ssl alert%')
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+      AND se.vendor = 'fortinet'
+      AND (se.structured_data->>'subtype' = 'vpn' OR se.message ILIKE '%vpn%'
+        OR se.message ILIKE '%ipsec%' OR se.message ILIKE '%ssl%')
+    GROUP BY 1, 2
   `, [hourBucket]);
 }
 

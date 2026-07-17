@@ -202,12 +202,18 @@ CREATE INDEX IF NOT EXISTS idx_syslog_srcip ON syslog_entries (srcip, received_a
 -- with `site_id = ANY($allowed) OR site_id IS NULL`, no raw-table join
 -- needed at read time.
 --
--- SCOPE: these two tables cover exactly the 4 widget queries named above.
--- Top Blocked/Failures/Destinations/Security-Events and MITRE coverage rely
--- on message-text ILIKE patterns and destination-IP fields that don't map
--- cleanly onto these dimensions without a much larger, sparser table — they
--- stay on raw syslog_entries for now (still benefit from the work_mem fix;
--- see the Postgres tuning note in installer/README, applied manually).
+-- SCOPE (updated 2026-07, Phase 2): the two tables immediately below cover
+-- the 4 widget queries named above. Top Destinations and MITRE coverage
+-- still rely on destination-IP/message-text fields that don't map cleanly
+-- onto these two tables' dimensions without a much larger, sparser table —
+-- they stay on raw syslog_entries for now (still benefit from the work_mem
+-- fix; see the Postgres tuning note in installer/README, applied manually).
+-- Top Security Events, Top Blocked, Top Connection Failures, and VPN Status
+-- got their OWN purpose-built rollup tables in Phase 2 (below, after
+-- syslog_talker_rollup) once a live EXPLAIN ANALYZE showed Top Security
+-- Events alone taking 17-29s: `severity <= 4` matches ~100% of a typical
+-- day's rows, so no index on that predicate can ever help — it needed
+-- pre-aggregation, not a better index.
 -- ============================================================
 
 -- Severity / category / vendor breakdown (Severity Summary, Timeline,
@@ -256,6 +262,81 @@ CREATE INDEX IF NOT EXISTS idx_talker_rollup_hour
   ON syslog_talker_rollup (hour_bucket DESC);
 CREATE INDEX IF NOT EXISTS idx_talker_rollup_site_hour
   ON syslog_talker_rollup (site_id, hour_bucket DESC);
+
+-- ============================================================
+-- PHASE 2 HOURLY ROLLUP TABLES (perf pass, 2026-07)
+-- Top Security Events, Top Blocked Destinations, Top Connection Failures,
+-- and VPN Status all did their message-text/action classification LIVE on
+-- raw syslog_entries on every dashboard load. Same maintenance model as the
+-- Phase 1 tables above (recompute-window, not increment-on-insert — see the
+-- comment on that model above syslog_stats_rollup) and the SAME site_id
+-- snapshot-at-build-time semantics. Read via getRollupSiteFilter(), exactly
+-- like the Phase 1 tables.
+--
+-- Geo/threat enrichment (country, ASN, abuse score, known-bad) is NOT stored
+-- here — it stays a LIVE join to known_hosts at READ time in api/server.js,
+-- same reasoning as Top Talkers/Top Destinations: enrichment should always
+-- reflect current threat-intel data, not a stale snapshot from whenever the
+-- hour was rolled up.
+-- ============================================================
+
+-- Top Security Events. event_type is the SAME classification CASE expression
+-- the endpoint used to run live (ssl-alert / ssl-exit-error / ipsec-phase1 /
+-- login-failed / traffic-denied / ips-threat / vpn-negotiate / the raw
+-- structured_data.subtype / 'Other'), pre-filtered to severity <= 4 at
+-- rollup-build time since the endpoint never varies that threshold.
+CREATE TABLE IF NOT EXISTS syslog_security_event_rollup (
+  hour_bucket TIMESTAMPTZ NOT NULL,
+  event_type  TEXT        NOT NULL,
+  site_id     INTEGER,                          -- NULL = unassigned/unknown device
+  log_count   BIGINT      NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_security_event_rollup_dims
+  ON syslog_security_event_rollup (hour_bucket, event_type, COALESCE(site_id, -1));
+CREATE INDEX IF NOT EXISTS idx_security_event_rollup_hour
+  ON syslog_security_event_rollup (hour_bucket DESC);
+CREATE INDEX IF NOT EXISTS idx_security_event_rollup_site_hour
+  ON syslog_security_event_rollup (site_id, hour_bucket DESC);
+
+-- Top Blocked Destinations + Top Connection Failures. One shared table —
+-- both widgets group by the same (dstip, service[, vendor]) shape, just with
+-- different classification predicates and a different event_class value, so
+-- a single table with an event_class discriminator avoids two near-duplicate
+-- tables. dstip/service are the raw structured_data values (untouched by the
+-- known_hosts join, which stays live at read time — see note above).
+CREATE TABLE IF NOT EXISTS syslog_dest_event_rollup (
+  hour_bucket TIMESTAMPTZ NOT NULL,
+  event_class TEXT        NOT NULL,              -- 'blocked' | 'failure'
+  dstip       TEXT        NOT NULL,
+  service     TEXT        NOT NULL DEFAULT '',
+  vendor      TEXT,
+  site_id     INTEGER,                          -- NULL = unassigned/unknown device
+  log_count   BIGINT      NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_dest_event_rollup_dims
+  ON syslog_dest_event_rollup (hour_bucket, event_class, dstip, service, vendor, COALESCE(site_id, -1));
+CREATE INDEX IF NOT EXISTS idx_dest_event_rollup_hour_class
+  ON syslog_dest_event_rollup (hour_bucket DESC, event_class);
+CREATE INDEX IF NOT EXISTS idx_dest_event_rollup_site_hour
+  ON syslog_dest_event_rollup (site_id, hour_bucket DESC);
+
+-- VPN Status. Unlike the other Phase 2 tables, this one stores pre-computed
+-- SUMS rather than a dimension to GROUP BY — the 4 metrics (total/failures/
+-- successes/ssl_alerts) are independent, overlapping boolean classifications
+-- of the SAME row (a message can match both 'fail' and 'ssl-alert' at once),
+-- mirroring the source query's four COUNT(*) FILTER(...) clauses exactly.
+CREATE TABLE IF NOT EXISTS syslog_vpn_rollup (
+  hour_bucket TIMESTAMPTZ NOT NULL,
+  site_id     INTEGER,                          -- NULL = unassigned/unknown device
+  total       BIGINT      NOT NULL DEFAULT 0,
+  failures    BIGINT      NOT NULL DEFAULT 0,
+  successes   BIGINT      NOT NULL DEFAULT 0,
+  ssl_alerts  BIGINT      NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_vpn_rollup_dims
+  ON syslog_vpn_rollup (hour_bucket, COALESCE(site_id, -1));
+CREATE INDEX IF NOT EXISTS idx_vpn_rollup_hour
+  ON syslog_vpn_rollup (hour_bucket DESC);
 
 
 -- ============================================================

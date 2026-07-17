@@ -976,6 +976,100 @@ async function recomputeRollupBucket(pool, hourBucket) {
     WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
     GROUP BY 1, 2, 3, 4
   `, [hourBucket]);
+
+  await recomputePhase2RollupBucket(pool, hourBucket);
+}
+
+// Phase 2 rollups (perf pass, 2026-07): Top Security Events / Top Blocked /
+// Top Connection Failures / VPN Status. Same DELETE+INSERT-per-bucket model
+// as recomputeRollupBucket above — see scripts/schema.sql's "PHASE 2 HOURLY
+// ROLLUP TABLES" comment for the full rationale and table shapes. The
+// classification predicates below MUST stay byte-identical to the raw-table
+// versions that used to live in api/server.js's top-security-events/
+// top-blocked/top-failures/vpn-summary handlers — this is a drop-in
+// pre-aggregation of the exact same logic, not a redesign.
+async function recomputePhase2RollupBucket(pool, hourBucket) {
+  await pool.query(`DELETE FROM syslog_security_event_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_security_event_rollup (hour_bucket, event_type, site_id, log_count)
+    SELECT date_trunc('hour', se.received_at),
+      CASE
+        WHEN se.message ILIKE '%ssl-alert%'      THEN 'SSL Alert'
+        WHEN se.message ILIKE '%ssl exit error%' THEN 'SSL Exit Error'
+        WHEN se.message ILIKE '%ipsec%phase 1%'  THEN 'IPSec Phase 1 Error'
+        WHEN se.message ILIKE '%login failed%'   THEN 'Login Failed'
+        WHEN se.message ILIKE '%action=deny%'    THEN 'Traffic Denied'
+        WHEN se.message ILIKE '%utm/ips%'        THEN 'IPS Threat'
+        WHEN se.message ILIKE '%negotiate%'      THEN 'VPN Negotiate'
+        WHEN se.structured_data->>'subtype' IS NOT NULL THEN se.structured_data->>'subtype'
+        ELSE 'Other'
+      END,
+      kh.site_id, COUNT(*)
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+      AND se.severity <= 4
+    GROUP BY 1, 2, 3
+  `, [hourBucket]);
+
+  await pool.query(`DELETE FROM syslog_dest_event_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_dest_event_rollup (hour_bucket, event_class, dstip, service, vendor, site_id, log_count)
+    SELECT date_trunc('hour', se.received_at), 'blocked',
+      se.structured_data->>'dstip', COALESCE(se.structured_data->>'service', ''), se.vendor, kh.site_id, COUNT(*)
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+      AND (
+        LOWER(se.structured_data->>'action') IN ('deny','denied','block','blocked','drop','dropped')
+        OR se.message ILIKE '%action=deny%'
+        OR se.message ILIKE '%action=block%'
+        OR se.message ILIKE '%action=blocked%'
+        OR se.message ILIKE '%action=drop%'
+        OR se.message ILIKE '%denied%'
+        OR se.message ILIKE '%ACL%deny%'
+      )
+      AND se.structured_data->>'dstip' IS NOT NULL
+    GROUP BY 1, 3, 4, 5, 6
+  `, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_dest_event_rollup (hour_bucket, event_class, dstip, service, vendor, site_id, log_count)
+    SELECT date_trunc('hour', se.received_at), 'failure',
+      se.structured_data->>'dstip', COALESCE(se.structured_data->>'service', ''), se.vendor, kh.site_id, COUNT(*)
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+      AND (
+        (se.vendor = 'fortinet' AND se.message ILIKE '%Connection Failed%')
+        OR (se.vendor = 'paloalto' AND se.message ILIKE '%session_end%' AND se.message ILIKE '%bytes%0%')
+        OR (se.vendor = 'cisco' AND (se.message ILIKE '%unreachable%' OR se.message ILIKE '%timed out%'))
+        OR (se.vendor NOT IN ('fortinet','paloalto','cisco') AND (
+          se.message ILIKE '%connection failed%'
+          OR se.message ILIKE '%connection refused%'
+          OR se.message ILIKE '%host unreachable%'
+          OR se.message ILIKE '%timed out%'
+        ))
+      )
+      AND se.structured_data->>'dstip' IS NOT NULL
+    GROUP BY 1, 3, 4, 5, 6
+  `, [hourBucket]);
+
+  await pool.query(`DELETE FROM syslog_vpn_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_vpn_rollup (hour_bucket, site_id, total, failures, successes, ssl_alerts)
+    SELECT date_trunc('hour', se.received_at), kh.site_id,
+      COUNT(*),
+      COUNT(*) FILTER (WHERE se.message ILIKE '%fail%' OR se.message ILIKE '%error%'),
+      COUNT(*) FILTER (WHERE se.message ILIKE '%success%' OR se.message ILIKE '%connected%'),
+      COUNT(*) FILTER (WHERE se.message ILIKE '%ssl-alert%' OR se.message ILIKE '%ssl alert%')
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+      AND se.vendor = 'fortinet'
+      AND (se.structured_data->>'subtype' = 'vpn' OR se.message ILIKE '%vpn%'
+        OR se.message ILIKE '%ipsec%' OR se.message ILIKE '%ssl%')
+    GROUP BY 1, 2
+  `, [hourBucket]);
 }
 
 // Runs against the supplied pool. Never throws — caller (the timer callbacks

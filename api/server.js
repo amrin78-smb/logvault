@@ -339,28 +339,21 @@ app.get('/api/stats/by-vendor', asyncHandler(async (req, res) => {
   res.json({ hours, data: rows });
 }));
 
+// Reads syslog_security_event_rollup (scripts/schema.sql "PHASE 2 HOURLY
+// ROLLUP TABLES") instead of scanning raw syslog_entries. This endpoint used
+// to take 17-29s live: `severity <= 4` matches ~100% of a typical day's rows
+// here, so the filter has no selectivity and no index can help it — it
+// needed pre-aggregation, not a better index. See CLAUDE.md's Phase 2
+// rollup write-up for the full incident.
 app.get('/api/stats/top-security-events', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const sf = getStatsSiteFilter(req.rbac, 2, 'syslog_entries');
+  const sf = getRollupSiteFilter(req.rbac, 2);
   const cacheKey = `top-security-events:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 30000, async () => {
     const { rows } = await pool.query(`
-      SELECT
-        CASE
-          WHEN message ILIKE '%ssl-alert%'     THEN 'SSL Alert'
-          WHEN message ILIKE '%ssl exit error%' THEN 'SSL Exit Error'
-          WHEN message ILIKE '%ipsec%phase 1%'  THEN 'IPSec Phase 1 Error'
-          WHEN message ILIKE '%login failed%'   THEN 'Login Failed'
-          WHEN message ILIKE '%action=deny%'    THEN 'Traffic Denied'
-          WHEN message ILIKE '%utm/ips%'        THEN 'IPS Threat'
-          WHEN message ILIKE '%negotiate%'      THEN 'VPN Negotiate'
-          WHEN structured_data->>'subtype' IS NOT NULL THEN structured_data->>'subtype'
-          ELSE 'Other'
-        END AS event_type,
-        COUNT(*) AS count
-      FROM syslog_entries
-      WHERE received_at > NOW() - make_interval(hours => $1)
-        AND severity <= 4
+      SELECT event_type, SUM(log_count)::bigint AS count
+      FROM syslog_security_event_rollup
+      WHERE hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
       ${sf.clause}
       GROUP BY event_type
       ORDER BY count DESC
@@ -371,58 +364,36 @@ app.get('/api/stats/top-security-events', asyncHandler(async (req, res) => {
   res.json(data);
 }));
 
+// Reads syslog_dest_event_rollup WHERE event_class = 'failure' (scripts/schema.sql
+// "PHASE 2 HOURLY ROLLUP TABLES") instead of scanning raw syslog_entries. Geo/
+// threat enrichment stays a LIVE join to known_hosts on dstip — same reasoning
+// as top-talkers/top-destinations, so enrichment always reflects current
+// threat-intel data rather than a stale rollup-time snapshot.
 app.get('/api/stats/top-failures', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const sf = getStatsSiteFilter(req.rbac, 2, 'syslog_entries');
+  const sf = getRollupSiteFilter(req.rbac, 2);
   const cacheKey = `top-failures:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 30000, async () => {
     const { rows } = await pool.query(`
       SELECT
-        COALESCE(structured_data->>'dstip', 'unknown') AS dst_ip,
-        COALESCE(structured_data->>'service', '') AS service,
+        agg.dstip AS dst_ip, agg.service,
         kh.country_code, kh.country_name, kh.asn_org,
         kh.abuse_score, kh.is_known_bad, kh.is_external,
-        COUNT(*) AS fail_count
-      FROM syslog_entries
-      -- This widget displays the DESTINATION IP, so join geo/threat on dstip (the
-      -- external IP in firewall logs), not source_ip (the internal device). Use
-      -- host(ip_address): known_hosts.ip_address is INET and is stored WITH a /32
-      -- mask (e.g. 17.248.154.174/32), so ip_address::text renders "…/32" and never
-      -- matched the unmasked dstip string. host() strips the mask to the bare
-      -- address and works on any inet. The IPv4-shape guard limits the join to
-      -- address-shaped dstip values. This is a LEFT JOIN, so rows are kept even when
-      -- no known_hosts match (geo cols NULL).
+        agg.fail_count
+      FROM (
+        SELECT dstip, service, SUM(log_count) AS fail_count
+        FROM syslog_dest_event_rollup
+        WHERE event_class = 'failure'
+          AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
+        ${sf.clause}
+        GROUP BY dstip, service
+      ) agg
+      -- host(ip_address): known_hosts.ip_address is INET stored WITH a /32 mask
+      -- (e.g. 17.248.154.174/32); host() strips it so it matches the unmasked
+      -- dstip string. LEFT JOIN keeps rows with no known_hosts match (geo NULL).
       LEFT JOIN known_hosts kh
-        ON structured_data->>'dstip' ~ '^[0-9.]+$'
-       AND host(kh.ip_address) = structured_data->>'dstip'
-      WHERE received_at > NOW() - make_interval(hours => $1)
-        AND (
-          -- Fortinet connection failures
-          (syslog_entries.vendor = 'fortinet' AND message ILIKE '%Connection Failed%')
-          OR
-          -- Palo Alto session end with no bytes
-          (syslog_entries.vendor = 'paloalto' AND message ILIKE '%session_end%' AND message ILIKE '%bytes%0%')
-          OR
-          -- Cisco TCP unreachable / timeout
-          (syslog_entries.vendor = 'cisco' AND (
-            message ILIKE '%unreachable%'
-            OR message ILIKE '%timed out%'
-          ))
-          OR
-          -- Generic connection failure indicators
-          (syslog_entries.vendor NOT IN ('fortinet','paloalto','cisco') AND (
-            message ILIKE '%connection failed%'
-            OR message ILIKE '%connection refused%'
-            OR message ILIKE '%host unreachable%'
-            OR message ILIKE '%timed out%'
-          ))
-        )
-        AND structured_data->>'dstip' IS NOT NULL
-      ${sf.clause}
-      GROUP BY structured_data->>'dstip', structured_data->>'service',
-        kh.country_code, kh.country_name, kh.asn_org,
-        kh.abuse_score, kh.is_known_bad, kh.is_external
-      ORDER BY fail_count DESC
+        ON agg.dstip ~ '^[0-9.]+$' AND host(kh.ip_address) = agg.dstip
+      ORDER BY agg.fail_count DESC
       LIMIT 5
     `, [hours, ...sf.params]);
     return { data: rows };
@@ -430,52 +401,31 @@ app.get('/api/stats/top-failures', asyncHandler(async (req, res) => {
   res.json(data);
 }));
 
+// Reads syslog_dest_event_rollup WHERE event_class = 'blocked' — see the
+// top-failures comment above for the rollup table and live-enrichment
+// rationale (identical here, just the other event_class).
 app.get('/api/stats/top-blocked', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const sf = getStatsSiteFilter(req.rbac, 2, 'syslog_entries');
+  const sf = getRollupSiteFilter(req.rbac, 2);
   const cacheKey = `top-blocked:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 30000, async () => {
     const { rows } = await pool.query(`
       SELECT
-        COALESCE(structured_data->>'dstip', 'unknown') AS dst_ip,
-        COALESCE(structured_data->>'service', '') AS service,
-        syslog_entries.vendor,
+        agg.dstip AS dst_ip, agg.service, agg.vendor,
         kh.country_code, kh.country_name, kh.asn_org,
         kh.abuse_score, kh.is_known_bad, kh.is_external,
-        COUNT(*) AS deny_count
-      FROM syslog_entries
-      -- This widget displays the DESTINATION IP, so join geo/threat on dstip (the
-      -- external IP in firewall logs), not source_ip (the internal device). Use
-      -- host(ip_address): known_hosts.ip_address is INET and is stored WITH a /32
-      -- mask (e.g. 17.248.154.174/32), so ip_address::text renders "…/32" and never
-      -- matched the unmasked dstip string. host() strips the mask to the bare
-      -- address and works on any inet. The IPv4-shape guard limits the join to
-      -- address-shaped dstip values. This is a LEFT JOIN, so rows are kept even when
-      -- no known_hosts match (geo cols NULL).
+        agg.deny_count
+      FROM (
+        SELECT dstip, service, vendor, SUM(log_count) AS deny_count
+        FROM syslog_dest_event_rollup
+        WHERE event_class = 'blocked'
+          AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
+        ${sf.clause}
+        GROUP BY dstip, service, vendor
+      ) agg
       LEFT JOIN known_hosts kh
-        ON structured_data->>'dstip' ~ '^[0-9.]+$'
-       AND host(kh.ip_address) = structured_data->>'dstip'
-      WHERE received_at > NOW() - make_interval(hours => $1)
-        AND (
-          -- Vendor-AGNOSTIC block detection. The old per-vendor branches missed real
-          -- data (e.g. Fortinet logs the action 'blocked', Palo Alto 'deny'/'drop')
-          -- and silently returned nothing. Match the actual action values seen in the
-          -- data (case-insensitive), with message fallbacks for vendors (e.g. Cisco
-          -- ACLs) that don't set a structured action field.
-          LOWER(structured_data->>'action') IN ('deny','denied','block','blocked','drop','dropped')
-          OR message ILIKE '%action=deny%'
-          OR message ILIKE '%action=block%'
-          OR message ILIKE '%action=blocked%'
-          OR message ILIKE '%action=drop%'
-          OR message ILIKE '%denied%'
-          OR message ILIKE '%ACL%deny%'
-        )
-        AND structured_data->>'dstip' IS NOT NULL
-      ${sf.clause}
-      GROUP BY structured_data->>'dstip', structured_data->>'service', syslog_entries.vendor,
-        kh.country_code, kh.country_name, kh.asn_org,
-        kh.abuse_score, kh.is_known_bad, kh.is_external
-      ORDER BY deny_count DESC
+        ON agg.dstip ~ '^[0-9.]+$' AND host(kh.ip_address) = agg.dstip
+      ORDER BY agg.deny_count DESC
       LIMIT 5
     `, [hours, ...sf.params]);
     return { data: rows };
@@ -544,20 +494,22 @@ app.get('/api/stats/mitre-coverage', asyncHandler(async (req, res) => {
   res.json(data);
 }));
 
+// Reads syslog_vpn_rollup (scripts/schema.sql "PHASE 2 HOURLY ROLLUP TABLES")
+// instead of scanning raw syslog_entries. The 4 metrics are independent,
+// overlapping FILTER counts (a message can count in more than one), so this
+// SUMs each pre-computed column across the window rather than re-deriving
+// them — matches the rollup's own build query exactly.
 app.get('/api/stats/vpn-summary', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const sf = getStatsSiteFilter(req.rbac, 2, 'syslog_entries');
+  const sf = getRollupSiteFilter(req.rbac, 2);
   const { rows } = await pool.query(`
     SELECT
-      COUNT(*) AS total,
-      COUNT(*) FILTER (WHERE message ILIKE '%fail%' OR message ILIKE '%error%') AS failures,
-      COUNT(*) FILTER (WHERE message ILIKE '%success%' OR message ILIKE '%connected%') AS successes,
-      COUNT(*) FILTER (WHERE message ILIKE '%ssl-alert%' OR message ILIKE '%ssl alert%') AS ssl_alerts
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
-      AND vendor = 'fortinet'
-      AND (structured_data->>'subtype' = 'vpn' OR message ILIKE '%vpn%'
-        OR message ILIKE '%ipsec%' OR message ILIKE '%ssl%')
+      COALESCE(SUM(total), 0)::bigint      AS total,
+      COALESCE(SUM(failures), 0)::bigint   AS failures,
+      COALESCE(SUM(successes), 0)::bigint  AS successes,
+      COALESCE(SUM(ssl_alerts), 0)::bigint AS ssl_alerts
+    FROM syslog_vpn_rollup
+    WHERE hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
     ${sf.clause}
   `, [hours, ...sf.params]);
   res.json(rows[0]);
@@ -638,7 +590,15 @@ app.get('/api/stats/storage', asyncHandler(async (req, res) => {
     // rows live in the daily child partitions (+ syslog_entries_legacy). pg_partition_tree
     // includes the parent and every partition; GREATEST falls back to the plain size if
     // the table is somehow not partitioned (returns no tree rows -> NULL -> 0).
-    pool.query(`SELECT pg_size_pretty(pg_database_size('logvault')) AS db_size, pg_database_size('logvault') AS db_size_bytes, pg_size_pretty(GREATEST(pg_total_relation_size('syslog_entries'), COALESCE((SELECT SUM(pg_total_relation_size(relid)) FROM pg_partition_tree('syslog_entries')), 0))) AS table_size, GREATEST(pg_total_relation_size('syslog_entries'), COALESCE((SELECT SUM(pg_total_relation_size(relid)) FROM pg_partition_tree('syslog_entries')), 0)) AS table_size_bytes, (SELECT COUNT(*) FROM syslog_entries) AS total_rows, (SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => 24)) AS rows_24h, (SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - make_interval(days => 7)) AS rows_7d`),
+    // total_rows uses pg_class.reltuples (planner statistics, refreshed by
+    // autovacuum/ANALYZE) summed across the partition tree, NOT an exact
+    // COUNT(*) — an exact count over the full multi-GB partitioned table took
+    // ~5s live for a number that's purely informational display on a widget
+    // (never used for filtering/pagination), so an approximate count (same
+    // trade-off Postgres's own \dt+ and pg_stat_user_tables use) is the right
+    // call here. rows_24h/rows_7d stay exact — those are bounded, cheap scans
+    // via the received_at index on only the last 1-7 days of partitions.
+    pool.query(`SELECT pg_size_pretty(pg_database_size('logvault')) AS db_size, pg_database_size('logvault') AS db_size_bytes, pg_size_pretty(GREATEST(pg_total_relation_size('syslog_entries'), COALESCE((SELECT SUM(pg_total_relation_size(relid)) FROM pg_partition_tree('syslog_entries')), 0))) AS table_size, GREATEST(pg_total_relation_size('syslog_entries'), COALESCE((SELECT SUM(pg_total_relation_size(relid)) FROM pg_partition_tree('syslog_entries')), 0)) AS table_size_bytes, (SELECT COALESCE(SUM(c.reltuples), 0)::bigint FROM pg_partition_tree('syslog_entries') pt JOIN pg_class c ON c.oid = pt.relid) AS total_rows, (SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => 24)) AS rows_24h, (SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - make_interval(days => 7)) AS rows_7d`),
     pool.query(`SELECT DATE_TRUNC('day', received_at) AS day, COUNT(*) AS log_count FROM syslog_entries WHERE received_at > NOW() - make_interval(days => 7) GROUP BY day ORDER BY day`),
     pool.query(`SELECT MIN(received_at) AS oldest_log FROM syslog_entries`),
     pool.query(`SELECT EXTRACT(DAY FROM (NOW() - MIN(received_at))) AS days_stored FROM syslog_entries`),
@@ -2328,6 +2288,10 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.23.0': [
+    'Performance: 4 dashboard widgets — Top Security Events, Top Blocked Destinations, Top Connection Failures, and VPN Status — were classifying every matching log line live on each page load. Top Security Events alone was measured taking 17-29 seconds because its filter matches nearly every log line in a typical day, so there was no way to speed it up with a better index — it needed pre-computed data instead. All 4 now read from small, pre-aggregated summary tables kept up to date in the background, the same technique already used for the main dashboard KPIs. Typical load time for these 4 widgets drops from several seconds (up to ~29s for the worst case) to well under a second.',
+    'The "Total logs stored" figure on the Storage panel now uses the database\'s own fast built-in estimate instead of recounting every row on every check — shaves a further ~5 seconds off that widget with no meaningful loss of accuracy for a number that\'s purely informational.',
+  ],
   '2.22.3': [
     'ROOT CAUSE FIX: found the real reason the version number in the sidebar kept showing an old release (v2.18.12) on every fresh page load, which had been misdiagnosed as a network caching problem in 2.22.1/2.22.2 — it was neither. A separate, forgotten copy of the version number, in a file the release process never actually updates, was silently stuck at v2.18.12 this whole time. Every page load showed that wrong number for a brief moment before a live check quietly corrected it — which, glanced at quickly or caught by a screenshot, looks exactly like the app "reverting" to an old version. The app now reads the version from one single, correctly-updated place, so this can\'t drift out of sync again.',
   ],
