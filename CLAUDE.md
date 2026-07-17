@@ -1035,6 +1035,33 @@ needing a different fix:
    maintenance cadence as the two rollups above — see if this needs picking up before
    assuming "add an index" will help here, it won't.
 
+**Frontend code-splitting (added 2.22.0) — a THIRD, independent axis of "feels
+slow."** Fast backend queries alone don't guarantee a fast-feeling page: `frontend/src/app/page.tsx` is a single client component that switches between 10
+tabs via `useState<Tab>` (not separate Next.js routes), and every tab's component
+used to be a plain static `import` at the top of the file — meaning the FULL app
+(~1.4MB of JS: Log Explorer, Live Tail, Alerts, Network Health, Security,
+Intelligence, Known Hosts, Reports, Settings, all of it) loaded and parsed on
+every visit, even if the user only ever looks at Dashboard. `next/dynamic` was
+used **zero times** anywhere before this. Fixed by converting the 9 non-Dashboard
+tab imports to `dynamic(() => import(...), { ssr: false, loading: () => tabLoading })`
+— each is now its own on-demand chunk (verified post-build: grepping each
+component's distinctive code confirms it's isolated to its own dedicated chunk
+file, separate from the Dashboard's own widgets). **Dashboard's own widgets
+(`SeverityChart`, `TimelineChart`, `DashboardWidgets` exports, etc.) were
+deliberately left as regular static imports** — they're needed immediately since
+Dashboard is the default tab, so lazy-loading them would only add loading-state
+complexity for content shown right away; only defer what genuinely isn't needed
+on first paint. `ssr: false` is safe here (not just an optimization) because
+`tab` state always starts at `'dashboard'` and only changes via client
+interaction, so none of these branches are ever true during the server-render
+pass regardless — and `LiveTail` specifically needs it, since it depends on
+browser-only WebSocket APIs that would error under SSR.
+
+If a future non-Dashboard tab component grows a new heavy dependency, it's
+already isolated in its own chunk — no further action needed. If a NEW tab is
+ever added, default to `next/dynamic` for it from the start rather than a
+static import, unless (like Dashboard) it's the tab shown on initial load.
+
 ---
 
 ## Alert System

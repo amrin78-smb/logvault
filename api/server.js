@@ -2306,6 +2306,10 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.22.0': [
+    'Performance: the app was shipping the code for ALL 10 tabs (Dashboard, Log Explorer, Live Tail, Alerts, Network Health, Security, Intelligence, Known Hosts, Reports, Settings) on every page load, regardless of which one you actually opened — around 1.4MB of JavaScript loaded upfront every time. The 9 tabs other than Dashboard now load their code on-demand, the first time you click into them, instead of all at once on login.',
+    'This is a separate fix from the recent backend query-speed work — that made individual API responses much faster, this reduces how much the browser has to download and run before the page can even start rendering. Both contribute to a snappier feel, especially on first load.',
+  ],
   '2.21.1': [
     'Performance: several Security tab endpoints (Summary, Auth Failures, Brute Force, Failed Logins by Country) carried a leftover "double-check" pattern from before every log parser reliably tagged failed-login events — a live 30-day check proved that double-check now catches zero events the primary detection misses, while making these queries dramatically slower to plan. Removed; verified byte-for-byte identical results before and after. Measured 11-40x faster on the affected queries.',
   ],

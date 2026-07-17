@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import dynamic          from 'next/dynamic';
 import { useSession }  from 'next-auth/react';
 import SeverityChart   from '@/components/SeverityChart';
 import TimelineChart   from '@/components/TimelineChart';
@@ -9,24 +10,44 @@ import TopDestinations from '@/components/TopDestinations';
 import VendorBreakdown from '@/components/VendorBreakdown';
 import { TopSecurityEvents, TopBlockedDestinations, TopConnectionFailures, VPNStatus, ActiveAlertsSummary, InterfaceEventsSummary, FirewallActions, CapacityIngestionHealth, WhatsChanged, RiskiestEntities } from '@/components/DashboardWidgets';
 import { KnownBadSources } from '@/components/ThreatIntel';
-import LogExplorer     from '@/components/LogExplorer';
-import LiveTail        from '@/components/LiveTail';
-import AlertEvents     from '@/components/AlertEvents';
-import NetworkHealth   from '@/components/NetworkHealth';
-import SecurityAnalysis from '@/components/SecurityAnalysis';
-import IntelligenceConsole from '@/components/IntelligenceConsole';
 import StorageWidget   from '@/components/StorageWidget';
-import KnownHosts      from '@/components/KnownHosts';
-import ReportsTab      from '@/components/ReportsTab';
-import Settings        from '@/components/Settings';
 import Header          from '@/components/Header';
 import AlertBanner     from '@/components/AlertBanner';
 import TimeRangePicker from '@/components/TimeRangePicker';
 import ErrorBoundary   from '@/components/ErrorBoundary';
 import { useTheme }    from '@/components/ThemeContext';
 import { useLicense, LicenseDisabledScreen, LicenseBanner } from '@/components/LicenseGuard';
-import { PageHeader }  from '@/components/ui';
+import { PageHeader, Spinner } from '@/components/ui';
 import { version as APP_VERSION } from '../../package.json';
+
+// ── Code-split, non-Dashboard tabs (perf pass, 2026-07) ──────────────
+// The Dashboard tab's own widgets (SeverityChart, TimelineChart, DashboardWidgets,
+// etc. above) stay as regular static imports — they're needed immediately since
+// Dashboard is the default tab, so lazy-loading them would only add loading-state
+// complexity for content shown right away. Every OTHER tab's component is loaded
+// on-demand instead of being bundled into the initial page load: a live audit found
+// the app shipping ALL 10 tabs' JS (~1.4MB total) upfront regardless of which tab
+// the user actually opens, with zero use of next/dynamic anywhere. These 9 imports
+// are the fix — each becomes its own chunk, fetched only the first time its tab is
+// selected. ssr:false is safe (not just an optimization) for all of them: `tab`
+// state defaults to 'dashboard' and only ever changes via client-side interaction,
+// so none of these conditionally-rendered branches are ever true during the
+// server-render pass anyway — and LiveTail specifically depends on browser-only
+// WebSocket APIs that would break under SSR if it ever were.
+const tabLoading = (
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 0' }}>
+    <Spinner size={22} />
+  </div>
+);
+const LogExplorer      = dynamic(() => import('@/components/LogExplorer'),      { ssr: false, loading: () => tabLoading });
+const LiveTail         = dynamic(() => import('@/components/LiveTail'),         { ssr: false, loading: () => tabLoading });
+const AlertEvents      = dynamic(() => import('@/components/AlertEvents'),      { ssr: false, loading: () => tabLoading });
+const NetworkHealth    = dynamic(() => import('@/components/NetworkHealth'),    { ssr: false, loading: () => tabLoading });
+const SecurityAnalysis = dynamic(() => import('@/components/SecurityAnalysis'), { ssr: false, loading: () => tabLoading });
+const IntelligenceConsole = dynamic(() => import('@/components/IntelligenceConsole'), { ssr: false, loading: () => tabLoading });
+const KnownHosts       = dynamic(() => import('@/components/KnownHosts'),       { ssr: false, loading: () => tabLoading });
+const ReportsTab       = dynamic(() => import('@/components/ReportsTab'),       { ssr: false, loading: () => tabLoading });
+const Settings         = dynamic(() => import('@/components/Settings'),         { ssr: false, loading: () => tabLoading });
 
 type Tab = 'dashboard' | 'explorer' | 'livetail' | 'alerts' | 'health' | 'security' | 'intelligence' | 'hosts' | 'reports' | 'settings';
 export interface ExplorerFilter { severity?: string; vendor?: string; host?: string; hours?: string; category?: string; q?: string; technique?: string; threat?: string; }
