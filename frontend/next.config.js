@@ -1,4 +1,15 @@
 /** @type {import('next').NextConfig} */
+// Single source of truth for the version shown in the UI: the ROOT package.json
+// (the one release/deploy tooling actually bumps), not frontend/package.json.
+// frontend/package.json's own "version" field is a separate, unrelated file that
+// nothing in the release process ever touches — it silently drifted years behind
+// (stuck at 2.18.12 while root reached 2.22.x) and was the real cause of the app
+// appearing to show a stale version on every fresh page load: page.tsx fell back
+// to a build-time-baked frontend/package.json import before its live /api/health
+// fetch resolved and corrected it a moment later, which reads exactly like
+// network-level cache "flapping" if you look at the screen in that brief window.
+const rootVersion = require('../package.json').version;
+
 const nextConfig = {
   env: {
     NEXTAUTH_URL: process.env.NEXTAUTH_URL,
@@ -6,6 +17,7 @@ const nextConfig = {
     // keeps working during the NSSM env migration if only the old var is set.
     NEXT_PUBLIC_NOCVAULT_HUB_URL:
       process.env.NEXT_PUBLIC_NOCVAULT_HUB_URL || process.env.NEXT_PUBLIC_NETVAULT_HUB_URL,
+    NEXT_PUBLIC_APP_VERSION: rootVersion,
   },
 
   // NOTE: /api/* is proxied to the Express API by the edge middleware in

@@ -1121,6 +1121,52 @@ caching layer in the path, prefer cache-busting the request itself over
 relying solely on response headers — it's the only fix that's correct
 regardless of what any intermediary does.
 
+**The actual root cause (2.22.3): there was no network cache at all — a
+build ever read the WRONG file for its version number.** After 2.22.1 *and*
+2.22.2 both shipped and the symptom still hadn't gone away — deterministically
+on every hard refresh, even with the browser cache manually cleared —
+`view-source:` on the live page proved the raw, pre-JavaScript server-rendered
+HTML itself literally contained `v2.18.12`, baked directly into the response.
+That's not something any HTTP cache (browser or proxy) can explain; it means
+the value really was `2.18.12` at the moment the page was rendered. Root
+cause: `page.tsx` read its version-number fallback via
+`import { version } from '../../package.json'`, which resolves to
+**`frontend/package.json`** — a second, entirely separate `version` field
+from the root `package.json` that every release in this document actually
+bumps (`npm version patch` at the repo root). Nothing had ever kept
+`frontend/package.json`'s version field in sync; it had been stuck at
+`2.18.12` since long before this incident, undetected because it's cosmetic
+and every other release note/behavior was correct. `page.tsx` renders this
+build-time fallback on first paint (SSR, before hydration), then overwrites
+it with the live `/api/health` response a moment later — so on a fast
+connection you'd see the wrong number flash for a fraction of a second before
+it self-corrected, which glanced at quickly, or caught in a screenshot, or
+hit on a slow/first load where hydration takes longer, looks exactly like the
+app "reverting" to an old version. **This is almost certainly what the
+original version-flapping symptom actually was, days before any caching
+theory entered the picture** — the Cache-Control headers (2.22.1) and
+request cache-busting (2.22.2) were reasonable, defensible responses to the
+*evidence available at the time* (intermittent staleness, un-reproducible
+via direct curl) and are good practice regardless, but they were treating a
+symptom of this bug, not the cause. Fixed by making the version number come
+from exactly one place: `next.config.js` now reads the root `package.json`
+directly (`require('../package.json').version`) and injects it as
+`NEXT_PUBLIC_APP_VERSION`; `page.tsx` reads that env var instead of importing
+any package.json itself. This can't drift out of sync again because there is
+only one source left to read from.
+
+**Lesson for next time:** when a bug reproduces consistently in the browser
+but the server-side evidence (`curl`, localhost checks) looks clean, the
+instinct to suspect network infrastructure is reasonable — but before
+committing to that theory, check `view-source:` (or the actual HTTP response
+body) directly for the suspicious value FIRST. If the raw response already
+contains the wrong value, the bug is server-side (wrong data/wrong build),
+not a caching layer, no matter how deterministic or hard-refresh-proof it
+looks — determinism and hard-refresh-immunity are consistent with a stale
+*value* just as much as a stale *cache entry*, and checking the raw response
+is a five-second test that would have shortened this whole diagnosis
+considerably.
+
 ---
 
 ## Alert System

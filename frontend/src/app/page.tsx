@@ -18,7 +18,9 @@ import ErrorBoundary   from '@/components/ErrorBoundary';
 import { useTheme }    from '@/components/ThemeContext';
 import { useLicense, LicenseDisabledScreen, LicenseBanner } from '@/components/LicenseGuard';
 import { PageHeader, Spinner } from '@/components/ui';
-import { version as APP_VERSION } from '../../package.json';
+// Sourced from the ROOT package.json via next.config.js, not a local import of
+// frontend/package.json — see the comment there for why that distinction matters.
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION;
 
 // ── Code-split, non-Dashboard tabs (perf pass, 2026-07) ──────────────
 // The Dashboard tab's own widgets (SeverityChart, TimelineChart, DashboardWidgets,

@@ -2328,6 +2328,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.22.3': [
+    'ROOT CAUSE FIX: found the real reason the version number in the sidebar kept showing an old release (v2.18.12) on every fresh page load, which had been misdiagnosed as a network caching problem in 2.22.1/2.22.2 — it was neither. A separate, forgotten copy of the version number, in a file the release process never actually updates, was silently stuck at v2.18.12 this whole time. Every page load showed that wrong number for a brief moment before a live check quietly corrected it — which, glanced at quickly or caught by a screenshot, looks exactly like the app "reverting" to an old version. The app now reads the version from one single, correctly-updated place, so this can\'t drift out of sync again.',
+  ],
   '2.22.2': [
     'FOLLOW-UP FIX: 2.22.1 stopped NEW stale copies from being cached, but on a network with a caching proxy in the path, a copy already cached BEFORE that fix shipped could keep being served indefinitely, since that fix could not reach in and remove something already stored elsewhere. The collector-status indicator and version number in the sidebar now bust that cache directly on every check, so they can never be served a stored answer again, regardless of what any proxy already has saved or how it behaves.',
   ],
