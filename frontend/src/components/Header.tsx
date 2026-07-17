@@ -87,18 +87,23 @@ export default function Header() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Poll collector health every 30s
+  // Poll collector health every 30s.
+  // Cache-busting query param (perf-incident follow-up, 2026-07): a stale
+  // response for this exact URL was already cached by network infra BEFORE
+  // 2.22.1 added Cache-Control headers, and that entry can outlive the fix
+  // indefinitely since our headers only stop NEW caching, not evict what's
+  // already stored. A per-request unique URL can never hit that entry.
   const pollHealth = useCallback(async () => {
     try {
-      const r = await fetch('/api/health');
+      const r = await fetch(`/api/health?_=${Date.now()}`);
       setCollectorOnline(r.ok);
     } catch { setCollectorOnline(false); }
   }, []);
 
-  // Poll unacknowledged alert count every 30s
+  // Poll unacknowledged alert count every 30s (same cache-busting as above).
   const pollUnacked = useCallback(async () => {
     try {
-      const r = await fetch('/api/alerts/unacked-count');
+      const r = await fetch(`/api/alerts/unacked-count?_=${Date.now()}`);
       if (!r.ok) return;
       const d = await r.json();
       const n = typeof d === 'number' ? d : (d.count ?? d.unacked ?? 0);

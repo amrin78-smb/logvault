@@ -158,8 +158,9 @@ export default function Home() {
     } catch {}
   }, [hours]);
 
+  // Cache-busting query param: see Header.tsx pollHealth comment.
   const fetchHealth = useCallback(async () => {
-    try { const r = await fetch('/api/health'); const d = await r.json(); setHealth(d); } catch {}
+    try { const r = await fetch(`/api/health?_=${Date.now()}`); const d = await r.json(); setHealth(d); } catch {}
   }, []);
 
   useEffect(() => { fetchSummary(); fetchHealth(); }, [fetchSummary, fetchHealth]);

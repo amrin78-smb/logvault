@@ -1095,6 +1095,32 @@ order matters). Don't ever loosen either of these without a very specific
 reason — this class of bug is expensive to diagnose and easy to reintroduce
 silently by adding a new response path that forgets to set these headers.
 
+**Follow-up (2.22.2): headers alone don't evict what a proxy already cached.**
+Even after 2.22.1 shipped, the SAME symptom (stale version number, stale
+"OFFLINE" collector-status badge) kept recurring on the affected network days
+later, deterministically on every hard refresh. The 2.22.1 fix only stops a
+compliant cache from storing a *new* response — it cannot reach into a
+proxy's existing store and evict an entry that was cached *before* the fix
+existed (when the response genuinely had no `Cache-Control` at all). If that
+proxy's TTL for the cached entry is long (or effectively indefinite because
+its heuristic caching had nothing but a weak `ETag` to go on), the stale
+entry can outlive the fix by days with zero server-side symptom — direct
+`curl`/localhost checks against the origin looked completely correct the
+whole time, because they never round-tripped through the same proxy. Fixed
+`Header.tsx`'s `pollHealth`/`pollUnacked` and `page.tsx`'s `fetchHealth` (the
+three call sites feeding the version number and the collector-status pill)
+to append a `?_=${Date.now()}` cache-busting query param on every request —
+a proxy (or browser) cache is keyed on URL, so a URL it has never seen before
+can never be served from its existing store, regardless of whether that
+cache honors `Cache-Control` correctly or not. **Lesson: `Cache-Control:
+no-store` prevents future staleness; it does not retroactively fix a
+resource that was already cached under the old (headerless) behavior.** For
+any endpoint whose staleness is directly user-visible (status indicators,
+version numbers) and that lives on a customer network with an unknown/opaque
+caching layer in the path, prefer cache-busting the request itself over
+relying solely on response headers — it's the only fix that's correct
+regardless of what any intermediary does.
+
 ---
 
 ## Alert System

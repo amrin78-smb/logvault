@@ -2328,6 +2328,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.22.2': [
+    'FOLLOW-UP FIX: 2.22.1 stopped NEW stale copies from being cached, but on a network with a caching proxy in the path, a copy already cached BEFORE that fix shipped could keep being served indefinitely, since that fix could not reach in and remove something already stored elsewhere. The collector-status indicator and version number in the sidebar now bust that cache directly on every check, so they can never be served a stored answer again, regardless of what any proxy already has saved or how it behaves.',
+  ],
   '2.22.1': [
     'URGENT FIX: every API and page response was missing any explicit "do not cache" instruction — only a weak validity marker (ETag) that some networks\' caching proxies/security appliances treat as permission to cache anyway. On a network with such a proxy in the path, this could show different users (or the same user reloading) a stale, out-of-date copy of the app intermittently — a hard refresh or private/incognito browsing does NOT fix this, because that kind of cache lives on network infrastructure, not in the browser. Every response now explicitly forbids caching.',
     'Fixed a real bug where a background idle-timeout check was silently failing on every page load (blocked by the browser for security reasons) because it was checking the wrong server for a setting it should have checked locally. No user-visible symptom before this fix — it silently fell back to its default value — but worth fixing since it was a genuine bug once found.',
