@@ -1396,14 +1396,23 @@ app.get('/api/security/summary', asyncHandler(async (req, res) => {
   const sfA = getSiteFilter(req.rbac, 2, 'a');               // alias 'a' subquery (brute-force success)
   const sfSe = getSiteFilter(req.rbac, 2, 'se');             // alias 'se' subquery (known-bad join)
   const [authFail, denies, vpn, ips, afterHours, bruteSuccess, vpnLoginFail, knownBadFail] = await Promise.all([
-    // Real auth failure = normalized subcategory (vendor-agnostic), with a tight
-    // message-regex fallback. The old broad %fail%/%error% match counted SSL teardown
-    // noise (ssl-exit-error/ssl-alert/negotiate) as login failures — dropped.
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND (structured_data->>'subcategory' IN ('login_failed','auth_failed') OR message ILIKE '%login failed%' OR message ILIKE '%authentication fail%') ${sf.clause}`, [hours, ...sf.params]),
+    // Real auth failure = normalized subcategory (vendor-agnostic). The old broad
+    // %fail%/%error% match counted SSL teardown noise (ssl-exit-error/ssl-alert/
+    // negotiate) as login failures — dropped. The message ILIKE fallback that used
+    // to sit alongside the subcategory check was ALSO dropped (perf pass, 2026-07):
+    // a live 30-day production check confirmed it caught zero rows beyond what
+    // subcategory already covers (every vendor parser has reliably populated
+    // structured_data.subcategory since 2.9.0), while costing ~60x more query time
+    // (forces a 3-way BitmapOr across the subcategory + message-trigram indexes on
+    // every one of the 35 partitions — ~350ms of planning alone). Do not re-add it
+    // without fresh evidence it's catching something real.
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND structured_data->>'subcategory' IN ('login_failed','auth_failed') ${sf.clause}`, [hours, ...sf.params]),
     pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'action' = 'deny' ${sf.clause}`, [hours, ...sf.params]),
     pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND (structured_data->>'subtype' = 'vpn' OR message ILIKE '%vpn%') ${sf.clause}`, [hours, ...sf.params]),
     pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'type' = 'utm' ${sf.clause}`, [hours, ...sf.params]),
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND (structured_data->>'subcategory' IN ('login_failed','config_change','auth_failed') OR message ILIKE '%login failed%' OR message ILIKE '%configured from%') AND EXTRACT(HOUR FROM received_at) NOT BETWEEN 7 AND 19 ${sf.clause}`, [hours, ...sf.params]),
+    // Same message-ILIKE-fallback removal as authFail above (zero extra recall,
+    // verified over 30 days) applies here too.
+    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND structured_data->>'subcategory' IN ('login_failed','config_change','auth_failed') AND EXTRACT(HOUR FROM received_at) NOT BETWEEN 7 AND 19 ${sf.clause}`, [hours, ...sf.params]),
     // Brute-force success: vendor-agnostic. A real attacker source (real srcip, not the
     // firewall) that had a login_failed AND a later login_success within the window.
     pool.query(`SELECT COUNT(DISTINCT COALESCE(a.structured_data->>'srcip', a.source_ip::text)) AS count
@@ -1427,7 +1436,7 @@ app.get('/api/security/summary', asyncHandler(async (req, res) => {
         ON COALESCE(se.structured_data->>'srcip', se.source_ip::text) ~ '^[0-9.]+$'
        AND host(kh.ip_address) = COALESCE(se.structured_data->>'srcip', se.source_ip::text)
       WHERE se.received_at > NOW() - make_interval(hours => $1)
-        AND (se.structured_data->>'subcategory' IN ('login_failed','auth_failed') OR se.message ILIKE '%login failed%' OR se.message ILIKE '%authentication fail%')
+        AND se.structured_data->>'subcategory' IN ('login_failed','auth_failed')
         AND (kh.is_known_bad = TRUE OR kh.abuse_score >= 50)
       ${sfSe.clause}`, [hours, ...sfSe.params]),
   ]);
@@ -1448,10 +1457,13 @@ app.get('/api/security/auth-failures', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const sf = getSiteFilter(req.rbac, 2, 'se');
   // Group by the REAL attacker source (normalized srcip, falling back to the syslog
-  // sender), vendor-agnostically. Detection uses the normalized subcategory with a tight
-  // message-regex fallback — the old per-vendor broad %failed%+%login% / %fail% matching
-  // wrongly counted SSL teardown noise. known_hosts join uses host(ip_address) (INET /32)
-  // with a shape-guarded text key, mirroring the top-blocked/top-failures joins.
+  // sender), vendor-agnostically. Detection uses ONLY the normalized subcategory — the
+  // old per-vendor broad %failed%+%login% / %fail% matching wrongly counted SSL
+  // teardown noise, and a later "tight" message ILIKE fallback (removed perf pass,
+  // 2026-07) was proven over a live 30-day check to catch zero rows beyond what
+  // subcategory alone already covers, while costing ~60x more query time. known_hosts
+  // join uses host(ip_address) (INET /32) with a shape-guarded text key, mirroring the
+  // top-blocked/top-failures joins.
   const { rows } = await pool.query(`
     SELECT
       COALESCE(se.structured_data->>'srcip', se.source_ip::text) AS source_ip,
@@ -1471,8 +1483,7 @@ app.get('/api/security/auth-failures', asyncHandler(async (req, res) => {
       ON COALESCE(se.structured_data->>'srcip', se.source_ip::text) ~ '^[0-9.]+$'
      AND host(kh.ip_address) = COALESCE(se.structured_data->>'srcip', se.source_ip::text)
     WHERE se.received_at > NOW() - make_interval(hours => $1)
-      AND (se.structured_data->>'subcategory' IN ('login_failed','auth_failed','brute_force')
-        OR se.message ILIKE '%login failed%' OR se.message ILIKE '%authentication fail%')
+      AND se.structured_data->>'subcategory' IN ('login_failed','auth_failed','brute_force')
     ${sf.clause}
     GROUP BY COALESCE(se.structured_data->>'srcip', se.source_ip::text),
       COALESCE(kh.hostname, se.structured_data->>'srcip', se.source_host), se.vendor,
@@ -1486,16 +1497,20 @@ app.get('/api/security/brute-force', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const sf = getSiteFilter(req.rbac, 3, 'syslog_entries');
   // Both CTEs group by the REAL attacker source (normalized srcip → syslog sender),
-  // vendor-agnostically, via the normalized subcategory (with a tight message fallback).
-  // known_hosts join uses host(ip_address) on the shape-guarded real-source key.
+  // vendor-agnostically, via the normalized subcategory alone — the message ILIKE
+  // fallbacks that used to sit alongside both CTEs' subcategory checks were removed
+  // (perf pass, 2026-07): a live 30-day production check confirmed both patterns
+  // (login_failed/auth_failed and login_success) caught zero rows beyond what
+  // subcategory already covers, while forcing an expensive 3-way BitmapOr plan on
+  // every partition. known_hosts join uses host(ip_address) on the shape-guarded
+  // real-source key.
   const { rows } = await pool.query(`
     WITH failures AS (
       SELECT COALESCE(structured_data->>'srcip', source_ip::text) AS source_ip,
         MIN(received_at) AS first_fail, MAX(received_at) AS last_fail, COUNT(*) AS fail_count,
         COUNT(DISTINCT structured_data->>'user') AS distinct_users
       FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1)
-        AND (structured_data->>'subcategory' IN ('login_failed','auth_failed')
-          OR message ILIKE '%login failed%' OR message ILIKE '%authentication fail%')
+        AND structured_data->>'subcategory' IN ('login_failed','auth_failed')
       ${sf.clause}
       GROUP BY COALESCE(structured_data->>'srcip', source_ip::text)
     ),
@@ -1503,8 +1518,7 @@ app.get('/api/security/brute-force', asyncHandler(async (req, res) => {
       SELECT COALESCE(structured_data->>'srcip', source_ip::text) AS source_ip,
         MIN(received_at) AS success_time, message AS success_msg
       FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $2)
-        AND (structured_data->>'subcategory' = 'login_success'
-          OR message ILIKE '%login success%' OR message ILIKE '%authenticated%')
+        AND structured_data->>'subcategory' = 'login_success'
       ${sf.clause}
       GROUP BY COALESCE(structured_data->>'srcip', source_ip::text), message
     )
@@ -1626,6 +1640,9 @@ app.get('/api/security/failed-logins-by-country', asyncHandler(async (req, res) 
   // Auth failures grouped by country — preferring the event's own srccountry (Fortinet),
   // falling back to the known_hosts geo of the REAL source. known_hosts join uses
   // host(ip_address) on the shape-guarded real-source key. distinct_sources = real sources.
+  // Detection uses ONLY the normalized subcategory — the message ILIKE fallback that used
+  // to sit alongside it was removed (perf pass, 2026-07); a live 30-day check confirmed it
+  // caught zero rows beyond what subcategory already covers, at ~60x the query cost.
   const { rows } = await pool.query(`
     SELECT COALESCE(se.structured_data->>'srccountry', kh.country_name) AS country,
       kh.country_code,
@@ -1636,8 +1653,7 @@ app.get('/api/security/failed-logins-by-country', asyncHandler(async (req, res) 
       ON COALESCE(se.structured_data->>'srcip', se.source_ip::text) ~ '^[0-9.]+$'
      AND host(kh.ip_address) = COALESCE(se.structured_data->>'srcip', se.source_ip::text)
     WHERE se.received_at > NOW() - make_interval(hours => $1)
-      AND (se.structured_data->>'subcategory' IN ('login_failed','auth_failed')
-        OR se.message ILIKE '%login failed%' OR se.message ILIKE '%authentication fail%')
+      AND se.structured_data->>'subcategory' IN ('login_failed','auth_failed')
       AND COALESCE(se.structured_data->>'srccountry', kh.country_name) IS NOT NULL
       AND COALESCE(se.structured_data->>'srccountry', kh.country_name) <> ''
     ${sf.clause}
@@ -2290,6 +2306,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.21.1': [
+    'Performance: several Security tab endpoints (Summary, Auth Failures, Brute Force, Failed Logins by Country) carried a leftover "double-check" pattern from before every log parser reliably tagged failed-login events — a live 30-day check proved that double-check now catches zero events the primary detection misses, while making these queries dramatically slower to plan. Removed; verified byte-for-byte identical results before and after. Measured 11-40x faster on the affected queries.',
+  ],
   '2.21.0': [
     'Performance: the dashboard\'s Severity Summary, Timeline (24h+ ranges), Top Talkers, and Vendor Breakdown widgets no longer scan the full raw log table on every load. A live investigation found the Top Talkers widget alone taking 1.6+ seconds and spilling ~300MB to disk on a single request; these 4 widgets now read from small, pre-aggregated hourly summary tables maintained automatically in the background instead.',
     'This is the first step toward keeping the dashboard fast as more devices are added — these widgets\' load time is no longer directly tied to total log volume.',

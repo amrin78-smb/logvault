@@ -996,6 +996,45 @@ the role's next new connection, no server restart needed. `shared_buffers` (curr
 1GB, DB-wide cache hit ratio was 61%) is a further, separate lever contingent on
 confirming actual server RAM — not applied here, deliberately left as a follow-up.
 
+**Security/Network Health tabs (added 2.21.x) — a DIFFERENT class of fix.** Unlike the
+dashboard's clean severity/category/vendor dimensions, these tabs' ~20 query shapes
+(`/api/security/*`, `/api/health/*`) are too varied for a rollup-table rewrite to be
+worth the risk. Live `EXPLAIN ANALYZE` investigation found two distinct problems, each
+needing a different fix:
+
+1. **`message ILIKE '%...%'` fallback clauses next to an already-reliable
+   `structured_data->>'subcategory'` check are dead weight — verify with a live
+   recall check before assuming one is needed.** Several security queries carried a
+   `subcategory IN (...) OR message ILIKE '%login failed%' OR message ILIKE
+   '%authentication fail%'`-shaped condition — a defensive fallback from before all
+   vendor parsers reliably populated `subcategory` (2.9.0). A live 30-day production
+   check (`WHERE ILIKE-pattern AND subcategory NOT IN (...)`) found **zero** rows the
+   ILIKE fallback caught that `subcategory` didn't already cover, for every pattern
+   checked (login_failed/auth_failed, login_success). The fallback wasn't just
+   pointless — it was actively expensive: it forces the planner into a 3-way
+   `BitmapOr` (subcategory expression index + 2x message-trigram index) evaluated per
+   partition, ballooning planning time alone to 100-350ms (see `idx_syslog_subcategory`
+   / `idx_syslog_message_trgm`). Removed from `/api/security/summary` (3 of its 8
+   sub-queries), `/api/security/auth-failures`, `/api/security/brute-force` (both
+   CTEs), `/api/security/failed-logins-by-country` — each verified to return
+   byte-identical results over the full 30-day retention window before and after.
+   Measured: ~90-340ms → a stable ~8ms. **`/api/health/config-changes`'s ILIKE
+   fallback was deliberately left untouched** — its current dataset has zero matching
+   rows, so there's no live data to empirically prove the simplification is exactly
+   equivalent; don't remove it without that proof. The broader `%vpn%`/`%login%`
+   catch-alls in `/api/security/after-hours` were also left alone — they weren't
+   verified and may genuinely catch content no subcategory captures.
+2. **`/api/health/device-status`'s slowness is NOT an unused/broken index** — a common
+   trap this could look like. The `idx_syslog_received_source` covering index IS being
+   used correctly for the big, stable partition. The real cost: this endpoint computes
+   4 overlapping time-windowed `COUNT(*) FILTER` aggregates across a 6-column
+   `GROUP BY`, which has to touch nearly every row in the 24h window regardless of
+   indexing — the same *class* of problem as the original dashboard widgets, just
+   shaped per-device instead of per-severity/category. Not yet fixed; the natural next
+   step (not yet built) is a small per-device rollup table on the same 5-minute
+   maintenance cadence as the two rollups above — see if this needs picking up before
+   assuming "add an index" will help here, it won't.
+
 ---
 
 ## Alert System
