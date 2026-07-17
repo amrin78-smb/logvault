@@ -2378,6 +2378,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.24.1': [
+    'Fixed a gap in the dashboard performance-summary tables added over the last few releases: they only ever refreshed the current and previous hour, so any logs that arrived late — after a database hiccup, a brief network blip, or simply because the collector service was restarting for an update — quietly never made it into any dashboard widget, permanently, with no error shown anywhere. The refresh window is now a full rolling day, so a delay or restart shorter than that self-corrects automatically within a few minutes instead of requiring a manual fix.',
+  ],
   '2.24.0': [
     'Performance: a full pass over every remaining dashboard widget found and fixed several more slow spots — the worst were Known-Bad Sources (measured taking up to 130 seconds) and What\'s New/Changed (over 200 seconds for one part of it). Both were re-scanning the full log history live on every page load; they now read from small pre-aggregated summary tables kept up to date in the background, the same technique already used for the other dashboard widgets. Top Destinations (previously up to 76 seconds on a 7-day view) and Capacity & Ingestion Health got the same fix. The Known-Bad Sources fix also indirectly speeds up Riskiest Entities, which was being slowed down by the other widget tying up shared database connections behind the scenes.',
     'The Storage panel now caches its results briefly instead of recalculating on every single check, and a duplicated calculation inside it was removed — shaves roughly another second or two off that widget.',

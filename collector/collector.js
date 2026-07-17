@@ -1155,16 +1155,38 @@ async function recomputePhase3RollupBucket(pool, hourBucket) {
   `, [hourBucket]);
 }
 
+// How many trailing hours get swept on every 5-minute cycle (not just the
+// current+previous hour). Each individual bucket recompute is a cheap,
+// idempotent DELETE+INSERT from raw syslog_entries (measured at tens of
+// milliseconds per hour, per the Phase 3 validation notes in CLAUDE.md), so
+// widening this costs very little relative to the 5-minute cadence, and it
+// closes a real gap the original 2-bucket window had: syslog_entries.received_at
+// is stamped at PARSE time and never rewritten, so an entry delayed past the
+// lookback window (a DB outage, ingest backpressure, or the collector itself
+// being down for a while — a routine occurrence, not an edge case, e.g. every
+// deploy) inserted successfully but was silently and PERMANENTLY excluded from
+// every rollup table, since nothing ever revisited that hour bucket again. A
+// wider window means a bucket a late entry belongs to gets swept and corrected
+// on the next few cycles automatically, with no manual intervention. This does
+// NOT reintroduce increment-on-insert (still forbidden — see the header comment
+// above recomputeRollupBucket) — every bucket in the window is still a full,
+// idempotent re-aggregation from the raw table, just over more buckets per
+// cycle. An outage longer than this window still needs the documented manual
+// `node scripts/backfill-rollups.js` recovery — this only removes the need for
+// that on anything shorter, which is the overwhelmingly common case (routine
+// restarts/updates/brief network blips).
+const ROLLUP_LOOKBACK_HOURS = parseInt(process.env.ROLLUP_LOOKBACK_HOURS, 10) || 24;
+
 // Runs against the supplied pool. Never throws — caller (the timer callbacks
 // in start()) still wraps this in .catch(), but the internal try/catch here
-// means a failure on ONE bucket never skips the other, and this function
+// means a failure on ONE bucket never skips the others, and this function
 // itself never rejects the process into an unhandledRejection.
 async function runRollupMaintenance(pool) {
   const now         = new Date();
   const currentHour = new Date(now); currentHour.setMinutes(0, 0, 0);
-  const prevHour    = new Date(currentHour.getTime() - 60 * 60 * 1000);
 
-  for (const bucket of [currentHour, prevHour]) {
+  for (let i = 0; i < ROLLUP_LOOKBACK_HOURS; i++) {
+    const bucket = new Date(currentHour.getTime() - i * 60 * 60 * 1000);
     try {
       await recomputeRollupBucket(pool, bucket);
     } catch (err) {

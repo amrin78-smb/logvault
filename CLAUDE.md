@@ -389,6 +389,7 @@ LOG_INTEGRITY_KEY=<set-in-NSSM-env>   # HMAC key for the tamper-evident hash cha
 SPOOL_DIR=                            # optional; defaults to <repo>/logs/spool for the durable ingest spool
 RETENTION_DAYS=30                     # optional; days of syslog_entries partitions to retain (scripts/cleanup.js, runs in-process)
 UEBA_RELAY_HOSTS=FGT200E_TUS          # optional; comma-separated relay/log-source hostnames excluded from UEBA 'device' entity scoring
+ROLLUP_LOOKBACK_HOURS=24              # optional; trailing hours the 5-min rollup-maintenance job re-sweeps each cycle (see "Dashboard-widget hourly rollups" below)
 ```
 
 > `LOG_INTEGRITY_KEY` must be the SAME value when running `scripts/verify-integrity.js`,
@@ -940,14 +941,32 @@ from JSONB. It's also round-tripped through the disk spool (`serializeEntry`/
 
 **Maintenance model — recompute-window, NOT increment-on-insert.** The collector's
 `runRollupMaintenance()` (a separate 5-minute timer, does not touch the existing 24h
-`runCleanup` timer) DELETEs and re-INSERTs ONLY the current + previous hour bucket
-every cycle — a full re-aggregation of just ~2 hours of raw data, cheap. Hours older
-than that are never touched again once written. This is deliberately idempotent and
+`runCleanup` timer) DELETEs and re-INSERTs the trailing `ROLLUP_LOOKBACK_HOURS` hour
+buckets (env var, default **24**) every cycle — each bucket is a full, idempotent
+re-aggregation of that hour's raw data (tens of milliseconds each, so 24 buckets/cycle
+is still cheap relative to the 5-minute cadence). This is deliberately idempotent and
 self-healing: a missed cycle, a collector restart, or a double-run can never
 double-count or drift, because each cycle always recomputes from the raw source of
 truth rather than adding a delta to a running total. **Do not "optimize" this into an
 increment-on-insert model** — it looks like an obvious efficiency win and quietly
 reintroduces double-counting/drift risk on every collector restart or retry.
+
+**Bug fixed 2026-07 — a 2-bucket window silently and PERMANENTLY dropped delayed
+data.** The window was originally hardcoded to just `[currentHour, prevHour]` (~2
+hours). `syslog_entries.received_at` is stamped at PARSE time and never rewritten, so
+an entry that lands in the DB more than ~1-2 hours after its own timestamp (a DB
+outage, ingest backpressure, or the collector itself being down for a while — a
+ROUTINE occurrence, e.g. every deploy/update, not an edge case) was inserted
+successfully into `syslog_entries` but its hour bucket had already scrolled out of the
+window and was never revisited again — every rollup table silently and permanently
+excluded it, with zero error anywhere. Widened to a rolling 24-hour window (still just
+DELETE+INSERT per bucket, still fully idempotent) so a bucket a late entry belongs to
+gets automatically swept and corrected within the next few cycles for any gap shorter
+than the window — no manual step needed for the common case. An outage/gap LONGER than
+`ROLLUP_LOOKBACK_HOURS` still needs the documented manual
+`node scripts/backfill-rollups.js` recovery — this only removes the need for that on
+anything shorter. **Do not shrink this window back down "to save cycles"** without
+re-solving the underlying gap it closes.
 
 **RBAC.** `site_id` in BOTH rollup tables is resolved via
 `known_hosts.ip_address = source_ip` — the RELAY/firewall device, exactly matching how
