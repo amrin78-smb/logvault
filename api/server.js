@@ -34,6 +34,28 @@ process.on('unhandledRejection', (reason) => {
 const app  = express();
 const port = parseInt(process.env.LV_API_PORT || '3005');
 
+// ── No intermediary caching, EVER (perf-incident fix, 2026-07) ─────────
+// Every API response here was missing any Cache-Control header at all --
+// only a weak ETag. A response with no explicit caching directive but WITH
+// a validator like an ETag is exactly the shape RFC 7234 permits a
+// compliant proxy/cache to store heuristically. On a corporate network with
+// a transparent caching proxy/security appliance in the path, this can
+// (and, in a live incident, did) cause different requests for the SAME
+// dynamic endpoint to intermittently return a stale cached response instead
+// of hitting this server -- invisible from server-side testing (a direct
+// curl bypassing that proxy sees the origin every time and looks perfectly
+// consistent) and NOT fixable by a browser hard-refresh or an Incognito/
+// InPrivate window (neither has any effect on a cache that lives on
+// network infrastructure between the browser and this server, not in the
+// browser itself). Every response from this API must explicitly forbid
+// caching so no RFC-compliant intermediary can legally store it.
+app.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
+
 // ── CORS — restrict to frontend origin only ───────────────────
 const allowedOrigin = process.env.LV_APP_URL || 'http://localhost:3004';
 app.use(cors({ origin: allowedOrigin, credentials: true }));
@@ -2306,6 +2328,10 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.22.1': [
+    'URGENT FIX: every API and page response was missing any explicit "do not cache" instruction — only a weak validity marker (ETag) that some networks\' caching proxies/security appliances treat as permission to cache anyway. On a network with such a proxy in the path, this could show different users (or the same user reloading) a stale, out-of-date copy of the app intermittently — a hard refresh or private/incognito browsing does NOT fix this, because that kind of cache lives on network infrastructure, not in the browser. Every response now explicitly forbids caching.',
+    'Fixed a real bug where a background idle-timeout check was silently failing on every page load (blocked by the browser for security reasons) because it was checking the wrong server for a setting it should have checked locally. No user-visible symptom before this fix — it silently fell back to its default value — but worth fixing since it was a genuine bug once found.',
+  ],
   '2.22.0': [
     'Performance: the app was shipping the code for ALL 10 tabs (Dashboard, Log Explorer, Live Tail, Alerts, Network Health, Security, Intelligence, Known Hosts, Reports, Settings) on every page load, regardless of which one you actually opened — around 1.4MB of JavaScript loaded upfront every time. The 9 tabs other than Dashboard now load their code on-demand, the first time you click into them, instead of all at once on login.',
     'This is a separate fix from the recent backend query-speed work — that made individual API responses much faster, this reduces how much the browser has to download and run before the page can even start rendering. Both contribute to a snappier feel, especially on first load.',

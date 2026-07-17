@@ -1062,6 +1062,39 @@ already isolated in its own chunk — no further action needed. If a NEW tab is
 ever added, default to `next/dynamic` for it from the start rather than a
 static import, unless (like Dashboard) it's the tab shown on initial load.
 
+**Live incident: EVERY response was missing `Cache-Control` (fixed 2.22.1) —
+neither a hard refresh nor Incognito/InPrivate mode can fix a bug this
+causes.** A live production incident showed the app intermittently flapping
+between a current build and an old (~2.18.x) one, on the SAME browser AND in
+a fresh Incognito window, surviving repeated hard refreshes. Direct `curl`
+testing from outside the affected network showed the origin server
+responding correctly and consistently every single time — the bug only
+reproduced from inside the customer's own corporate network. Root cause:
+neither `api/server.js`'s Express responses nor `next.config.js`'s page
+responses set an explicit `Cache-Control` header — only a weak `ETag`. A
+response with a validator but no explicit caching directive is exactly the
+shape RFC 7234 permits a compliant cache to store heuristically, and a
+transparent corporate proxy/security appliance sitting in the network path
+(common on corporate LANs) can and will do exactly that — invisibly to any
+test that doesn't route through that same proxy. **The diagnostic tell:**
+if a bug reproduces consistently for a user but never for a direct
+server-side `curl` test, and neither a hard refresh nor an Incognito window
+changes anything, suspect a cache living on network infrastructure BETWEEN
+the browser and the server, not the browser's own cache — no client-side
+action can ever fix that class of bug, only the server explicitly forbidding
+caching can. Fixed with two matching pieces: a global Express middleware
+(near the very top of `api/server.js`, before CORS) setting `Cache-Control:
+no-store, no-cache, must-revalidate, private` + `Pragma: no-cache` on every
+API response, and a `next.config.js` `headers()` export applying the same to
+every page/document response — **deliberately excluding** `/_next/static/*`
+(a second, more specific rule overrides the broad one back to Next's own
+long-lived `immutable` caching there, since those filenames are
+content-hashed and safe/correct to cache forever; Next.js merges matching
+header rules and the LAST matching rule wins for a duplicate key, so rule
+order matters). Don't ever loosen either of these without a very specific
+reason — this class of bug is expensive to diagnose and easy to reintroduce
+silently by adding a new response path that forgets to set these headers.
+
 ---
 
 ## Alert System

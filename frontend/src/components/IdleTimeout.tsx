@@ -85,7 +85,13 @@ export default function IdleTimeout() {
 
     const init = async () => {
       try {
-        const res = await fetch(`${getHubUrl()}/api/settings`, { credentials: 'include' });
+        // LogVault's OWN settings (relative path — same pattern as Settings.tsx),
+        // NOT the hub's. This was previously fetching getHubUrl() + '/api/settings'
+        // (NetVault's origin, port 3000) instead of this app's own /api/settings —
+        // a same-origin route proxied by proxy.ts — which the browser correctly
+        // CORS-blocked every time (NetVault's API doesn't allow this origin).
+        // idle_timeout_minutes silently fell back to its default on every load.
+        const res = await fetch('/api/settings', { credentials: 'include' });
         if (!res.ok) return;
         const settings = await res.json();
         const raw = settings && settings['idle_timeout_minutes'];
