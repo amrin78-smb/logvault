@@ -1245,6 +1245,32 @@ use an index the same way a filter-only search's can.
 schema.sql` before deploying new code, then run `node scripts/
 backfill-rollups.js` immediately after.
 
+**Phase 4 hotfix (same release, caught by a post-implementation verification
+pass before this ever reached production) — 3 real bugs, all fixed:**
+1. **Log Explorer's `q` search had ALSO dropped the `to_tsvector @@
+   plainto_tsquery` branch**, reasoning `message ILIKE '%term%'` was a strict
+   superset. That missed English STEMMING — `to_tsvector` folds
+   `connecting`/`connection`/`connected`/`connect` to one lexeme; `ILIKE` only
+   matches the literal substring. Verified live: over 1 MILLION rows in one
+   week for the single term "connecting". Restored — safe now that the 3 new
+   trigram indexes below mean all 5 OR branches are indexed, so the planner
+   can still build one BitmapOr rather than falling back to a seq scan.
+2. **`syslog_entity_activity_rollup`'s `device` dimension didn't exclude the
+   relay/forwarder host**, unlike `collector/analytics/baselineBuilder.js`/
+   `uebaRollup.js` (which both do, and `uebaRollup.js` actively purges stale
+   relay rows from `entity_risk`). Fixed by requiring `relayHosts.js`'s
+   `RELAY_HOSTS` in both `collector.js` and `backfill-rollups.js` and adding
+   the same exclusion filter, so the "byte-identical to entity_risk" claim in
+   the table's own schema.sql comment actually holds for all 3 entity types.
+3. **`/api/health/device-status`'s `logs_1h` used the same hour-bucket SUM
+   approach as the 24h fields, but on a 1-hour window the ±59-minute edge
+   effect IS the whole window** — verified live, up to a 91% undercount
+   5 minutes past every hour, a sawtooth that would read as devices going
+   silent hourly on a liveness page. Fixed by keeping `logs_1h` on a genuine
+   live rolling-window subquery (a bare 1-hour raw scan is cheap — this is
+   NOT the same cost shape the rollup was built to eliminate) while
+   `logs_24h`/`critical_24h`/`error_24h` correctly stay on the rollup.
+
 **Security/Network Health tabs (added 2.21.x) — a DIFFERENT class of fix (Phase
 4 above has since rollup-ified 3 of the sub-queries this section originally
 called "too varied for a rollup rewrite" — that verdict no longer applies to

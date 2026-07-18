@@ -51,6 +51,7 @@
 
 const { Pool } = require('pg');
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env.local') });
+const { RELAY_HOSTS } = require('../collector/analytics/relayHosts');
 
 const DAYS       = parseInt(process.env.BACKFILL_DAYS || '30', 10);
 const DAY_MS     = 24 * 60 * 60 * 1000;
@@ -304,13 +305,20 @@ async function backfillPhase4RollupForHour(pool, hourBucket) {
 
   await pool.query(`DELETE FROM syslog_entity_activity_rollup WHERE hour_bucket = $1`, [hourBucket]);
   const ENTITY_DIMS = [
-    { type: 'device', expr: `COALESCE(se.source_host, se.source_ip::text)` },
-    { type: 'user',    expr: `se.structured_data->>'user'` },
+    {
+      type: 'device', expr: `COALESCE(se.source_host, se.source_ip::text)`,
+      // Exclude the relay/forwarder — see the matching comment + full
+      // rationale in collector/collector.js's recomputePhase4RollupBucket
+      // (Phase 4 hotfix: this exclusion was missing here originally).
+      extraFilter: RELAY_HOSTS.length ? `AND lower(COALESCE(se.source_host, se.source_ip::text)) != ALL($3::text[])` : '',
+      extraParams: RELAY_HOSTS.length ? [RELAY_HOSTS] : [],
+    },
+    { type: 'user', expr: `se.structured_data->>'user'`, extraFilter: '', extraParams: [] },
     // srcip: RAW structured_data->>'srcip', not the derived srcip column — see
     // the matching comment in collector/collector.js's recomputePhase4RollupBucket.
-    { type: 'srcip',   expr: `se.structured_data->>'srcip'` },
+    { type: 'srcip', expr: `se.structured_data->>'srcip'`, extraFilter: '', extraParams: [] },
   ];
-  for (const { type, expr } of ENTITY_DIMS) {
+  for (const { type, expr, extraFilter, extraParams } of ENTITY_DIMS) {
     await pool.query(`
       INSERT INTO syslog_entity_activity_rollup
         (hour_bucket, entity_type, entity_value, category, site_id, log_count, failed_login_count, last_seen)
@@ -322,8 +330,9 @@ async function backfillPhase4RollupForHour(pool, hourBucket) {
       LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
       WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
         AND ${expr} IS NOT NULL AND ${expr} NOT IN ('', 'N/A')
+        ${extraFilter}
       GROUP BY 1, 3, se.category, kh.site_id
-    `, [hourBucket, type]);
+    `, [hourBucket, type, ...extraParams]);
   }
 }
 

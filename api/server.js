@@ -687,18 +687,28 @@ app.get('/api/logs', asyncHandler(async (req, res) => {
   const params = [hours];
   let p = 2;
 
-  // Free-text search. The tsvector @@ plainto_tsquery branch was dropped (perf
-  // pass, 2026-07): message ILIKE '%term%' is a strict superset for substring
-  // search and is trigram-indexed (idx_syslog_message_trgm), so the tsvector
-  // branch never contributed a match ILIKE didn't already find, while forcing
-  // the planner to consider merging two different index types. The remaining
-  // 3 structured_data->>'x' ILIKE branches are now backed by their own partial
-  // trigram indexes (idx_syslog_user_trgm/srccountry_trgm/service_trgm) —
-  // previously unindexed, which forced Postgres to abandon every index and
-  // sequential-scan the WHOLE 5-way OR (measured up to 94.5s for a common term
-  // at 30d). With all 4 remaining branches indexed, the planner can build a
-  // genuine BitmapOr across them instead.
-  if (q)        { const qp = p++; conditions.push(`(se.message ILIKE '%'||$${qp}||'%' OR se.structured_data->>'user' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'srccountry' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'service' ILIKE '%'||$${qp}||'%')`); params.push(q); }
+  // Free-text search. All 5 branches are now indexed, so the planner can
+  // build a genuine BitmapOr across the whole OR instead of abandoning every
+  // index and sequential-scanning (measured up to 94.5s for a common term at
+  // 30d before the 3 new trigram indexes below existed). CORRECTION (perf
+  // pass, 2026-07, Phase 4 hotfix): an EARLIER version of this same pass
+  // dropped the to_tsvector @@ plainto_tsquery branch entirely, reasoning
+  // that ILIKE '%term%' was a strict superset since it catches every literal
+  // substring match tsvector does. That reasoning missed English STEMMING —
+  // to_tsvector folds 'connecting'/'connection'/'connected'/'connect' to the
+  // same lexeme, so a search for "connecting" matches all four via tsvector
+  // but ONLY the literal substring "connecting" via ILIKE. Verified live: over
+  // 1 MILLION rows in a single 7-day window (mostly "Connection Failed"
+  // traffic logs) would have silently stopped matching that one search term.
+  // Restored. idx_syslog_message (the existing tsvector GIN index) plus the
+  // 3 new structured_data trigram indexes below (idx_syslog_user_trgm/
+  // srccountry_trgm/service_trgm) mean all 5 branches are indexed now, so
+  // restoring tsvector does NOT reintroduce the original all-branches-must-
+  // be-indexed-or-none-are seq-scan problem. Do not drop this branch again
+  // without a live stemming-equivalence check across several real search
+  // terms, not just one or two — "failed"/"blocked" happened to have zero
+  // stemming variants in this data, "connecting" did not.
+  if (q)        { const qp = p++; conditions.push(`(to_tsvector('english', se.message) @@ plainto_tsquery('english', $${qp}) OR se.message ILIKE '%'||$${qp}||'%' OR se.structured_data->>'user' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'srccountry' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'service' ILIKE '%'||$${qp}||'%')`); params.push(q); }
   if (vendor)   { conditions.push(`se.vendor = $${p++}`);                        params.push(vendor); }
   if (category) { conditions.push(`se.category = $${p++}`);                      params.push(category); }
   // MITRE ATT&CK technique filter — JSONB containment on structured_data.mitre,
@@ -1029,18 +1039,28 @@ app.get('/api/logs/export', asyncHandler(async (req, res) => {
   const params = [hours];
   let p = 2;
 
-  // Free-text search. The tsvector @@ plainto_tsquery branch was dropped (perf
-  // pass, 2026-07): message ILIKE '%term%' is a strict superset for substring
-  // search and is trigram-indexed (idx_syslog_message_trgm), so the tsvector
-  // branch never contributed a match ILIKE didn't already find, while forcing
-  // the planner to consider merging two different index types. The remaining
-  // 3 structured_data->>'x' ILIKE branches are now backed by their own partial
-  // trigram indexes (idx_syslog_user_trgm/srccountry_trgm/service_trgm) —
-  // previously unindexed, which forced Postgres to abandon every index and
-  // sequential-scan the WHOLE 5-way OR (measured up to 94.5s for a common term
-  // at 30d). With all 4 remaining branches indexed, the planner can build a
-  // genuine BitmapOr across them instead.
-  if (q)        { const qp = p++; conditions.push(`(se.message ILIKE '%'||$${qp}||'%' OR se.structured_data->>'user' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'srccountry' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'service' ILIKE '%'||$${qp}||'%')`); params.push(q); }
+  // Free-text search. All 5 branches are now indexed, so the planner can
+  // build a genuine BitmapOr across the whole OR instead of abandoning every
+  // index and sequential-scanning (measured up to 94.5s for a common term at
+  // 30d before the 3 new trigram indexes below existed). CORRECTION (perf
+  // pass, 2026-07, Phase 4 hotfix): an EARLIER version of this same pass
+  // dropped the to_tsvector @@ plainto_tsquery branch entirely, reasoning
+  // that ILIKE '%term%' was a strict superset since it catches every literal
+  // substring match tsvector does. That reasoning missed English STEMMING —
+  // to_tsvector folds 'connecting'/'connection'/'connected'/'connect' to the
+  // same lexeme, so a search for "connecting" matches all four via tsvector
+  // but ONLY the literal substring "connecting" via ILIKE. Verified live: over
+  // 1 MILLION rows in a single 7-day window (mostly "Connection Failed"
+  // traffic logs) would have silently stopped matching that one search term.
+  // Restored. idx_syslog_message (the existing tsvector GIN index) plus the
+  // 3 new structured_data trigram indexes below (idx_syslog_user_trgm/
+  // srccountry_trgm/service_trgm) mean all 5 branches are indexed now, so
+  // restoring tsvector does NOT reintroduce the original all-branches-must-
+  // be-indexed-or-none-are seq-scan problem. Do not drop this branch again
+  // without a live stemming-equivalence check across several real search
+  // terms, not just one or two — "failed"/"blocked" happened to have zero
+  // stemming variants in this data, "connecting" did not.
+  if (q)        { const qp = p++; conditions.push(`(to_tsvector('english', se.message) @@ plainto_tsquery('english', $${qp}) OR se.message ILIKE '%'||$${qp}||'%' OR se.structured_data->>'user' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'srccountry' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'service' ILIKE '%'||$${qp}||'%')`); params.push(q); }
   if (vendor)   { conditions.push(`se.vendor = $${p++}`);                   params.push(vendor); }
   if (category) { conditions.push(`se.category = $${p++}`);                 params.push(category); }
   if (severity) {
@@ -1446,30 +1466,46 @@ app.get('/api/health/device-status', asyncHandler(async (req, res) => {
   // time, same as every other rollup here.
   //
   // Trade-off (same shape as top-talkers'/top-destinations' MAX(hour_bucket)
-  // last_seen note): logs_1h/logs_24h/critical_24h/error_24h are now summed
-  // over HOUR BUCKETS, not an exact rolling window — logs_1h becomes "logs in
-  // the current hour bucket" rather than "logs in the last 60 minutes"
-  // exactly. Acceptable for a live-refreshing status table; don't "fix" this
-  // by joining back to raw syslog_entries, that defeats the point of the rollup.
+  // last_seen note): logs_24h/critical_24h/error_24h are summed over HOUR
+  // BUCKETS, not an exact rolling 24h window (±59 min edge effect, ~4% —
+  // acceptable for a live-refreshing status table over a 24h span).
+  //
+  // CORRECTION (Phase 4 hotfix): logs_1h originally used the SAME hour-bucket
+  // approach ("current hour bucket" instead of "last 60 minutes"), but on a
+  // 1-HOUR window that ±59-minute edge effect is not a small percentage, it's
+  // the WHOLE window — right after every hour rolls over, logs_1h read near-
+  // zero and climbed back up over the next 60 minutes (verified live: as low
+  // as a 91% undercount 5 minutes past the hour). On a device health/liveness
+  // page that reads as devices going silent every hour on the hour. Fixed by
+  // keeping logs_1h on a genuine live rolling-window subquery instead — a
+  // bare 1-hour scan is cheap even on raw syslog_entries (idx_syslog_received_
+  // source's received_at-DESC-leading shape serves it directly), unlike the
+  // original 6-column/4-FILTER aggregation this whole rollup was built to
+  // eliminate. Do not fold logs_1h back into the hour-bucket SUM approach.
   const hours = safeHours(req.query.hours);
   const sf = getRollupSiteFilter(req.rbac, 2);
   const cacheKey = `device-status:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 60000, async () => {
     const { rows } = await pool.query(`
+      WITH live_1h AS (
+        SELECT host(se.source_ip) AS source_ip, COUNT(*) AS logs_1h
+        FROM syslog_entries se
+        WHERE se.received_at > NOW() - INTERVAL '1 hour'
+        GROUP BY host(se.source_ip)
+      )
       SELECT
         COALESCE(kh.hostname, agg.source_host, agg.source_ip) AS host,
         agg.source_ip AS source_ip,
         kh.vendor AS known_vendor, agg.vendor, kh.description,
         agg.last_seen,
-        COALESCE(agg.logs_1h, 0)      AS logs_1h,
-        COALESCE(agg.logs_24h, 0)     AS logs_24h,
-        COALESCE(agg.critical_24h, 0) AS critical_24h,
-        COALESCE(agg.error_24h, 0)    AS error_24h,
+        COALESCE(live_1h.logs_1h, 0)   AS logs_1h,
+        COALESCE(agg.logs_24h, 0)      AS logs_24h,
+        COALESCE(agg.critical_24h, 0)  AS critical_24h,
+        COALESCE(agg.error_24h, 0)     AS error_24h,
         EXTRACT(EPOCH FROM (NOW() - agg.last_seen))/60 AS minutes_since_last_log
       FROM (
         SELECT source_ip,
           MAX(source_host) AS source_host, MAX(vendor) AS vendor, MAX(last_seen) AS last_seen,
-          SUM(log_count)      FILTER (WHERE hour_bucket = date_trunc('hour', NOW()))                                 AS logs_1h,
           SUM(log_count)      FILTER (WHERE hour_bucket >= date_trunc('hour', NOW() - interval '24 hours')) AS logs_24h,
           SUM(critical_count) FILTER (WHERE hour_bucket >= date_trunc('hour', NOW() - interval '24 hours')) AS critical_24h,
           SUM(error_count)    FILTER (WHERE hour_bucket >= date_trunc('hour', NOW() - interval '24 hours')) AS error_24h
@@ -1479,6 +1515,7 @@ app.get('/api/health/device-status', asyncHandler(async (req, res) => {
         GROUP BY source_ip
       ) agg
       LEFT JOIN known_hosts kh ON host(kh.ip_address) = agg.source_ip
+      LEFT JOIN live_1h ON live_1h.source_ip = agg.source_ip
       ORDER BY agg.last_seen DESC
     `, [hours, ...sf.params]);
     return { data: rows };
@@ -2522,6 +2559,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.25.1': [
+    'Hotfix for 3 bugs found in a verification pass on yesterday\'s performance release, before they had any real-world impact: a Log Explorer search regression that could silently miss results for common word variants (e.g. searching "connecting" would miss "Connection Failed" entries), the Network Health page\'s "logs in the last hour" column occasionally under-reporting right after the clock struck the hour, and an Intelligence-tab entity table that could include the firewall itself instead of only real users/attackers.',
+  ],
   '2.25.0': [
     'Performance: the Security page, Network Health page, and the Intelligence tab\'s entity drill-down panel are all substantially faster now. The worst offenders — a security summary card that could take over a minute and a half on a 30-day view, the device status table (up to 23 seconds), and clicking into an entity\'s activity history (40-50 seconds) — now load in a fraction of a second, using the same background pre-aggregation technique already applied to the main Dashboard.',
     'Fixed a real bug found along the way: the "Firewall Denies" card and page had been silently showing zero results since they shipped. They were checking for a value your firewall never actually sends — now checking the correct one, so blocked-traffic data actually shows up.',
