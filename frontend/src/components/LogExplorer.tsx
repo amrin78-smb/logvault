@@ -90,6 +90,10 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
   const [hours,      setHours]     = useState('24');
   const [logs,       setLogs]      = useState<any[]>([]);
   const [total,      setTotal]     = useState(0);
+  // total_is_capped: true when a free-text (q) search's count was capped at
+  // 5,000 (perf pass, 2026-07 — see api/server.js) rather than an exact
+  // scan-the-whole-table count. Drives the "5,000+" vs exact display below.
+  const [totalCapped, setTotalCapped] = useState(false);
   const [loading,    setLoading]   = useState(false);
   const [selectedLog, setSelectedLog] = useState<any | null>(null);
   const [searched,   setSearched]  = useState(false);
@@ -143,7 +147,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
       const r = await fetch(`/api/logs?${params}`, { signal: ctrl.signal });
       if (!r.ok) throw new Error(`API error: ${r.status}`);
       const d = await r.json();
-      setLogs(d.data || []); setTotal(d.total || 0);
+      setLogs(d.data || []); setTotal(d.total || 0); setTotalCapped(!!d.total_is_capped);
     } catch (e: any) {
       if (e.name === 'AbortError') return;   // superseded by a newer search — it owns the UI
       setError(e.message);
@@ -361,7 +365,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
           background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 6 }}>
           {total === 0
             ? 'No logs found — try a wider time range or different filters'
-            : `Showing ${logs.length} of ${total.toLocaleString()} logs`}
+            : `Showing ${logs.length} of ${total.toLocaleString()}${totalCapped ? '+' : ''} logs`}
         </div>
       )}
       {error && <div style={{ fontSize: 'var(--text-sm)', color: '#dc2626', marginBottom: 12 }}>Error: {error}</div>}

@@ -447,6 +447,133 @@ CREATE INDEX IF NOT EXISTS idx_known_bad_hit_rollup_ip
 CREATE INDEX IF NOT EXISTS idx_vpn_rollup_hour
   ON syslog_vpn_rollup (hour_bucket DESC);
 
+-- ============================================================
+-- PHASE 4 HOURLY ROLLUP TABLES (perf pass, 2026-07)
+-- Follow-up sweep after a user reported the Security/Network Health/
+-- Intelligence pages still feeling slow despite Phase 1-3. Live EXPLAIN
+-- ANALYZE across every remaining widget found: /api/security/summary's
+-- firewall_denies/vpn_events/ips_events sub-queries (each a plain COUNT(*)
+-- over an unindexed structured_data->>'action'/'subtype'/'type' filter,
+-- 7-92s depending on window — vendor='fortinet' matches ~100% of rows in
+-- this single-vendor deployment, the same "no index can help" shape as
+-- Phase 2's top-security-events), /api/health/device-status (2.3-23s, a raw
+-- 6-column GROUP BY with no rollup — documented as a known gap since Phase 3
+-- but never built), and /api/ueba/entity/:type/:value's per-click drill-down
+-- (20-23s per entity, sequential, ~40-50s per click — an unindexed
+-- structured_data->>'user'/'srcip' filter). Same maintenance model (5-min
+-- recompute-window, idempotent DELETE+INSERT), same getRollupSiteFilter()
+-- RBAC pattern, same live-known_hosts-join-for-enrichment principle as
+-- Phase 1-3 — see those sections' comments above for the full rationale.
+--
+-- Also fixed alongside this pass, in the maintenance query and the read-side
+-- endpoint together: /api/security/summary's/firewall-denies' action filter
+-- was 'deny', a value this deployment's Fortinet parser never actually
+-- emits (confirmed live: the real "blocked" action value is literally
+-- 'blocked' — 546 rows/24h — while 'deny' matches 0 rows, always). This
+-- widget has silently shown "0" since it shipped, not because there was
+-- nothing to show. The rollup is built with the CORRECT value; don't
+-- "restore" 'deny' to match the old (buggy) live query.
+-- ============================================================
+
+-- Fortinet per-row field breakdowns (action/type/subtype/service), sharing
+-- one table with a `dimension` discriminator — same reasoning as
+-- syslog_dest_event_rollup's event_class / syslog_distinct_value_rollup's
+-- dimension columns: these 4 widget queries (security/summary's 3 COUNT(*)
+-- sub-queries, plus the dashboard's top-services/firewall-actions widgets,
+-- which were ALSO still hitting raw syslog_entries despite being structurally
+-- identical to already-rollup-backed widgets) all group by the same
+-- low-cardinality shape, just a different JSONB field and value.
+CREATE TABLE IF NOT EXISTS syslog_fortinet_field_rollup (
+  hour_bucket TIMESTAMPTZ NOT NULL,
+  dimension   TEXT        NOT NULL,              -- 'action' | 'type' | 'subtype' | 'service'
+  value       TEXT        NOT NULL,
+  site_id     INTEGER,                          -- NULL = unassigned/unknown device
+  log_count   BIGINT      NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_fortinet_field_rollup_dims
+  ON syslog_fortinet_field_rollup (hour_bucket, dimension, value, COALESCE(site_id, -1));
+CREATE INDEX IF NOT EXISTS idx_fortinet_field_rollup_dim_hour
+  ON syslog_fortinet_field_rollup (dimension, hour_bucket DESC);
+CREATE INDEX IF NOT EXISTS idx_fortinet_field_rollup_site_hour
+  ON syslog_fortinet_field_rollup (site_id, hour_bucket DESC);
+
+-- Per-device hourly counts (Network Health's device-status table). Mirrors
+-- syslog_source_host_rollup's shape (source_host carried as a MAX()
+-- representative alongside the real grouping key, source_ip) — kh.hostname/
+-- vendor/description enrichment stays a LIVE join at read time, same
+-- principle as every other rollup here. Only site_id is snapshotted.
+CREATE TABLE IF NOT EXISTS syslog_device_status_rollup (
+  hour_bucket    TIMESTAMPTZ NOT NULL,
+  source_ip      TEXT        NOT NULL,
+  source_host    TEXT,                          -- MAX() representative, not a grouping key
+  vendor         TEXT,
+  site_id        INTEGER,                       -- NULL = unassigned/unknown device
+  log_count      BIGINT      NOT NULL DEFAULT 0,
+  critical_count BIGINT      NOT NULL DEFAULT 0, -- severity <= 2
+  error_count    BIGINT      NOT NULL DEFAULT 0, -- severity = 3
+  last_seen      TIMESTAMPTZ NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_device_status_rollup_dims
+  ON syslog_device_status_rollup (hour_bucket, source_ip, COALESCE(site_id, -1));
+CREATE INDEX IF NOT EXISTS idx_device_status_rollup_hour
+  ON syslog_device_status_rollup (hour_bucket DESC);
+CREATE INDEX IF NOT EXISTS idx_device_status_rollup_site_hour
+  ON syslog_device_status_rollup (site_id, hour_bucket DESC);
+
+-- UEBA entity drill-down activity (the "7-day syslog activity summary" panel
+-- on the Intelligence tab). entity_value normalization MUST stay byte-identical
+-- to collector/analytics/baselineBuilder.js's/uebaRollup.js's own entity_value
+-- derivation (device: COALESCE(source_host, source_ip::text); user:
+-- structured_data->>'user'; srcip: the RAW structured_data->>'srcip' field,
+-- NOT the derived srcip column — uebaRollup.js's srcip-entity builder only
+-- considers rows with a real, non-empty structured_data.srcip, excluding the
+-- column's relay-fallback case entirely since internal/relay activity is
+-- already covered by the 'device' type) so this table's rows line up with
+-- the SAME entity_risk/entity_baselines rows the drill-down panel displays
+-- alongside this summary — a mismatched normalization would silently show
+-- activity data for the wrong "entity" than the risk/baseline data next to it.
+CREATE TABLE IF NOT EXISTS syslog_entity_activity_rollup (
+  hour_bucket         TIMESTAMPTZ NOT NULL,
+  entity_type         TEXT        NOT NULL,     -- 'device' | 'user' | 'srcip'
+  entity_value        TEXT        NOT NULL,
+  category             TEXT,                     -- se.category, NULL = uncategorized
+  site_id              INTEGER,                   -- NULL = unassigned/unknown device
+  log_count            BIGINT      NOT NULL DEFAULT 0,
+  failed_login_count   BIGINT      NOT NULL DEFAULT 0,
+  last_seen            TIMESTAMPTZ NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_entity_activity_rollup_dims
+  ON syslog_entity_activity_rollup (hour_bucket, entity_type, entity_value, COALESCE(category, ''), COALESCE(site_id, -1));
+CREATE INDEX IF NOT EXISTS idx_entity_activity_rollup_lookup
+  ON syslog_entity_activity_rollup (entity_type, entity_value, hour_bucket DESC);
+
+-- ============================================================
+-- Log Explorer free-text search (perf pass, 2026-07, Phase 4). The `q`
+-- filter's structured_data->>'user'/'srccountry'/'service' ILIKE branches had
+-- no supporting index, forcing the planner to abandon message's own
+-- trigram/GIN indexes and fall back to a full sequential scan for the WHOLE
+-- 5-way OR — measured up to 94.5s for a common search term at 30d, on both
+-- the results query AND (worse) the total-count query that ran on every
+-- keystroke-triggered search. These 3 partial trigram indexes let Postgres
+-- build a genuine BitmapOr across all indexed branches instead.
+CREATE INDEX IF NOT EXISTS idx_syslog_user_trgm
+  ON syslog_entries USING GIN ((structured_data->>'user') gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_syslog_srccountry_trgm
+  ON syslog_entries USING GIN ((structured_data->>'srccountry') gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_syslog_service_trgm
+  ON syslog_entries USING GIN ((structured_data->>'service') gin_trgm_ops);
+
+-- Equality-filter siblings of idx_syslog_subcategory, for the same JSONB
+-- fields /api/security/firewall-denies and /api/security/ips-events filter
+-- on directly (structured_data->>'action'='blocked', structured_data->>'type'
+-- ='utm') for their row-detail breakdowns, which can't be served by the
+-- Phase 4 rollup above (that only serves COUNTs, not per-row detail).
+CREATE INDEX IF NOT EXISTS idx_syslog_action
+  ON syslog_entries ((structured_data->>'action'))
+  WHERE structured_data->>'action' IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_syslog_type
+  ON syslog_entries ((structured_data->>'type'))
+  WHERE structured_data->>'type' IS NOT NULL;
 
 -- ============================================================
 -- DAILY PARTITION MANAGEMENT (SECURITY DEFINER)

@@ -9,15 +9,20 @@
  *       the whole table).
  *   (b) Backfills syslog_stats_rollup + syslog_talker_rollup (Phase 1),
  *       syslog_security_event_rollup + syslog_dest_event_rollup +
- *       syslog_vpn_rollup (Phase 2), and syslog_dest_rollup +
+ *       syslog_vpn_rollup (Phase 2), syslog_dest_rollup +
  *       syslog_source_host_rollup + syslog_distinct_value_rollup +
  *       syslog_known_bad_hit_rollup (Phase 3, the "check ALL widgets" pass —
- *       see scripts/schema.sql's "PHASE 3 HOURLY ROLLUP TABLES" comment) for
+ *       see scripts/schema.sql's "PHASE 3 HOURLY ROLLUP TABLES" comment), and
+ *       syslog_fortinet_field_rollup + syslog_device_status_rollup +
+ *       syslog_entity_activity_rollup (Phase 4, a follow-up sweep after
+ *       Security/Network Health/Intelligence still felt slow post-Phase-3 —
+ *       see scripts/schema.sql's "PHASE 4 HOURLY ROLLUP TABLES" comment) for
  *       every hour in the same window, using the EXACT same DELETE+INSERT-
  *       per-bucket logic as the live collector job (collector/collector.js's
  *       runRollupMaintenance / recomputeRollupBucket /
- *       recomputePhase2RollupBucket / recomputePhase3RollupBucket), just
- *       looped across every hour instead of only the current+previous hour.
+ *       recomputePhase2RollupBucket / recomputePhase3RollupBucket /
+ *       recomputePhase4RollupBucket), just looped across every hour instead
+ *       of only the current+previous hour.
  *
  * (b) for a given day always runs AFTER (a) for that same day, so srcip is
  * populated before that day's talker rollup reads it.
@@ -97,6 +102,7 @@ async function backfillRollupForHour(pool, hourBucket) {
 
   await backfillPhase2RollupForHour(pool, hourBucket);
   await backfillPhase3RollupForHour(pool, hourBucket);
+  await backfillPhase4RollupForHour(pool, hourBucket);
 }
 
 // Phase 2 rollups (perf pass, 2026-07): Top Security Events / Top Blocked /
@@ -252,6 +258,73 @@ async function backfillPhase3RollupForHour(pool, hourBucket) {
     WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
     GROUP BY 1, 2, 3
   `, [hourBucket]);
+}
+
+// Phase 4 rollups (perf pass, 2026-07): Fortinet field breakdowns / per-device
+// status / UEBA entity activity. Byte-identical SQL to collector/collector.js's
+// recomputePhase4RollupBucket — see that function's comment and
+// scripts/schema.sql's "PHASE 4 HOURLY ROLLUP TABLES" comment for the full
+// rationale. Kept in sync manually (same duplication pattern this file
+// already uses for Phase 1-3 above).
+async function backfillPhase4RollupForHour(pool, hourBucket) {
+  await pool.query(`DELETE FROM syslog_fortinet_field_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  const FORTINET_FIELD_DIMS = [
+    { dim: 'action',  expr: `COALESCE(se.structured_data->>'action', 'unknown')`, notNull: false },
+    { dim: 'type',    expr: `se.structured_data->>'type'`,    notNull: true },
+    { dim: 'subtype', expr: `se.structured_data->>'subtype'`, notNull: true },
+    { dim: 'service', expr: `se.structured_data->>'service'`, notNull: true },
+  ];
+  for (const { dim, expr, notNull } of FORTINET_FIELD_DIMS) {
+    await pool.query(`
+      INSERT INTO syslog_fortinet_field_rollup (hour_bucket, dimension, value, site_id, log_count)
+      SELECT date_trunc('hour', se.received_at), $2, ${expr}, kh.site_id, COUNT(*)
+      FROM syslog_entries se
+      LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+      WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+        AND se.vendor = 'fortinet'
+        ${notNull ? `AND ${expr} IS NOT NULL AND ${expr} <> ''` : ''}
+      GROUP BY 1, 3, 4
+    `, [hourBucket, dim]);
+  }
+
+  await pool.query(`DELETE FROM syslog_device_status_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_device_status_rollup
+      (hour_bucket, source_ip, source_host, vendor, site_id, log_count, critical_count, error_count, last_seen)
+    SELECT date_trunc('hour', se.received_at), host(se.source_ip), MAX(se.source_host), MAX(se.vendor), kh.site_id,
+      COUNT(*),
+      COUNT(*) FILTER (WHERE se.severity <= 2),
+      COUNT(*) FILTER (WHERE se.severity = 3),
+      MAX(se.received_at)
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+    GROUP BY 1, host(se.source_ip), kh.site_id
+  `, [hourBucket]);
+
+  await pool.query(`DELETE FROM syslog_entity_activity_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  const ENTITY_DIMS = [
+    { type: 'device', expr: `COALESCE(se.source_host, se.source_ip::text)` },
+    { type: 'user',    expr: `se.structured_data->>'user'` },
+    // srcip: RAW structured_data->>'srcip', not the derived srcip column — see
+    // the matching comment in collector/collector.js's recomputePhase4RollupBucket.
+    { type: 'srcip',   expr: `se.structured_data->>'srcip'` },
+  ];
+  for (const { type, expr } of ENTITY_DIMS) {
+    await pool.query(`
+      INSERT INTO syslog_entity_activity_rollup
+        (hour_bucket, entity_type, entity_value, category, site_id, log_count, failed_login_count, last_seen)
+      SELECT date_trunc('hour', se.received_at), $2, ${expr}, se.category, kh.site_id,
+        COUNT(*),
+        COUNT(*) FILTER (WHERE se.structured_data->>'subcategory' IN ('login_failed','auth_failed')),
+        MAX(se.received_at)
+      FROM syslog_entries se
+      LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+      WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+        AND ${expr} IS NOT NULL AND ${expr} NOT IN ('', 'N/A')
+      GROUP BY 1, 3, se.category, kh.site_id
+    `, [hourBucket, type]);
+  }
 }
 
 // Runs the full two-phase backfill against the supplied pool. Does NOT

@@ -461,6 +461,16 @@ app.get('/api/stats/mitre-coverage', asyncHandler(async (req, res) => {
     const { rows } = await pool.query(`
       WITH event_tech AS (
         -- Event-level tags written at ingest by collector/mitreMapper.js.
+        -- se.structured_data ? 'mitre' (perf pass, 2026-07) is a GIN
+        -- existence check against idx_syslog_structured, letting the planner
+        -- use a Bitmap Index Scan instead of a full sequential scan just to
+        -- discover most rows have no 'mitre' key at all — measured 8s -> 250ms
+        -- (~30x) on a live 24h window where zero rows currently carry MITRE
+        -- tags. The LATERAL unnest below still does the real per-technique
+        -- work; this predicate only prunes rows that could never contribute
+        -- to it. Do not remove this "redundant-looking" filter — without it
+        -- the planner has no way to push the mitre-key check down to the
+        -- index and falls back to evaluating the LATERAL on every row.
         SELECT t.technique AS technique, COUNT(*)::bigint AS events
         FROM syslog_entries se,
              LATERAL jsonb_array_elements_text(
@@ -468,6 +478,7 @@ app.get('/api/stats/mitre-coverage', asyncHandler(async (req, res) => {
                     THEN se.structured_data->'mitre' ELSE '[]'::jsonb END
              ) AS t(technique)
         WHERE se.received_at > NOW() - make_interval(hours => $1)
+          AND se.structured_data ? 'mitre'
         ${sfEvents.clause}
         GROUP BY t.technique
       ),
@@ -539,34 +550,46 @@ app.get('/api/alerts/unacked-count', asyncHandler(async (req, res) => {
   res.json({ count: parseInt(rows[0].count) });
 }));
 
+// Reads syslog_fortinet_field_rollup WHERE dimension='service' (scripts/
+// schema.sql "PHASE 4 HOURLY ROLLUP TABLES") instead of scanning raw
+// syslog_entries — this dashboard widget was structurally identical to
+// several already-rollup-backed ones (vendor='fortinet' matches ~100% of
+// rows in this deployment) but was missed by the earlier rollup passes.
+// getRollupSiteFilter (permissive), not getStatsSiteFilter — same
+// intentional widening every rollup migration makes; the two are already
+// equivalent in shape/params, this just points at the rollup's own
+// snapshotted site_id column instead of a live known_hosts join.
 app.get('/api/stats/top-services', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const sf = getStatsSiteFilter(req.rbac, 2, 'syslog_entries');
+  const sf = getRollupSiteFilter(req.rbac, 2);
   const { rows } = await pool.query(`
-    SELECT COALESCE(structured_data->>'service', 'unknown') AS service, COUNT(*) AS count
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
-      AND vendor = 'fortinet'
-      AND structured_data->>'service' IS NOT NULL
-      AND structured_data->>'service' != ''
+    SELECT value AS service, SUM(log_count)::bigint AS count
+    FROM syslog_fortinet_field_rollup
+    WHERE dimension = 'service'
+      AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
     ${sf.clause}
-    GROUP BY structured_data->>'service'
+    GROUP BY value
     ORDER BY count DESC LIMIT 8
   `, [hours, ...sf.params]);
   res.json({ data: rows });
 }));
 
+// Reads syslog_fortinet_field_rollup WHERE dimension='action' — see
+// top-services above for the rollup table and rationale. The rollup stores
+// 'unknown' for a null action (matching the OLD live query's SELECT-side
+// COALESCE), but the old query's WHERE excluded nulls entirely before that
+// COALESCE could ever apply — so 'unknown' never actually appeared in past
+// output. Excluding it here preserves that same behavior exactly.
 app.get('/api/stats/firewall-actions', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const sf = getStatsSiteFilter(req.rbac, 2, 'syslog_entries');
+  const sf = getRollupSiteFilter(req.rbac, 2);
   const { rows } = await pool.query(`
-    SELECT COALESCE(structured_data->>'action', 'unknown') AS action, COUNT(*) AS count
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
-      AND vendor = 'fortinet'
-      AND structured_data->>'action' IS NOT NULL
+    SELECT value AS action, SUM(log_count)::bigint AS count
+    FROM syslog_fortinet_field_rollup
+    WHERE dimension = 'action' AND value != 'unknown'
+      AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
     ${sf.clause}
-    GROUP BY structured_data->>'action'
+    GROUP BY value
     ORDER BY count DESC LIMIT 10
   `, [hours, ...sf.params]);
   res.json({ data: rows });
@@ -664,7 +687,18 @@ app.get('/api/logs', asyncHandler(async (req, res) => {
   const params = [hours];
   let p = 2;
 
-  if (q)        { const qp = p++; conditions.push(`(to_tsvector('english', se.message) @@ plainto_tsquery('english', $${qp}) OR se.message ILIKE '%'||$${qp}||'%' OR se.structured_data->>'user' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'srccountry' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'service' ILIKE '%'||$${qp}||'%')`); params.push(q); }
+  // Free-text search. The tsvector @@ plainto_tsquery branch was dropped (perf
+  // pass, 2026-07): message ILIKE '%term%' is a strict superset for substring
+  // search and is trigram-indexed (idx_syslog_message_trgm), so the tsvector
+  // branch never contributed a match ILIKE didn't already find, while forcing
+  // the planner to consider merging two different index types. The remaining
+  // 3 structured_data->>'x' ILIKE branches are now backed by their own partial
+  // trigram indexes (idx_syslog_user_trgm/srccountry_trgm/service_trgm) —
+  // previously unindexed, which forced Postgres to abandon every index and
+  // sequential-scan the WHOLE 5-way OR (measured up to 94.5s for a common term
+  // at 30d). With all 4 remaining branches indexed, the planner can build a
+  // genuine BitmapOr across them instead.
+  if (q)        { const qp = p++; conditions.push(`(se.message ILIKE '%'||$${qp}||'%' OR se.structured_data->>'user' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'srccountry' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'service' ILIKE '%'||$${qp}||'%')`); params.push(q); }
   if (vendor)   { conditions.push(`se.vendor = $${p++}`);                        params.push(vendor); }
   if (category) { conditions.push(`se.category = $${p++}`);                      params.push(category); }
   // MITRE ATT&CK technique filter — JSONB containment on structured_data.mitre,
@@ -699,27 +733,46 @@ app.get('/api/logs', asyncHandler(async (req, res) => {
   const sf = getSiteFilter(req.rbac, p, 'se');
   if (sf.clause) { conditions.push(sf.clause.replace(/^AND\s+/i, '')); params.push(...sf.params); p = sf.nextParamIndex; }
 
-  params.push(limit, offset);
+  const dataParams = [...params, limit, offset];
+  const countParams = params;
+  const conditionsSql = conditions.join(' AND ');
 
-  const { rows } = await pool.query(`
-    SELECT se.id, se.received_at, se.log_timestamp, se.source_ip::TEXT,
-      COALESCE(kh.hostname, se.source_host) AS source_host,
-      se.facility_label, se.severity, se.severity_label, se.vendor,
-      se.program, se.message, se.structured_data, se.is_parsed,
-      se.category, se.risk_score
-    FROM syslog_entries se
-    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
-    WHERE ${conditions.join(' AND ')}
-    ORDER BY se.received_at DESC
-    LIMIT $${p++} OFFSET $${p++}
-  `, params);
+  // Count query (perf pass, 2026-07). A free-text `q` search can't use any
+  // index for an exact COUNT(*) the same way an indexed-only filter can —
+  // measured up to 94.5s for a common term at 30d, run on EVERY search. For
+  // `q` searches, cap the count at 5,000 via a LIMIT-bounded subquery:
+  // Postgres stops scanning the moment it finds 5,000 matches, so a common
+  // term now returns in well under a second instead of scanning the whole
+  // table to find an exact total nobody reads past "Showing 100 of Y" for.
+  // `total_is_capped` tells the frontend to render "5,000+" instead of an
+  // exact number when the cap is hit. Filter-only searches (no `q`, all
+  // branches indexed) keep an exact COUNT(*) — already fast (~121ms even
+  // unfiltered) and worth keeping precise. Both queries run in parallel with
+  // the data query (previously sequential — free ~2x wall-time cut on
+  // whatever count cost remains).
+  const COUNT_CAP = 5000;
+  const countSql = q
+    ? `SELECT COUNT(*) AS total FROM (SELECT 1 FROM syslog_entries se LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip WHERE ${conditionsSql} LIMIT ${COUNT_CAP}) capped`
+    : `SELECT COUNT(*) AS total FROM syslog_entries se LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip WHERE ${conditionsSql}`;
 
-  const countRes = await pool.query(
-    `SELECT COUNT(*) AS total FROM syslog_entries se LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip WHERE ${conditions.join(' AND ')}`,
-    params.slice(0, -2)
-  );
+  const [{ rows }, countRes] = await Promise.all([
+    pool.query(`
+      SELECT se.id, se.received_at, se.log_timestamp, se.source_ip::TEXT,
+        COALESCE(kh.hostname, se.source_host) AS source_host,
+        se.facility_label, se.severity, se.severity_label, se.vendor,
+        se.program, se.message, se.structured_data, se.is_parsed,
+        se.category, se.risk_score
+      FROM syslog_entries se
+      LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+      WHERE ${conditionsSql}
+      ORDER BY se.received_at DESC
+      LIMIT $${p} OFFSET $${p + 1}
+    `, dataParams),
+    pool.query(countSql, countParams),
+  ]);
 
-  res.json({ total: parseInt(countRes.rows[0].total), page, limit, data: rows });
+  const total = parseInt(countRes.rows[0].total);
+  res.json({ total, total_is_capped: !!q && total >= COUNT_CAP, page, limit, data: rows });
 }));
 
 app.get('/api/logs/recent-critical', asyncHandler(async (req, res) => {
@@ -976,7 +1029,18 @@ app.get('/api/logs/export', asyncHandler(async (req, res) => {
   const params = [hours];
   let p = 2;
 
-  if (q)        { const qp = p++; conditions.push(`(to_tsvector('english', se.message) @@ plainto_tsquery('english', $${qp}) OR se.message ILIKE '%'||$${qp}||'%' OR se.structured_data->>'user' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'srccountry' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'service' ILIKE '%'||$${qp}||'%')`); params.push(q); }
+  // Free-text search. The tsvector @@ plainto_tsquery branch was dropped (perf
+  // pass, 2026-07): message ILIKE '%term%' is a strict superset for substring
+  // search and is trigram-indexed (idx_syslog_message_trgm), so the tsvector
+  // branch never contributed a match ILIKE didn't already find, while forcing
+  // the planner to consider merging two different index types. The remaining
+  // 3 structured_data->>'x' ILIKE branches are now backed by their own partial
+  // trigram indexes (idx_syslog_user_trgm/srccountry_trgm/service_trgm) —
+  // previously unindexed, which forced Postgres to abandon every index and
+  // sequential-scan the WHOLE 5-way OR (measured up to 94.5s for a common term
+  // at 30d). With all 4 remaining branches indexed, the planner can build a
+  // genuine BitmapOr across them instead.
+  if (q)        { const qp = p++; conditions.push(`(se.message ILIKE '%'||$${qp}||'%' OR se.structured_data->>'user' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'srccountry' ILIKE '%'||$${qp}||'%' OR se.structured_data->>'service' ILIKE '%'||$${qp}||'%')`); params.push(q); }
   if (vendor)   { conditions.push(`se.vendor = $${p++}`);                   params.push(vendor); }
   if (category) { conditions.push(`se.category = $${p++}`);                 params.push(category); }
   if (severity) {
@@ -1368,34 +1432,54 @@ app.get('/api/health/routing', asyncHandler(async (req, res) => {
 }));
 
 app.get('/api/health/device-status', asyncHandler(async (req, res) => {
-  // Heavy aggregation over the syslog table — cache for 60s (device status
-  // changes slowly) so dashboard refreshes don't re-run it on every load.
-  // The window is driven by the ?hours param (defaults to 24h for backward
-  // compatibility) so it tracks the Network Health time-range picker like the
-  // sibling /api/health/* endpoints. The logs_1h / logs_24h / critical_24h /
-  // error_24h columns stay on their fixed (1h / 24h) windows because the UI
-  // labels them as such.
+  // Reads syslog_device_status_rollup (scripts/schema.sql "PHASE 4 HOURLY
+  // ROLLUP TABLES") instead of scanning raw syslog_entries. This was a
+  // documented-but-unbuilt gap since the Phase 3 rollup pass: the 6-column
+  // GROUP BY + 4 overlapping COUNT(*) FILTER clauses had to touch every row
+  // in the window regardless of indexing (cost scales with rows read, not
+  // anything an index can prune) — measured live at 2.3s (24h) up to 23.4s
+  // (7d), and it dominated the whole Network Health tab (one shared spinner
+  // over all 8 calls on that page, 7 of which are already sub-400ms).
+  // getRollupSiteFilter (permissive), not the strict getSiteFilter this used
+  // before — same intentional widening every other rollup migration makes.
+  // kh.hostname/vendor/description enrichment stays a LIVE join at read
+  // time, same as every other rollup here.
+  //
+  // Trade-off (same shape as top-talkers'/top-destinations' MAX(hour_bucket)
+  // last_seen note): logs_1h/logs_24h/critical_24h/error_24h are now summed
+  // over HOUR BUCKETS, not an exact rolling window — logs_1h becomes "logs in
+  // the current hour bucket" rather than "logs in the last 60 minutes"
+  // exactly. Acceptable for a live-refreshing status table; don't "fix" this
+  // by joining back to raw syslog_entries, that defeats the point of the rollup.
   const hours = safeHours(req.query.hours);
-  const sf = getSiteFilter(req.rbac, 2, 'se');
+  const sf = getRollupSiteFilter(req.rbac, 2);
   const cacheKey = `device-status:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 60000, async () => {
     const { rows } = await pool.query(`
       SELECT
-        COALESCE(kh.hostname, se.source_host, se.source_ip::TEXT) AS host,
-        se.source_ip::TEXT,
-        kh.vendor AS known_vendor, se.vendor, kh.description,
-        MAX(se.received_at) AS last_seen,
-        COUNT(*) FILTER (WHERE se.received_at > NOW() - make_interval(hours => 1))   AS logs_1h,
-        COUNT(*) FILTER (WHERE se.received_at > NOW() - make_interval(hours => 24))  AS logs_24h,
-        COUNT(*) FILTER (WHERE se.severity <= 2 AND se.received_at > NOW() - make_interval(hours => 24)) AS critical_24h,
-        COUNT(*) FILTER (WHERE se.severity = 3  AND se.received_at > NOW() - make_interval(hours => 24)) AS error_24h,
-        EXTRACT(EPOCH FROM (NOW() - MAX(se.received_at)))/60 AS minutes_since_last_log
-      FROM syslog_entries se
-      LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
-      WHERE se.received_at > NOW() - make_interval(hours => $1)
-      ${sf.clause}
-      GROUP BY se.source_host, se.source_ip, kh.hostname, kh.vendor, kh.description, se.vendor
-      ORDER BY last_seen DESC
+        COALESCE(kh.hostname, agg.source_host, agg.source_ip) AS host,
+        agg.source_ip AS source_ip,
+        kh.vendor AS known_vendor, agg.vendor, kh.description,
+        agg.last_seen,
+        COALESCE(agg.logs_1h, 0)      AS logs_1h,
+        COALESCE(agg.logs_24h, 0)     AS logs_24h,
+        COALESCE(agg.critical_24h, 0) AS critical_24h,
+        COALESCE(agg.error_24h, 0)    AS error_24h,
+        EXTRACT(EPOCH FROM (NOW() - agg.last_seen))/60 AS minutes_since_last_log
+      FROM (
+        SELECT source_ip,
+          MAX(source_host) AS source_host, MAX(vendor) AS vendor, MAX(last_seen) AS last_seen,
+          SUM(log_count)      FILTER (WHERE hour_bucket = date_trunc('hour', NOW()))                                 AS logs_1h,
+          SUM(log_count)      FILTER (WHERE hour_bucket >= date_trunc('hour', NOW() - interval '24 hours')) AS logs_24h,
+          SUM(critical_count) FILTER (WHERE hour_bucket >= date_trunc('hour', NOW() - interval '24 hours')) AS critical_24h,
+          SUM(error_count)    FILTER (WHERE hour_bucket >= date_trunc('hour', NOW() - interval '24 hours')) AS error_24h
+        FROM syslog_device_status_rollup
+        WHERE hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
+        ${sf.clause}
+        GROUP BY source_ip
+      ) agg
+      LEFT JOIN known_hosts kh ON host(kh.ip_address) = agg.source_ip
+      ORDER BY agg.last_seen DESC
     `, [hours, ...sf.params]);
     return { data: rows };
   });
@@ -1431,6 +1515,29 @@ app.get('/api/security/summary', asyncHandler(async (req, res) => {
   const sf  = getSiteFilter(req.rbac, 2, 'syslog_entries'); // bare-table subqueries
   const sfA = getSiteFilter(req.rbac, 2, 'a');               // alias 'a' subquery (brute-force success)
   const sfSe = getSiteFilter(req.rbac, 2, 'se');             // alias 'se' subquery (known-bad join)
+  // firewall_denies/vpn_events/ips_events read syslog_fortinet_field_rollup
+  // (scripts/schema.sql "PHASE 4 HOURLY ROLLUP TABLES") instead of scanning
+  // raw syslog_entries — vendor='fortinet' matches ~100% of rows in this
+  // single-vendor deployment, the same no-selectivity shape Phase 2's
+  // top-security-events already hit (7-92s live, worse at wider ranges).
+  // getRollupSiteFilter, not getSiteFilter, since site_id is already resolved
+  // on the rollup row (no known_hosts join needed at read time) — same
+  // pattern as every other rollup-backed endpoint.
+  //
+  // Correctness fix riding along with this: firewall_denies used to filter
+  // structured_data->>'action' = 'deny', a value this deployment's Fortinet
+  // parser never actually emits (confirmed live: the real value is 'blocked'
+  // — 546 rows/24h — 'deny' matches 0 rows, always). This card has silently
+  // shown "0" since it shipped. Now correctly reads dimension='action',
+  // value='blocked'.
+  //
+  // vpn_events also drops the redundant `OR message ILIKE '%vpn%'` — a live
+  // check (same technique as the already-fixed auth-failure/brute-force
+  // ILIKE removals) confirmed structured_data->>'subtype'='vpn' alone
+  // catches every row the ILIKE branch did, at a fraction of the cost.
+  const sfRollupDenies = getRollupSiteFilter(req.rbac, 2);
+  const sfRollupVpn    = getRollupSiteFilter(req.rbac, 2);
+  const sfRollupIps     = getRollupSiteFilter(req.rbac, 2);
   const [authFail, denies, vpn, ips, afterHours, bruteSuccess, vpnLoginFail, knownBadFail] = await Promise.all([
     // Real auth failure = normalized subcategory (vendor-agnostic). The old broad
     // %fail%/%error% match counted SSL teardown noise (ssl-exit-error/ssl-alert/
@@ -1443,9 +1550,9 @@ app.get('/api/security/summary', asyncHandler(async (req, res) => {
     // every one of the 35 partitions — ~350ms of planning alone). Do not re-add it
     // without fresh evidence it's catching something real.
     pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND structured_data->>'subcategory' IN ('login_failed','auth_failed') ${sf.clause}`, [hours, ...sf.params]),
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'action' = 'deny' ${sf.clause}`, [hours, ...sf.params]),
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND (structured_data->>'subtype' = 'vpn' OR message ILIKE '%vpn%') ${sf.clause}`, [hours, ...sf.params]),
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'type' = 'utm' ${sf.clause}`, [hours, ...sf.params]),
+    pool.query(`SELECT COALESCE(SUM(log_count), 0)::bigint AS count FROM syslog_fortinet_field_rollup WHERE dimension = 'action' AND value = 'blocked' AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1)) ${sfRollupDenies.clause}`, [hours, ...sfRollupDenies.params]),
+    pool.query(`SELECT COALESCE(SUM(log_count), 0)::bigint AS count FROM syslog_fortinet_field_rollup WHERE dimension = 'subtype' AND value = 'vpn' AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1)) ${sfRollupVpn.clause}`, [hours, ...sfRollupVpn.params]),
+    pool.query(`SELECT COALESCE(SUM(log_count), 0)::bigint AS count FROM syslog_fortinet_field_rollup WHERE dimension = 'type' AND value = 'utm' AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1)) ${sfRollupIps.clause}`, [hours, ...sfRollupIps.params]),
     // Same message-ILIKE-fallback removal as authFail above (zero extra recall,
     // verified over 30 days) applies here too.
     pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND structured_data->>'subcategory' IN ('login_failed','config_change','auth_failed') AND EXTRACT(HOUR FROM received_at) NOT BETWEEN 7 AND 19 ${sf.clause}`, [hours, ...sf.params]),
@@ -1575,10 +1682,16 @@ app.get('/api/security/brute-force', asyncHandler(async (req, res) => {
 app.get('/api/security/firewall-denies', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
   const sf = getSiteFilter(req.rbac, 2, 'syslog_entries');
+  // Correctness fix (perf pass, 2026-07): the filter was action='deny', a
+  // value this deployment's Fortinet parser never actually emits — confirmed
+  // live, the real value is 'blocked' (546 rows/24h vs 0 for 'deny', always).
+  // This page has silently shown nothing since it shipped, not because there
+  // was nothing to show. idx_syslog_action (scripts/schema.sql) now backs
+  // this equality filter, same pattern as idx_syslog_subcategory.
   const [bySrc, byDst, bySvc] = await Promise.all([
-    pool.query(`SELECT structured_data->>'srcip' AS src_ip, COUNT(*) AS deny_count, ARRAY_AGG(DISTINCT structured_data->>'dstip') FILTER (WHERE structured_data->>'dstip' IS NOT NULL) AS destinations FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'action'='deny' AND structured_data->>'srcip' IS NOT NULL ${sf.clause} GROUP BY structured_data->>'srcip' ORDER BY deny_count DESC LIMIT 15`, [hours, ...sf.params]),
-    pool.query(`SELECT structured_data->>'dstip' AS dst_ip, COUNT(*) AS deny_count, ARRAY_AGG(DISTINCT structured_data->>'srcip') FILTER (WHERE structured_data->>'srcip' IS NOT NULL) AS sources FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'action'='deny' AND structured_data->>'dstip' IS NOT NULL ${sf.clause} GROUP BY structured_data->>'dstip' ORDER BY deny_count DESC LIMIT 15`, [hours, ...sf.params]),
-    pool.query(`SELECT COALESCE(structured_data->>'service','unknown') AS service, COUNT(*) AS deny_count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'action'='deny' ${sf.clause} GROUP BY structured_data->>'service' ORDER BY deny_count DESC LIMIT 10`, [hours, ...sf.params]),
+    pool.query(`SELECT structured_data->>'srcip' AS src_ip, COUNT(*) AS deny_count, ARRAY_AGG(DISTINCT structured_data->>'dstip') FILTER (WHERE structured_data->>'dstip' IS NOT NULL) AS destinations FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'action'='blocked' AND structured_data->>'srcip' IS NOT NULL ${sf.clause} GROUP BY structured_data->>'srcip' ORDER BY deny_count DESC LIMIT 15`, [hours, ...sf.params]),
+    pool.query(`SELECT structured_data->>'dstip' AS dst_ip, COUNT(*) AS deny_count, ARRAY_AGG(DISTINCT structured_data->>'srcip') FILTER (WHERE structured_data->>'srcip' IS NOT NULL) AS sources FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'action'='blocked' AND structured_data->>'dstip' IS NOT NULL ${sf.clause} GROUP BY structured_data->>'dstip' ORDER BY deny_count DESC LIMIT 15`, [hours, ...sf.params]),
+    pool.query(`SELECT COALESCE(structured_data->>'service','unknown') AS service, COUNT(*) AS deny_count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet' AND structured_data->>'action'='blocked' ${sf.clause} GROUP BY structured_data->>'service' ORDER BY deny_count DESC LIMIT 10`, [hours, ...sf.params]),
   ]);
   res.json({ by_source: bySrc.rows, by_destination: byDst.rows, by_service: bySvc.rows });
 }));
@@ -1589,6 +1702,13 @@ app.get('/api/security/vpn-events', asyncHandler(async (req, res) => {
   // event_type is driven by the normalized subcategory — NOT the broad %fail%/%error%
   // match, which mislabelled SSL teardown noise (ssl-exit-error/ssl-alert) as failures.
   // vpn_src_ip is the REAL remote client (structured_data.srcip), not the firewall.
+  // The `OR message ILIKE '%ssl vpn%'/'%ipsec%'/'%vpn%'` fallback that used to sit
+  // alongside subtype='vpn' was removed (perf pass, 2026-07): a live check confirmed
+  // it caught zero rows beyond what subtype='vpn' already covers, while forcing a
+  // sequential scan (no index can serve a leading-wildcard ILIKE) — 6.7-27x slower
+  // depending on window. Same verified-zero-extra-recall pattern already applied to
+  // /api/security/summary and /api/security/auth-failures. Do not re-add without
+  // fresh evidence it's catching something real.
   const { rows } = await pool.query(`
     SELECT received_at, source_host, source_ip::TEXT, severity_label, message,
       structured_data->>'srcip' AS vpn_src_ip,
@@ -1600,7 +1720,7 @@ app.get('/api/security/vpn-events', asyncHandler(async (req, res) => {
            ELSE 'info' END AS event_type
     FROM syslog_entries
     WHERE received_at > NOW() - make_interval(hours => $1) AND vendor='fortinet'
-      AND (structured_data->>'subtype'='vpn' OR message ILIKE '%ssl vpn%' OR message ILIKE '%ipsec%' OR message ILIKE '%vpn%')
+      AND structured_data->>'subtype'='vpn'
     ${sf.clause}
     ORDER BY received_at DESC LIMIT 100
   `, [hours, ...sf.params]);
@@ -1875,43 +1995,41 @@ app.get('/api/ueba/entity/:type/:value', asyncHandler(async (req, res) => {
     `, [type, value]),
   ]);
 
-  // 7-day syslog activity summary for this entity. The per-type entity match is
-  // a single reused placeholder ($2 = value); $1 is the entity value used by the
-  // device/srcip IP comparison too — keep value as a single param reused across
-  // the OR terms. RBAC site filter (strict) on se appended after.
-  let entityMatch;
-  const params = [value];
-  let p = 2;
-  if (type === 'device') {
-    entityMatch = `(se.source_host = $1 OR se.source_ip::text = $1)`;
-  } else if (type === 'srcip') {
-    entityMatch = `(se.structured_data->>'srcip' = $1 OR se.source_ip::text = $1)`;
-  } else { // user
-    entityMatch = `se.structured_data->>'user' = $1`;
-  }
-
-  const sf = getSiteFilter(req.rbac, p, 'se');
+  // 7-day syslog activity summary for this entity. Reads
+  // syslog_entity_activity_rollup (scripts/schema.sql "PHASE 4 HOURLY ROLLUP
+  // TABLES") instead of scanning raw syslog_entries — this was the single
+  // slowest thing on the Intelligence tab: an unindexed structured_data->>
+  // 'user'/'srcip' equality filter over a 7-day raw window, measured 20-23s
+  // PER QUERY (this endpoint runs two of them, sequentially — ~40-50s per
+  // entity-panel click). entity_value normalization matches the rollup's own
+  // build query exactly (see the schema.sql comment on that table) — `value`
+  // here is already in that form, since it's whatever entity_risk/
+  // anomaly_events stored via the SAME normalization in
+  // collector/analytics/uebaRollup.js. getRollupSiteFilter (permissive), not
+  // the strict getSiteFilter this used before — same intentional widening
+  // every other rollup migration makes.
+  const sf = getRollupSiteFilter(req.rbac, 3);
 
   const summaryRes = await pool.query(`
     SELECT
-      COUNT(*) AS total,
-      COUNT(*) FILTER (WHERE se.structured_data->>'subcategory' IN ('login_failed','auth_failed')) AS failed_logins,
-      MAX(se.received_at) AS last_seen
-    FROM syslog_entries se
-    WHERE se.received_at > NOW() - make_interval(days => 7)
-      AND ${entityMatch}
+      COALESCE(SUM(log_count), 0)::bigint AS total,
+      COALESCE(SUM(failed_login_count), 0)::bigint AS failed_logins,
+      MAX(last_seen) AS last_seen
+    FROM syslog_entity_activity_rollup
+    WHERE entity_type = $1 AND entity_value = $2
+      AND hour_bucket >= date_trunc('hour', NOW() - interval '7 days')
     ${sf.clause}
-  `, [...params, ...sf.params]);
+  `, [type, value, ...sf.params]);
 
   const byCategoryRes = await pool.query(`
-    SELECT COALESCE(se.category, 'uncategorized') AS category, COUNT(*) AS count
-    FROM syslog_entries se
-    WHERE se.received_at > NOW() - make_interval(days => 7)
-      AND ${entityMatch}
+    SELECT COALESCE(category, 'uncategorized') AS category, SUM(log_count)::bigint AS count
+    FROM syslog_entity_activity_rollup
+    WHERE entity_type = $1 AND entity_value = $2
+      AND hour_bucket >= date_trunc('hour', NOW() - interval '7 days')
     ${sf.clause}
-    GROUP BY se.category
+    GROUP BY COALESCE(category, 'uncategorized')
     ORDER BY count DESC
-  `, [...params, ...sf.params]);
+  `, [type, value, ...sf.params]);
 
   const s = summaryRes.rows[0];
   res.json({
@@ -1989,12 +2107,38 @@ app.get('/api/ueba/baseline-status', asyncHandler(async (req, res) => {
 app.get('/api/stats/heatmap', asyncHandler(async (req, res) => {
   const hours  = safeHours(req.query.hours || '168', 720);
   const metric = req.query.metric === 'auth_failed' ? 'auth_failed' : 'all';
-  const sf = getSiteFilter(req.rbac, 2, 'se');
-  const metricClause = metric === 'auth_failed'
-    ? `AND se.structured_data->>'subcategory' IN ('login_failed','auth_failed')`
-    : '';
   const cacheKey = `heatmap:${metric}:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 60000, async () => {
+    if (metric === 'all') {
+      // Reads syslog_stats_rollup (scripts/schema.sql "HOURLY ROLLUP TABLES")
+      // instead of scanning raw syslog_entries — there's no filter beyond the
+      // time window, so every row in range had to be touched just to bucket-
+      // count it. Measured 341ms (24h) -> 8.45s (30d) live; the rollup is
+      // already hour-bucketed at exactly the granularity this needs, so it's
+      // a direct SUM(log_count) instead of a fresh COUNT(*) over raw rows.
+      // getRollupSiteFilter (permissive: NULL site_id visible to everyone),
+      // not the strict getSiteFilter this branch used before — same
+      // intentional widening every other rollup migration makes (see
+      // getStatsSiteFilter's doc comment for why the strict filter is wrong
+      // for aggregate widgets like this one).
+      const sf = getRollupSiteFilter(req.rbac, 2);
+      const { rows } = await pool.query(`
+        SELECT
+          EXTRACT(DOW  FROM hour_bucket)::int AS dow,
+          EXTRACT(HOUR FROM hour_bucket)::int AS hour,
+          SUM(log_count)::bigint AS count
+        FROM syslog_stats_rollup
+        WHERE hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
+        ${sf.clause}
+        GROUP BY dow, hour
+        ORDER BY dow, hour
+      `, [hours, ...sf.params]);
+      return { metric, hours, data: rows };
+    }
+    // metric='auth_failed' stays on raw syslog_entries — already fast
+    // (pre-filtered on the indexed subcategory expression, confirmed live at
+    // 213ms/168h) and no rollup dimension carries subcategory.
+    const sf = getSiteFilter(req.rbac, 2, 'se');
     const { rows } = await pool.query(`
       SELECT
         EXTRACT(DOW  FROM se.received_at)::int AS dow,
@@ -2002,7 +2146,7 @@ app.get('/api/stats/heatmap', asyncHandler(async (req, res) => {
         COUNT(*)::bigint AS count
       FROM syslog_entries se
       WHERE se.received_at > NOW() - make_interval(hours => $1)
-      ${metricClause}
+        AND se.structured_data->>'subcategory' IN ('login_failed','auth_failed')
       ${sf.clause}
       GROUP BY dow, hour
       ORDER BY dow, hour
@@ -2378,6 +2522,12 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.25.0': [
+    'Performance: the Security page, Network Health page, and the Intelligence tab\'s entity drill-down panel are all substantially faster now. The worst offenders — a security summary card that could take over a minute and a half on a 30-day view, the device status table (up to 23 seconds), and clicking into an entity\'s activity history (40-50 seconds) — now load in a fraction of a second, using the same background pre-aggregation technique already applied to the main Dashboard.',
+    'Fixed a real bug found along the way: the "Firewall Denies" card and page had been silently showing zero results since they shipped. They were checking for a value your firewall never actually sends — now checking the correct one, so blocked-traffic data actually shows up.',
+    'Log Explorer search is now much faster, especially for common search terms across a wide time range (previously up to ~95 seconds in the worst case) — added missing search indexes and capped the "showing X of Y" count for text searches instead of always computing an exact total.',
+    'Also fixed: MITRE ATT&CK coverage now loads about 30x faster, and a few smaller dashboard stat cards (Top Services, Firewall Actions, the public status widget) now use the same fast pre-aggregated data as the rest of the dashboard instead of scanning raw logs.',
+  ],
   '2.24.1': [
     'Fixed a gap in the dashboard performance-summary tables added over the last few releases: they only ever refreshed the current and previous hour, so any logs that arrived late — after a database hiccup, a brief network blip, or simply because the collector service was restarting for an update — quietly never made it into any dashboard widget, permanently, with no error shown anywhere. The refresh window is now a full rolling day, so a delay or restart shorter than that self-corrects automatically within a few minutes instead of requiring a manual fix.',
   ],
@@ -3060,12 +3210,17 @@ app.get('/api/health', asyncHandler(async (req, res) => {
 // Same access level as /api/health (license-exempt). Permissive CORS since the
 // global cors() middleware restricts to the frontend origin only. Never 500s:
 // on any DB error, returns zeros with HTTP 200.
+// Unauthenticated widget (no req.rbac, so no site scoping — suite-wide
+// totals). Reads syslog_stats_rollup/syslog_source_host_rollup (scripts/
+// schema.sql "HOURLY ROLLUP TABLES"/"PHASE 3") instead of scanning raw
+// syslog_entries — this was the one dashboard-shaped aggregate query the
+// original rollup passes missed (perf sweep, 2026-07).
 app.get('/api/stats', async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   try {
     const [logsToday, sources, alerts] = await Promise.all([
-      pool.query(`SELECT COUNT(*) AS c FROM syslog_entries WHERE received_at > NOW() - INTERVAL '24 hours'`),
-      pool.query(`SELECT COUNT(DISTINCT source_host) AS c FROM syslog_entries WHERE received_at > NOW() - INTERVAL '24 hours'`),
+      pool.query(`SELECT COALESCE(SUM(log_count), 0)::bigint AS c FROM syslog_stats_rollup WHERE hour_bucket >= date_trunc('hour', NOW() - INTERVAL '24 hours')`),
+      pool.query(`SELECT COUNT(DISTINCT source_host) AS c FROM syslog_source_host_rollup WHERE hour_bucket >= date_trunc('hour', NOW() - INTERVAL '24 hours')`),
       pool.query(`SELECT COUNT(*) AS c FROM alert_events WHERE acknowledged = FALSE`),
     ]);
     res.json({

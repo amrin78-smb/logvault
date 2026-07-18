@@ -31,7 +31,7 @@
 
 const express = require('express');
 const PDFDocument = require('pdfkit');
-const { getSiteFilter, getStatsSiteFilter, getAlertSiteFilter } = require('./rbac');
+const { getSiteFilter, getStatsSiteFilter, getAlertSiteFilter, getRollupSiteFilter } = require('./rbac');
 const { escapeCsvCell } = require('./csv');
 // renderTrendChart is ported into ./pdfCharts.js for future single-series
 // trend blocks (see header comment above) but is not wired in here.
@@ -223,28 +223,41 @@ function drawChart(doc, x0, y0, w, h, chart) {
 async function reportSecuritySummary(db, q, rbac) {
   const hours = safeHours(q.hours);
 
+  // Severity distribution / category breakdown / daily trend / top talkers /
+  // top blocked / top failures all now read the pre-aggregated rollup tables
+  // (scripts/schema.sql "HOURLY ROLLUP TABLES"/"PHASE 2") instead of scanning
+  // raw syslog_entries — perf pass, 2026-07. This report was hand-duplicating
+  // the PRE-rollup raw query logic for every one of these; the dashboard
+  // endpoints it claims to mirror (/api/stats/summary, /timeline,
+  // /top-talkers, /top-blocked, /top-failures) were switched to rollups
+  // weeks ago, but this copy never was — report generation had silently
+  // regressed to 147s (7d) / 468s (30d) while the equivalent dashboard data
+  // returns in tens of milliseconds. getRollupSiteFilter (permissive), not
+  // getStatsSiteFilter — matches the dashboard endpoints exactly now.
+
   // Severity distribution (mirrors /api/stats/summary)
-  const sfSev = getStatsSiteFilter(rbac, 2, 'syslog_entries');
+  const sfSev = getRollupSiteFilter(rbac, 2);
   const sevR = await db.query(`
-    SELECT severity, severity_label, COUNT(*)::int AS log_count
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
+    SELECT severity, severity_label, SUM(log_count)::bigint AS log_count
+    FROM syslog_stats_rollup
+    WHERE hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
     ${sfSev.clause}
     GROUP BY severity, severity_label ORDER BY severity
   `, [hours, ...sfSev.params]);
 
-  // Category breakdown
-  const sfCat = getStatsSiteFilter(rbac, 2, 'syslog_entries');
+  // Category breakdown (mirrors /api/stats/summary's category grouping)
+  const sfCat = getRollupSiteFilter(rbac, 2);
   const catR = await db.query(`
-    SELECT COALESCE(category, 'uncategorized') AS category, COUNT(*)::int AS log_count
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
+    SELECT COALESCE(category, 'uncategorized') AS category, SUM(log_count)::bigint AS log_count
+    FROM syslog_stats_rollup
+    WHERE hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
     ${sfCat.clause}
     GROUP BY COALESCE(category, 'uncategorized')
     ORDER BY log_count DESC
   `, [hours, ...sfCat.params]);
 
-  // Alert count in window (relay-based site scoping, mirrors mitre-coverage's alert branch)
+  // Alert count in window (relay-based site scoping, mirrors mitre-coverage's
+  // alert branch) — unchanged; alert_events is small and this was already fast.
   const sfAlert = getAlertSiteFilter(rbac, 2, 'ae');
   const alertR = await db.query(`
     SELECT COUNT(*)::int AS c
@@ -253,98 +266,82 @@ async function reportSecuritySummary(db, q, rbac) {
     ${sfAlert.clause}
   `, [hours, ...sfAlert.params]);
 
-  // Log volume trend — daily buckets over the full (potentially 90-day) window.
-  const sfTrend = getStatsSiteFilter(rbac, 2, 'syslog_entries');
+  // Log volume trend — daily buckets over the full (potentially 90-day)
+  // window (mirrors /api/stats/timeline's >6h branch, just bucketed by day
+  // instead of hour/6-hour).
+  const sfTrend = getRollupSiteFilter(rbac, 2);
   const trendR = await db.query(`
-    SELECT to_char(date_trunc('day', received_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS c
-    FROM syslog_entries
-    WHERE received_at > NOW() - make_interval(hours => $1)
+    SELECT to_char(date_trunc('day', hour_bucket), 'YYYY-MM-DD') AS day, SUM(log_count)::bigint AS c
+    FROM syslog_stats_rollup
+    WHERE hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
     ${sfTrend.clause}
     GROUP BY 1 ORDER BY 1
   `, [hours, ...sfTrend.params]);
 
-  // Top talkers (mirrors /api/stats/top-talkers, limit 10)
-  const sfTalk = getStatsSiteFilter(rbac, 3, 'se');
+  // Top talkers (mirrors /api/stats/top-talkers, limit 10). Display
+  // enrichment (hostname/vendor fallback/country) stays a LIVE join to
+  // known_hosts, same as the dashboard endpoint.
+  const sfTalk = getRollupSiteFilter(rbac, 3);
   const talkR = await db.query(`
     SELECT
-      COALESCE(kh.hostname, src.actor) AS host,
-      src.actor AS source_ip,
-      COALESCE(kh.vendor, MAX(src.vendor)) AS vendor,
+      COALESCE(kh.hostname, agg.actor) AS host,
+      agg.actor AS source_ip,
+      COALESCE(kh.vendor, agg.vendor) AS vendor,
       kh.country_name,
-      COUNT(*)::int AS log_count
+      agg.log_count::bigint AS log_count
     FROM (
-      SELECT COALESCE(NULLIF(btrim(se.structured_data->>'srcip'), ''), host(se.source_ip)) AS actor,
-             se.vendor, se.source_ip
-      FROM syslog_entries se
-      WHERE se.received_at > NOW() - make_interval(hours => $1)
+      SELECT srcip AS actor, MAX(vendor) AS vendor, SUM(log_count) AS log_count
+      FROM syslog_talker_rollup
+      WHERE hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
       ${sfTalk.clause}
-    ) src
-    LEFT JOIN known_hosts kh ON src.actor ~ '^[0-9.]+$' AND host(kh.ip_address) = src.actor
-    GROUP BY src.actor, kh.hostname, kh.vendor, kh.country_name
-    ORDER BY log_count DESC
+      GROUP BY srcip
+    ) agg
+    LEFT JOIN known_hosts kh ON agg.actor ~ '^[0-9.]+$' AND host(kh.ip_address) = agg.actor
+    ORDER BY agg.log_count DESC
     LIMIT $2
   `, [hours, 10, ...sfTalk.params]);
 
-  // Top blocked (mirrors /api/stats/top-blocked, limit 10)
-  const sfBlocked = getStatsSiteFilter(rbac, 2, 'syslog_entries');
+  // Top blocked (mirrors /api/stats/top-blocked, limit 10) — reads
+  // syslog_dest_event_rollup WHERE event_class='blocked'.
+  const sfBlocked = getRollupSiteFilter(rbac, 2);
   const blockedR = await db.query(`
     SELECT
-      COALESCE(structured_data->>'dstip', 'unknown') AS dst_ip,
-      COALESCE(structured_data->>'service', '') AS service,
+      agg.dstip AS dst_ip, agg.service,
       kh.country_name,
-      COUNT(*)::int AS deny_count
-    FROM syslog_entries
+      agg.deny_count::bigint AS deny_count
+    FROM (
+      SELECT dstip, service, SUM(log_count) AS deny_count
+      FROM syslog_dest_event_rollup
+      WHERE event_class = 'blocked'
+        AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
+      ${sfBlocked.clause}
+      GROUP BY dstip, service
+    ) agg
     LEFT JOIN known_hosts kh
-      ON structured_data->>'dstip' ~ '^[0-9.]+$'
-     AND host(kh.ip_address) = structured_data->>'dstip'
-    WHERE received_at > NOW() - make_interval(hours => $1)
-      AND (
-        LOWER(structured_data->>'action') IN ('deny','denied','block','blocked','drop','dropped')
-        OR message ILIKE '%action=deny%'
-        OR message ILIKE '%action=block%'
-        OR message ILIKE '%action=blocked%'
-        OR message ILIKE '%action=drop%'
-        OR message ILIKE '%denied%'
-        OR message ILIKE '%ACL%deny%'
-      )
-      AND structured_data->>'dstip' IS NOT NULL
-    ${sfBlocked.clause}
-    GROUP BY structured_data->>'dstip', structured_data->>'service', kh.country_name
-    ORDER BY deny_count DESC
+      ON agg.dstip ~ '^[0-9.]+$' AND host(kh.ip_address) = agg.dstip
+    ORDER BY agg.deny_count DESC
     LIMIT 10
   `, [hours, ...sfBlocked.params]);
 
-  // Top failures (mirrors /api/stats/top-failures, limit 10)
-  const sfFail = getStatsSiteFilter(rbac, 2, 'syslog_entries');
+  // Top failures (mirrors /api/stats/top-failures, limit 10) — reads
+  // syslog_dest_event_rollup WHERE event_class='failure'.
+  const sfFail = getRollupSiteFilter(rbac, 2);
   const failR = await db.query(`
     SELECT
-      COALESCE(structured_data->>'dstip', 'unknown') AS dst_ip,
-      COALESCE(structured_data->>'service', '') AS service,
+      agg.dstip AS dst_ip, agg.service,
       kh.country_name,
-      COUNT(*)::int AS fail_count
-    FROM syslog_entries
+      agg.fail_count::bigint AS fail_count
+    FROM (
+      SELECT dstip, service, SUM(log_count) AS fail_count
+      FROM syslog_dest_event_rollup
+      WHERE event_class = 'failure'
+        AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))
+      ${sfFail.clause}
+      GROUP BY dstip, service
+    ) agg
     LEFT JOIN known_hosts kh
-      ON structured_data->>'dstip' ~ '^[0-9.]+$'
-     AND host(kh.ip_address) = structured_data->>'dstip'
-    WHERE received_at > NOW() - make_interval(hours => $1)
-      AND (
-        (syslog_entries.vendor = 'fortinet' AND message ILIKE '%Connection Failed%')
-        OR (syslog_entries.vendor = 'paloalto' AND message ILIKE '%session_end%' AND message ILIKE '%bytes%0%')
-        OR (syslog_entries.vendor = 'cisco' AND (
-              message ILIKE '%unreachable%'
-              OR message ILIKE '%timed out%'
-            ))
-        OR (syslog_entries.vendor NOT IN ('fortinet','paloalto','cisco') AND (
-              message ILIKE '%connection failed%'
-              OR message ILIKE '%connection refused%'
-              OR message ILIKE '%host unreachable%'
-              OR message ILIKE '%timed out%'
-            ))
-      )
-      AND structured_data->>'dstip' IS NOT NULL
-    ${sfFail.clause}
-    GROUP BY structured_data->>'dstip', structured_data->>'service', kh.country_name
-    ORDER BY fail_count DESC
+      ON agg.dstip ~ '^[0-9.]+$' AND host(kh.ip_address) = agg.dstip
+    ORDER BY agg.fail_count DESC
     LIMIT 10
   `, [hours, ...sfFail.params]);
 
@@ -554,6 +551,10 @@ async function reportMitreCoverage(db, q, rbac) {
 
   const { rows: raw } = await db.query(`
     WITH event_tech AS (
+      -- se.structured_data ? 'mitre' (perf pass, 2026-07) — same GIN
+      -- existence-check fix as /api/stats/mitre-coverage (kept in lockstep,
+      -- this is a verbatim port). Lets the planner use idx_syslog_structured
+      -- instead of a full sequential scan; measured ~30x on the live endpoint.
       SELECT t.technique AS technique, COUNT(*)::bigint AS events
       FROM syslog_entries se,
            LATERAL jsonb_array_elements_text(
@@ -561,6 +562,7 @@ async function reportMitreCoverage(db, q, rbac) {
                   THEN se.structured_data->'mitre' ELSE '[]'::jsonb END
            ) AS t(technique)
       WHERE se.received_at > NOW() - make_interval(hours => $1)
+        AND se.structured_data ? 'mitre'
       ${sfEvents.clause}
       GROUP BY t.technique
     ),

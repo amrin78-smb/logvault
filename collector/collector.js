@@ -979,6 +979,7 @@ async function recomputeRollupBucket(pool, hourBucket) {
 
   await recomputePhase2RollupBucket(pool, hourBucket);
   await recomputePhase3RollupBucket(pool, hourBucket);
+  await recomputePhase4RollupBucket(pool, hourBucket);
 }
 
 // Phase 2 rollups (perf pass, 2026-07): Top Security Events / Top Blocked /
@@ -1153,6 +1154,100 @@ async function recomputePhase3RollupBucket(pool, hourBucket) {
     WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
     GROUP BY 1, 2, 3
   `, [hourBucket]);
+}
+
+// Phase 4 rollups (perf pass, 2026-07): a follow-up sweep after Security/
+// Network Health/Intelligence still felt slow post-Phase-3. Same DELETE+
+// INSERT-per-bucket model as Phase 1-3 — see scripts/schema.sql's "PHASE 4
+// HOURLY ROLLUP TABLES" comment for the full rationale and table shapes,
+// including the firewall_denies 'deny'->'blocked' correctness fix that rides
+// along with this pass.
+async function recomputePhase4RollupBucket(pool, hourBucket) {
+  // Fortinet field breakdowns (action/type/subtype/service) — one shared
+  // table, 4 sub-inserts, same "dimension discriminator" pattern as
+  // syslog_distinct_value_rollup's DIST_VALUE_DIMS loop above.
+  await pool.query(`DELETE FROM syslog_fortinet_field_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  const FORTINET_FIELD_DIMS = [
+    // 'action': COALESCEd to 'unknown' — matches /api/stats/firewall-actions'
+    // existing COALESCE(action,'unknown') (that endpoint does not drop nulls).
+    { dim: 'action',  expr: `COALESCE(se.structured_data->>'action', 'unknown')`, notNull: false },
+    // 'type'/'subtype' are only ever read via equality (type='utm',
+    // subtype='vpn') by /api/security/summary — a null row can never match
+    // either filter, so excluding nulls keeps the table smaller.
+    { dim: 'type',    expr: `se.structured_data->>'type'`,    notNull: true },
+    { dim: 'subtype', expr: `se.structured_data->>'subtype'`, notNull: true },
+    // 'service': matches /api/stats/top-services' existing NOT NULL/'' filter.
+    { dim: 'service', expr: `se.structured_data->>'service'`, notNull: true },
+  ];
+  for (const { dim, expr, notNull } of FORTINET_FIELD_DIMS) {
+    await pool.query(`
+      INSERT INTO syslog_fortinet_field_rollup (hour_bucket, dimension, value, site_id, log_count)
+      SELECT date_trunc('hour', se.received_at), $2, ${expr}, kh.site_id, COUNT(*)
+      FROM syslog_entries se
+      LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+      WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+        AND se.vendor = 'fortinet'
+        ${notNull ? `AND ${expr} IS NOT NULL AND ${expr} <> ''` : ''}
+      GROUP BY 1, 3, 4
+    `, [hourBucket, dim]);
+  }
+
+  // Per-device hourly counts (Network Health's device-status table). Mirrors
+  // syslog_source_host_rollup's shape: source_ip is the real grouping key,
+  // source_host/vendor are carried as MAX() representatives (a source_ip
+  // reporting under two hostnames within the same hour collapses to one row —
+  // same simplification syslog_source_host_rollup already makes the other
+  // way around). kh.hostname/vendor/description enrichment stays a LIVE join
+  // at read time in api/server.js, same as every other rollup here.
+  await pool.query(`DELETE FROM syslog_device_status_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  await pool.query(`
+    INSERT INTO syslog_device_status_rollup
+      (hour_bucket, source_ip, source_host, vendor, site_id, log_count, critical_count, error_count, last_seen)
+    SELECT date_trunc('hour', se.received_at), host(se.source_ip), MAX(se.source_host), MAX(se.vendor), kh.site_id,
+      COUNT(*),
+      COUNT(*) FILTER (WHERE se.severity <= 2),
+      COUNT(*) FILTER (WHERE se.severity = 3),
+      MAX(se.received_at)
+    FROM syslog_entries se
+    LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+    WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+    GROUP BY 1, host(se.source_ip), kh.site_id
+  `, [hourBucket]);
+
+  // UEBA entity drill-down activity. entity_value normalization MUST stay
+  // byte-identical to collector/analytics/baselineBuilder.js's/uebaRollup.js's
+  // own entity_value derivation — see the schema.sql comment on this table
+  // for why (a mismatch would silently show activity for the wrong entity
+  // next to the correct risk/baseline data).
+  await pool.query(`DELETE FROM syslog_entity_activity_rollup WHERE hour_bucket = $1`, [hourBucket]);
+  const ENTITY_DIMS = [
+    { type: 'device', expr: `COALESCE(se.source_host, se.source_ip::text)` },
+    { type: 'user',    expr: `se.structured_data->>'user'` },
+    // srcip: the RAW structured_data->>'srcip' field, NOT the derived srcip
+    // column — the column falls back to host(source_ip) (the relay) when
+    // structured_data.srcip is empty, but collector/analytics/uebaRollup.js's
+    // own srcip-entity builder only ever considers rows with a real, non-empty
+    // structured_data.srcip (excluding the relay-fallback case entirely, since
+    // internal/relay activity is already covered by the 'device' entity type
+    // above). Must match that exact source, not the column, to line up with
+    // entity_risk's actual entity_value set.
+    { type: 'srcip',   expr: `se.structured_data->>'srcip'` },
+  ];
+  for (const { type, expr } of ENTITY_DIMS) {
+    await pool.query(`
+      INSERT INTO syslog_entity_activity_rollup
+        (hour_bucket, entity_type, entity_value, category, site_id, log_count, failed_login_count, last_seen)
+      SELECT date_trunc('hour', se.received_at), $2, ${expr}, se.category, kh.site_id,
+        COUNT(*),
+        COUNT(*) FILTER (WHERE se.structured_data->>'subcategory' IN ('login_failed','auth_failed')),
+        MAX(se.received_at)
+      FROM syslog_entries se
+      LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
+      WHERE se.received_at >= $1 AND se.received_at < $1 + interval '1 hour'
+        AND ${expr} IS NOT NULL AND ${expr} NOT IN ('', 'N/A')
+      GROUP BY 1, 3, se.category, kh.site_id
+    `, [hourBucket, type]);
+  }
 }
 
 // How many trailing hours get swept on every 5-minute cycle (not just the

@@ -1189,10 +1189,67 @@ new `collector`/`api` code, then run `node scripts/backfill-rollups.js`
 immediately after — until it finishes, these widgets show partial/empty data
 for any range beyond whatever the live 5-minute job has caught since deploy.
 
-**Security/Network Health tabs (added 2.21.x) — a DIFFERENT class of fix.** Unlike the
-dashboard's clean severity/category/vendor dimensions, these tabs' ~20 query shapes
-(`/api/security/*`, `/api/health/*`) are too varied for a rollup-table rewrite to be
-worth the risk. Live `EXPLAIN ANALYZE` investigation found two distinct problems, each
+**Phase 4 (added 2.24.x): a follow-up sweep after Security/Network Health/
+Intelligence still felt slow post-Phase-3.** A user report that the Security
+page "still loads quite slow" triggered a fresh live `EXPLAIN ANALYZE` pass
+across every widget on that page (plus Network Health and Intelligence),
+which found several endpoints Phase 1-3 hadn't touched: `/api/security/
+summary`'s `firewall_denies`/`vpn_events`/`ips_events` sub-queries (7-92s,
+worse at wider ranges — `vendor='fortinet'` matches ~100% of rows in this
+single-vendor deployment, the exact no-selectivity shape as Phase 2's
+top-security-events), `/api/health/device-status` (2.3-23s — this closes the
+"not yet built" gap point 2 below used to describe), `/api/ueba/entity/:type/
+:value`'s 7-day activity summary (20-23s per query, two sequential per click
+— ~40-50s per entity-panel click), `/api/stats/heatmap`'s `metric=all`
+branch, `/api/stats/top-services`/`firewall-actions` (both structurally
+identical to already-rollup-backed widgets but missed), the unauthenticated
+`/api/stats` widget, and `api/reports.js`'s `security-summary` report (which
+had silently regressed to 147s/7d-468s/30d after the dashboard endpoints it
+mirrors moved to rollups weeks ago, while its own hand-duplicated query logic
+never did).
+
+3 new tables (`scripts/schema.sql`, "PHASE 4 HOURLY ROLLUP TABLES" — read the
+comments there before changing anything): `syslog_fortinet_field_rollup`
+(action/type/subtype/service dimensions, shared with a discriminator —
+serves the 3 security/summary sub-queries above plus top-services/
+firewall-actions), `syslog_device_status_rollup` (per-device hourly counts),
+`syslog_entity_activity_rollup` (UEBA entity drill-down — entity_value
+normalization must stay byte-identical to `collector/analytics/
+baselineBuilder.js`/`uebaRollup.js`'s own derivation, see the schema.sql
+comment). Same maintenance model, `getRollupSiteFilter()` RBAC pattern, and
+live-known_hosts-join-for-enrichment principle as Phase 1-3.
+
+**Correctness fix riding along with this pass:** `firewall_denies` (and the
+standalone `/api/security/firewall-denies`) filtered `structured_data->>
+'action' = 'deny'`, a value this deployment's Fortinet parser never actually
+emits — confirmed live, the real value is `'blocked'` (546 rows/24h vs 0 for
+`'deny'`, always). This card had silently shown "0" since it shipped, not
+because there was nothing to show. Also dropped `vpn_events`'/`/api/security/
+vpn-events`' redundant `OR message ILIKE '%vpn%'` fallback (verified
+zero-extra-recall, same technique as the 2.21.x ILIKE removals below) and
+added a missing `structured_data ? 'mitre'` GIN-existence predicate to
+`/api/stats/mitre-coverage` and its `api/reports.js` twin (~30x, existing
+index, no new table).
+
+**Log Explorer** (a fourth surface, not a dashboard/security widget) got its
+own fix in this pass: the free-text `q` filter's `structured_data->>'user'/
+'srccountry'/'service'` ILIKE branches had no supporting index, forcing the
+whole 5-way OR to sequential-scan (measured up to 94.5s for a common term at
+30d) — 3 new partial trigram indexes fix that, the redundant `tsvector`
+branch was dropped (strict subset of the now-indexed `message ILIKE`), and
+the per-search total-count query is now capped at 5,000 (`total_is_capped`
+in the response) for `q` searches specifically, since an exact count can't
+use an index the same way a filter-only search's can.
+
+**Deploy sequencing for THIS phase too.** Same rule: apply `scripts/
+schema.sql` before deploying new code, then run `node scripts/
+backfill-rollups.js` immediately after.
+
+**Security/Network Health tabs (added 2.21.x) — a DIFFERENT class of fix (Phase
+4 above has since rollup-ified 3 of the sub-queries this section originally
+called "too varied for a rollup rewrite" — that verdict no longer applies to
+those 3, but still holds for the ~17 other query shapes on these tabs).**
+Live `EXPLAIN ANALYZE` investigation found two distinct problems, each
 needing a different fix:
 
 1. **`message ILIKE '%...%'` fallback clauses next to an already-reliable
@@ -1216,17 +1273,20 @@ needing a different fix:
    rows, so there's no live data to empirically prove the simplification is exactly
    equivalent; don't remove it without that proof. The broader `%vpn%`/`%login%`
    catch-alls in `/api/security/after-hours` were also left alone — they weren't
-   verified and may genuinely catch content no subcategory captures.
+   verified and may genuinely catch content no subcategory captures. **Update
+   (Phase 4, 2.24.x): `/api/security/vpn-events`'s `OR message ILIKE '%ssl vpn%'/
+   '%ipsec%'/'%vpn%'` fallback next to `subtype='vpn'` was also verified
+   zero-extra-recall and removed** (6.7-27x, same technique) — this endpoint just
+   hadn't been checked in the original 2.21.x pass.
 2. **`/api/health/device-status`'s slowness is NOT an unused/broken index** — a common
    trap this could look like. The `idx_syslog_received_source` covering index IS being
    used correctly for the big, stable partition. The real cost: this endpoint computes
    4 overlapping time-windowed `COUNT(*) FILTER` aggregates across a 6-column
    `GROUP BY`, which has to touch nearly every row in the 24h window regardless of
    indexing — the same *class* of problem as the original dashboard widgets, just
-   shaped per-device instead of per-severity/category. Not yet fixed; the natural next
-   step (not yet built) is a small per-device rollup table on the same 5-minute
-   maintenance cadence as the two rollups above — see if this needs picking up before
-   assuming "add an index" will help here, it won't.
+   shaped per-device instead of per-severity/category. **Fixed in Phase 4 (2.24.x)**
+   via `syslog_device_status_rollup`, the per-device rollup table this point used to
+   describe as "not yet built" — see the Phase 4 section above.
 
 **Frontend code-splitting (added 2.22.0) — a THIRD, independent axis of "feels
 slow."** Fast backend queries alone don't guarantee a fast-feeling page: `frontend/src/app/page.tsx` is a single client component that switches between 10
