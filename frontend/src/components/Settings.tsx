@@ -550,7 +550,7 @@ export default function Settings() {
                   (optional — leave blank to use system default)
                 </span>
               </label>
-              <input style={INPUT_MD}
+              <input style={{ ...INPUT_MD, width: 220 }}
                 value={settings.dns_server}
                 onChange={e => setSettings(s => ({ ...s, dns_server: e.target.value }))}
                 placeholder="e.g. 192.168.1.1 or 8.8.8.8" />
@@ -803,7 +803,7 @@ export default function Settings() {
               <select
                 value={settings.email_notify_cooldown_mins}
                 onChange={e => setSettings(s => ({ ...s, email_notify_cooldown_mins: e.target.value }))}
-                style={{ ...INPUT_MD, cursor: 'pointer' }}>
+                style={{ ...INPUT_MD, width: 220, cursor: 'pointer' }}>
                 {COOLDOWN_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
@@ -837,7 +837,7 @@ export default function Settings() {
                 <select
                   value={settings.email_notify_digest_hour}
                   onChange={e => setSettings(s => ({ ...s, email_notify_digest_hour: e.target.value }))}
-                  style={{ ...INPUT_SM, cursor: 'pointer' }}>
+                  style={{ ...INPUT_SM, width: 140, cursor: 'pointer' }}>
                   {Array.from({ length: 24 }, (_, h) => (
                     <option key={h} value={String(h)}>{String(h).padStart(2, '0')}:00</option>
                   ))}
