@@ -30,6 +30,13 @@ const LABEL = { fontSize: 'var(--text-base)', fontWeight: 500, color: 'var(--tex
 const INPUT = { width: '100%', padding: '9px 12px', borderRadius: 6, border: '1px solid var(--border)',
   background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-md)', outline: 'none',
   boxSizing: 'border-box' as const };
+// Short/medium fixed-width variants of INPUT for fields whose values are inherently short
+// (port numbers, IPs, hour-of-day, masked passwords) -- prevents them from stretching to
+// fill an ad hoc grid cell (e.g. the SMTP Port field, previously unbounded, filling a 1fr column).
+const INPUT_SM = { padding: '9px 12px', borderRadius: 6, border: '1px solid var(--border)',
+  background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-md)', outline: 'none',
+  boxSizing: 'border-box' as const, maxWidth: 140 };
+const INPUT_MD = { ...INPUT_SM, maxWidth: 220 };
 const SECTION_HEADER = { fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 16 };
 
 // Parse a JSON-array string (stored in app_settings) into a string[]. Tolerant
@@ -537,7 +544,7 @@ export default function Settings() {
                   (optional — leave blank to use system default)
                 </span>
               </label>
-              <input style={{ ...INPUT, maxWidth: 260 }}
+              <input style={INPUT_MD}
                 value={settings.dns_server}
                 onChange={e => setSettings(s => ({ ...s, dns_server: e.target.value }))}
                 placeholder="e.g. 192.168.1.1 or 8.8.8.8" />
@@ -619,7 +626,7 @@ export default function Settings() {
               </div>
               <div>
                 <label style={LABEL}>Port</label>
-                <input style={INPUT} value={settings.smtp_port}
+                <input style={INPUT_SM} value={settings.smtp_port}
                   onChange={e => setSettings(s => ({ ...s, smtp_port: e.target.value }))}
                   placeholder="587" />
               </div>
@@ -634,7 +641,7 @@ export default function Settings() {
               </div>
               <div>
                 <label style={LABEL}>Password</label>
-                <input style={INPUT} type="password" value={settings.smtp_pass}
+                <input style={INPUT_MD} type="password" value={settings.smtp_pass}
                   onChange={e => setSettings(s => ({ ...s, smtp_pass: e.target.value }))}
                   placeholder="••••••••" autoComplete="new-password" />
               </div>
@@ -790,7 +797,7 @@ export default function Settings() {
               <select
                 value={settings.email_notify_cooldown_mins}
                 onChange={e => setSettings(s => ({ ...s, email_notify_cooldown_mins: e.target.value }))}
-                style={{ ...INPUT, maxWidth: 260, cursor: 'pointer' }}>
+                style={{ ...INPUT_MD, cursor: 'pointer' }}>
                 {COOLDOWN_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
@@ -824,7 +831,7 @@ export default function Settings() {
                 <select
                   value={settings.email_notify_digest_hour}
                   onChange={e => setSettings(s => ({ ...s, email_notify_digest_hour: e.target.value }))}
-                  style={{ ...INPUT, maxWidth: 160, cursor: 'pointer' }}>
+                  style={{ ...INPUT_SM, cursor: 'pointer' }}>
                   {Array.from({ length: 24 }, (_, h) => (
                     <option key={h} value={String(h)}>{String(h).padStart(2, '0')}:00</option>
                   ))}

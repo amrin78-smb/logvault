@@ -2559,6 +2559,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.25.2': [
+    'Settings page polish: short-value fields (SMTP port, DNS server IP, digest-send-hour, alert cooldown, SMTP password) no longer stretch to fill their entire grid cell -- they now size to fit the kind of value they hold, matching the fix already shipped in a sibling NocVault app. Purely cosmetic, no behavior change.',
+  ],
   '2.25.1': [
     'Hotfix for 3 bugs found in a verification pass on yesterday\'s performance release, before they had any real-world impact: a Log Explorer search regression that could silently miss results for common word variants (e.g. searching "connecting" would miss "Connection Failed" entries), the Network Health page\'s "logs in the last hour" column occasionally under-reporting right after the clock struck the hour, and an Intelligence-tab entity table that could include the firewall itself instead of only real users/attackers.',
   ],
