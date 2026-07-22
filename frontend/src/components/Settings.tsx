@@ -38,6 +38,12 @@ const INPUT_SM = { padding: '9px 12px', borderRadius: 6, border: '1px solid var(
   boxSizing: 'border-box' as const, maxWidth: 140 };
 const INPUT_MD = { ...INPUT_SM, maxWidth: 220 };
 const SECTION_HEADER = { fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 16 };
+// Replaces a two-column `display:'grid'` row that mixes a capped (INPUT_SM/INPUT_MD)
+// field with a normal (INPUT) field. Fields flow at their own width instead of two
+// forced-equal grid columns, so a capped-width field doesn't leave a dead gap before
+// the next field. Apply `{ flex: '0 0 auto' }` to a capped field's wrapper and
+// `{ flex: '1 1 220px' }` to a normal field's wrapper (see call sites below).
+const ROW_COMPACT = { display: 'flex', flexWrap: 'wrap' as const, gap: '16px 32px' };
 
 // Parse a JSON-array string (stored in app_settings) into a string[]. Tolerant
 // of malformed/empty values — always returns an array.
@@ -617,14 +623,14 @@ export default function Settings() {
               Emails are only sent for rules that have a notification address set.
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 16 }}>
-              <div>
+            <div style={{ ...ROW_COMPACT, marginBottom: 16 }}>
+              <div style={{ flex: '1 1 220px' }}>
                 <label style={LABEL}>SMTP Host</label>
                 <input style={INPUT} value={settings.smtp_host}
                   onChange={e => setSettings(s => ({ ...s, smtp_host: e.target.value }))}
                   placeholder="e.g. smtp.gmail.com" />
               </div>
-              <div>
+              <div style={{ flex: '0 0 auto' }}>
                 <label style={LABEL}>Port</label>
                 <input style={INPUT_SM} value={settings.smtp_port}
                   onChange={e => setSettings(s => ({ ...s, smtp_port: e.target.value }))}
@@ -632,14 +638,14 @@ export default function Settings() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-              <div>
+            <div style={{ ...ROW_COMPACT, marginBottom: 16 }}>
+              <div style={{ flex: '1 1 220px' }}>
                 <label style={LABEL}>Username</label>
                 <input style={INPUT} value={settings.smtp_user}
                   onChange={e => setSettings(s => ({ ...s, smtp_user: e.target.value }))}
                   placeholder="user@example.com" autoComplete="off" />
               </div>
-              <div>
+              <div style={{ flex: '0 0 auto' }}>
                 <label style={LABEL}>Password</label>
                 <input style={INPUT_MD} type="password" value={settings.smtp_pass}
                   onChange={e => setSettings(s => ({ ...s, smtp_pass: e.target.value }))}

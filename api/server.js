@@ -2559,6 +2559,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.25.3': [
+    'Follow-up to 2.25.2\'s Settings page fix: capping the short fields\' own width (SMTP port, password, etc.) left a dead gap of empty space where the field used to stretch, because the surrounding layout was still forcing an equal-width column around it. The SMTP Host/Port and Username/Password rows now flow their fields at natural width instead, so the short field sits snugly next to the next one with no gap. Purely cosmetic, no behavior change.',
+  ],
   '2.25.2': [
     'Settings page polish: short-value fields (SMTP port, DNS server IP, digest-send-hour, alert cooldown, SMTP password) no longer stretch to fill their entire grid cell -- they now size to fit the kind of value they hold, matching the fix already shipped in a sibling NocVault app. Purely cosmetic, no behavior change.',
   ],
