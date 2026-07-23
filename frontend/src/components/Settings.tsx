@@ -26,6 +26,11 @@ interface Settings {
 }
 
 const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 20, boxShadow: 'var(--shadow-sm)' };
+// A handful of fields shouldn't sit inside a panel stretched to the full page
+// width — it reads as a mostly-empty container. Caps a panel to a sane form
+// width; matches SETTINGS_ROW's own cap below so every panel in this file
+// shares one left-aligned column instead of some being capped and others not.
+const PANEL_NARROW = { ...CARD, maxWidth: 860 };
 const LABEL = { fontSize: 'var(--text-base)', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6, display: 'block' as const };
 const INPUT = { width: '100%', padding: '9px 12px', borderRadius: 6, border: '1px solid var(--border)',
   background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-md)', outline: 'none',
@@ -48,9 +53,9 @@ const ROW_COMPACT = { display: 'flex', flexWrap: 'wrap' as const, gap: '16px 32p
 // for the handful of sections whose behavior isn't obvious from the form
 // alone. The aside sticks just below the fixed 72px header while its (often
 // taller) neighboring panel scrolls.
-const SETTINGS_ROW = { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 20, alignItems: 'start' as const };
+const SETTINGS_ROW = { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 20, alignItems: 'start' as const, maxWidth: 1180 };
 const INFO_CARD = { background: 'var(--tint-info)', border: '1px solid var(--border)', borderRadius: 8,
-  padding: '16px 18px', position: 'sticky' as const, top: 88 };
+  padding: '16px 18px', position: 'sticky' as const, top: 72 };
 const INFO_CARD_TITLE = { margin: '0 0 12px', fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--tint-info-fg)' };
 const INFO_CARD_DT = { fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--text-primary)', marginTop: 12 };
 const INFO_CARD_DD = { margin: '3px 0 0', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.5 };
@@ -537,7 +542,7 @@ export default function Settings() {
       {activeTab === 'system' && (
         <>
           {/* DNS Settings */}
-          <div style={CARD}>
+          <div style={PANEL_NARROW}>
             <div style={SECTION_HEADER}>DNS Lookup</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
               <input type="checkbox"
@@ -572,7 +577,7 @@ export default function Settings() {
           </div>
 
           {/* Threat Intelligence */}
-          <div style={CARD}>
+          <div style={PANEL_NARROW}>
             <div style={SECTION_HEADER}>Threat Intelligence</div>
             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
               GeoIP data uses ip-api.com (free, no key needed). AbuseIPDB requires a free API key for threat scoring.
@@ -615,7 +620,7 @@ export default function Settings() {
       {activeTab === 'email' && (
         <>
           {/* SMTP Settings */}
-          <div style={CARD}>
+          <div style={PANEL_NARROW}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <div style={{ ...SECTION_HEADER, marginBottom: 0 }}>SMTP Server</div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -679,7 +684,7 @@ export default function Settings() {
           </div>
 
           {/* SECTION 2 — Global Recipients */}
-          <div style={CARD}>
+          <div style={PANEL_NARROW}>
             <div style={SECTION_HEADER}>Global Alert Recipients</div>
             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 14 }}>
               These addresses receive all alerts that match the filters below. Individual alert rules can also have their own recipients.
@@ -881,7 +886,7 @@ export default function Settings() {
           </button>
 
           {/* SECTION 5 — Per-Rule Recipients */}
-          <div style={CARD}>
+          <div style={PANEL_NARROW}>
             <div style={SECTION_HEADER}>Per-Rule Recipients</div>
             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
               Override recipients for specific alert rules. These are in addition to global recipients.
@@ -923,7 +928,7 @@ export default function Settings() {
           </div>
 
           {/* SECTION 6 — Test & Preview */}
-          <div style={CARD}>
+          <div style={PANEL_NARROW}>
             <div style={{ ...SECTION_HEADER, marginBottom: 6 }}>Send Test Email</div>
             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 14 }}>
               Sends a test message using the settings above (without saving them first).

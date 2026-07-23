@@ -2559,6 +2559,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.25.8': [
+    'Settings page redesign: every panel on the General and Email Alerts tabs was stretching to the full page width with mostly empty space around a handful of fields -- same fix already shipped in SpanVault. All panels now cap to a consistent form width, and the "How delivery works" info card correctly sticks below the header while the page scrolls.',
+  ],
   '2.25.7': [
     'Settings > Email Alerts now has a short "How delivery works" panel next to the filters/delivery-mode section, explaining behavior that wasn\'t visible from the form alone -- including that Daily Digest mode isn\'t implemented yet (every alert still sends instantly) and that the cooldown timer resets on collector restart. Verified against the actual emailer code before writing it, not guessed.',
   ],
