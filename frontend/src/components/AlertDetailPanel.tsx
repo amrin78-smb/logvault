@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { MitreBadges, mitreInfo } from './mitre';
 import LogDetailPanel from './LogDetailPanel';
+import { sevStyle } from './severity';
 
 // Mirrors the AlertEvent interface from AlertEvents.tsx (kept loose where the
 // backend may add fields like acknowledged_by / mitre_techniques on the event).
@@ -45,17 +46,6 @@ const CORRELATION_NAMES = new Set([
   'Network Loop Detected', 'After-Hours Configuration Change', 'STP Instability Detected',
   'Repeated IPS Triggers', 'VPN Brute Force Attempt',
 ]);
-
-const SEV_COLORS: Record<string, { color: string; bg: string }> = {
-  emergency: { color: 'var(--tint-danger-fg)',  bg: 'var(--tint-danger)' },
-  alert:     { color: 'var(--tint-danger-fg)',  bg: 'var(--tint-danger)' },
-  critical:  { color: 'var(--tint-danger-fg)',  bg: 'var(--tint-danger)' },
-  error:     { color: 'var(--tint-warn-fg)',    bg: 'var(--tint-warn)' },
-  warning:   { color: 'var(--tint-warn-fg)',    bg: 'var(--tint-warn)' },
-  notice:    { color: 'var(--tint-info-fg)',    bg: 'var(--tint-info)' },
-  info:      { color: 'var(--tint-success-fg)', bg: 'var(--tint-success)' },
-  debug:     { color: 'var(--text-muted)',      bg: 'var(--surface-subtle)' },
-};
 
 // Field row — same styling as LogDetailPanel's Field, with optional copy.
 function Field({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
@@ -259,7 +249,7 @@ export default function AlertDetailPanel({ alert, onClose, onAcknowledge }: Prop
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {logs.map((lg, i) => {
-                  const sev = SEV_COLORS[lg?.severity_label] || { color: 'var(--text-muted)', bg: 'var(--surface-subtle)' };
+                  const sev = sevStyle(lg?.severity_label);
                   return (
                     <div key={lg?.id ?? i} onClick={() => setSelectedLog(lg)}
                       title="Open log detail"

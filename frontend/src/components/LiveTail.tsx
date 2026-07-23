@@ -1,12 +1,7 @@
 'use client';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { PageHeader, EmptyState } from './ui';
-
-const SEV_COLORS: Record<string, string> = {
-  emergency: '#dc2626', alert: '#dc2626', critical: '#dc2626',
-  error: '#ea580c', warning: '#ca8a04', notice: '#2563eb',
-  info: '#16a34a', debug: '#9ca3af',
-};
+import { sevStyle } from './severity';
 
 const MAX_LINES = 1000;
 let persistedLogs: any[] = [];
@@ -143,7 +138,7 @@ export default function LiveTail() {
               {log.source_host || log.source_ip || '-'}
             </span>
             <span style={{ minWidth: 60, textTransform: 'uppercase', fontSize: 'var(--text-xs)', fontWeight: 700,
-              color: SEV_COLORS[log.severity_label] || '#9ca3af', paddingTop: 1, whiteSpace: 'nowrap' }}>
+              color: sevStyle(log.severity_label).color, paddingTop: 1, whiteSpace: 'nowrap' }}>
               {log.severity_label}
             </span>
             <span style={{ color: '#4b5563', minWidth: 65, textTransform: 'capitalize', whiteSpace: 'nowrap', fontSize: 'var(--text-xs)' }}>

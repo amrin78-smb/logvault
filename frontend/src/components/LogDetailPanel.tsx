@@ -1,6 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { MitreBadges } from './mitre';
+import { sevStyle } from './severity';
+import { riskBand } from './palette';
 
 interface LogRow {
   id:              number;
@@ -20,13 +22,6 @@ interface LogRow {
   risk_score:      number;
 }
 
-function riskBadge(score: number): { label: string; color: string; bg: string } {
-  if (score >= 81) return { label: 'Critical Risk', color: 'var(--tint-danger-fg)',  bg: 'var(--tint-danger)' };
-  if (score >= 61) return { label: 'High Risk',     color: 'var(--tint-warn-fg)',    bg: 'var(--tint-warn)' };
-  if (score >= 31) return { label: 'Medium Risk',   color: 'var(--tint-warn-fg)',    bg: 'var(--tint-warn)' };
-  return { label: 'Low Risk', color: 'var(--tint-success-fg)', bg: 'var(--tint-success)' };
-}
-
 interface Props {
   log:          LogRow | null;
   onClose:      () => void;
@@ -34,24 +29,6 @@ interface Props {
   onFilterVendor: (vendor: string) => void;
   onFilterSeverity: (severity: string) => void;
 }
-
-const SEV_COLORS: Record<string, { color: string; bg: string }> = {
-  emergency: { color: 'var(--tint-danger-fg)',  bg: 'var(--tint-danger)' },
-  alert:     { color: 'var(--tint-danger-fg)',  bg: 'var(--tint-danger)' },
-  critical:  { color: 'var(--tint-danger-fg)',  bg: 'var(--tint-danger)' },
-  error:     { color: 'var(--tint-warn-fg)',    bg: 'var(--tint-warn)' },
-  warning:   { color: 'var(--tint-warn-fg)',    bg: 'var(--tint-warn)' },
-  notice:    { color: 'var(--tint-info-fg)',    bg: 'var(--tint-info)' },
-  info:      { color: 'var(--tint-success-fg)', bg: 'var(--tint-success)' },
-  debug:     { color: 'var(--text-muted)',      bg: 'var(--surface-subtle)' },
-};
-
-const VENDOR_COLORS: Record<string, string> = {
-  fortinet: '#ee4d2d', cisco: '#1ba0d7', paloalto: '#fa582d',
-  aruba: '#f47920', sangfor: '#005bac', generic: '#6b7280',
-  forcepoint: '#003087', checkpoint: '#E31937', juniper: '#84BD00',
-  windows: '#0078D4', sonicwall: '#FF6600',
-};
 
 interface RiskFactor { label: string; points: number; }
 
@@ -170,8 +147,8 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
 
   if (!log) return null;
 
-  const sevStyle  = SEV_COLORS[log.severity_label] || { color: 'var(--text-muted)', bg: 'var(--surface-subtle)' };
-  const risk      = riskBadge(log.risk_score || 0);
+  const sevSt     = sevStyle(log.severity_label);
+  const risk      = riskBand(log.risk_score || 0);
   const cleanIP   = log.source_ip?.replace('/32', '');
   const sdEntries = log.structured_data
     ? Object.entries(log.structured_data).filter(([k, v]) => v !== null && v !== '' && k !== 'risk_factors')
@@ -221,12 +198,12 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
             {typeof log.risk_score === 'number' && (
               <span title={`Risk score: ${log.risk_score}/100`}
                 style={{ padding: '3px 10px', borderRadius: 16, fontSize: 'var(--text-xs)', fontWeight: 700,
-                  background: risk.bg, color: risk.color }}>
-                {risk.label} · {log.risk_score}
+                  background: risk.bg, color: risk.fg }}>
+                {risk.label} Risk · {log.risk_score}
               </span>
             )}
             <span style={{ padding: '3px 10px', borderRadius: 16, fontSize: 'var(--text-xs)', fontWeight: 700,
-              background: sevStyle.bg, color: sevStyle.color, textTransform: 'uppercase' }}>
+              background: sevSt.bg, color: sevSt.color, textTransform: 'uppercase' }}>
               {log.severity_label}
             </span>
             <button onClick={onClose}
@@ -373,7 +350,7 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {related.map((r, i) => {
-                  const rs = SEV_COLORS[r.severity_label] || { color: 'var(--text-muted)', bg: 'var(--surface-subtle)' };
+                  const rs = sevStyle(r.severity_label);
                   return (
                     <div key={i} style={{ padding: '8px 12px', background: 'var(--bg-primary)',
                       border: '1px solid var(--border)', borderRadius: 8 }}>

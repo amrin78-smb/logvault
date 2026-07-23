@@ -1,13 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { countryFlag, KnownBadBadge } from './ThreatIntel';
-
-const VENDOR_COLORS: Record<string, string> = {
-  cisco: '#2563eb', paloalto: '#ea580c', fortinet: '#dc2626',
-  aruba: '#7c3aed', sangfor: '#0891b2', generic: '#9ca3af', unknown: '#9ca3af',
-  forcepoint: '#003087', checkpoint: '#E31937', juniper: '#84BD00',
-  windows: '#0078D4', sonicwall: '#FF6600',
-};
+import { VENDOR_COLORS, VENDOR_FALLBACK } from './palette';
 
 export default function TopTalkers({ hours, onHostClick, compact }: {
   hours: number; onHostClick?: (host: string) => void; compact?: boolean;
@@ -26,7 +20,7 @@ export default function TopTalkers({ hours, onHostClick, compact }: {
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
         {data.slice(0, 5).map((row, i) => {
           const pct = Math.round((parseInt(row.log_count) / max) * 100);
-          const color = VENDOR_COLORS[row.vendor] || '#9ca3af';
+          const color = VENDOR_COLORS[row.vendor] || VENDOR_FALLBACK;
           const flag = countryFlag(row.country_code);
           const geoText = [row.country_name, row.asn_org].filter(Boolean).join(' · ');
           const knownBad = !!row.is_known_bad;

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { GeoInline, KnownBadBadge } from '@/components/ThreatIntel';
 import { Trend } from '@/components/Trend';
+import { riskBand } from '@/components/palette';
 import type { ExplorerFilter } from '@/app/page';
 // `import type` is erased at build time, so this does NOT create a runtime
 // circular import even though page.tsx imports this module (mirrors LogExplorer).
@@ -699,14 +700,6 @@ interface RiskEntity {
   event_count?: number;
   anomaly_count?: number;
   last_activity?: string;
-}
-
-// Risk band → adaptive tint tokens (bg + matching fg), so the badge survives dark mode.
-function riskBand(score: number): { label: string; bg: string; fg: string } {
-  if (score >= 81) return { label: 'Critical', bg: 'var(--tint-danger)', fg: 'var(--tint-danger-fg)' };
-  if (score >= 61) return { label: 'High',     bg: 'var(--tint-warn)',   fg: 'var(--tint-warn-fg)' };
-  if (score >= 31) return { label: 'Medium',   bg: 'var(--tint-info)',   fg: 'var(--tint-info-fg)' };
-  return { label: 'Low', bg: 'var(--surface-subtle)', fg: 'var(--text-secondary)' };
 }
 
 export function RiskiestEntities({ openExplorer, onNavigate }:

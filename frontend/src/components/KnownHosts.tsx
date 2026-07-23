@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useToast } from '@/components/Toast';
 import { PageHeader, TableSkeleton, EmptyState } from './ui';
+import { VENDOR_COLORS } from './palette';
 
 interface Host {
   ip_address:       string;
@@ -26,13 +27,6 @@ const EMPTY = { ip_address: '', hostname: '', vendor: 'generic', description: ''
 const INPUT = { padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)',
   background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-base)',
   width: '100%', outline: 'none', boxSizing: 'border-box' as const };
-
-const VENDOR_COLORS: Record<string, string> = {
-  fortinet: '#ee4d2d', cisco: '#1ba0d7', paloalto: '#fa582d',
-  aruba: '#f47920', sangfor: '#005bac', generic: '#6b7280',
-  forcepoint: '#003087', checkpoint: '#E31937', juniper: '#84BD00',
-  windows: '#0078D4', sonicwall: '#FF6600',
-};
 
 const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
   'Active':    { bg: 'var(--tint-success)', color: 'var(--tint-success-fg)' },

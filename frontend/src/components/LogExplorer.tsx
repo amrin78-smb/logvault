@@ -7,19 +7,8 @@ import LogDetailPanel from '@/components/LogDetailPanel';
 // filter, so widen it locally for the spots that thread `threat` through.
 type ExplorerFilterX = ExplorerFilter & { threat?: string };
 import { PageHeader, TableSkeleton, EmptyState } from './ui';
-
-const SEV_COLORS: Record<string, string> = {
-  emergency: '#dc2626', alert: '#dc2626', critical: '#dc2626',
-  error: '#ea580c', warning: '#ca8a04', notice: '#2563eb',
-  info: '#16a34a', debug: '#9ca3af',
-};
-
-const VENDOR_COLORS: Record<string, string> = {
-  fortinet: '#ee4d2d', cisco: '#1ba0d7', paloalto: '#fa582d',
-  aruba: '#f47920', sangfor: '#005bac', generic: '#6b7280',
-  forcepoint: '#003087', checkpoint: '#E31937', juniper: '#84BD00',
-  windows: '#0078D4', sonicwall: '#FF6600',
-};
+import { sevStyle } from './severity';
+import { VENDOR_COLORS } from './palette';
 
 // ── Preset saved searches ─────────────────────────────────────
 const PRESETS = [
@@ -422,7 +411,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
                 </td>
                 <td style={{ padding: '9px 12px' }}>
                   <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, textTransform: 'uppercase',
-                    color: SEV_COLORS[row.severity_label] || '#9ca3af' }}>
+                    color: sevStyle(row.severity_label).color }}>
                     {row.severity_label}
                   </span>
                 </td>

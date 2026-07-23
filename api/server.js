@@ -2559,6 +2559,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.25.6': [
+    'Consolidated severity/vendor/risk-score colors that had drifted into several independent per-file copies (some literally the same red as the critical-severity color) into two shared modules, so a badge, chip, or dot means the same color everywhere in the app. Purely cosmetic — a few colors that had quietly drifted apart now render as designed (e.g. Live Tail\'s error/warning distinction, and vendor colors on Top Talkers/Vendor Breakdown now match the rest of the app instead of a stale rainbow palette).',
+  ],
   '2.25.5': [
     'Security: closed a gap where the cross-app diagnostic/dashboard read role could see the plaintext SMTP password and threat-intel API key stored in this app\'s settings. Those two values now live behind a filtered view that only exposes cosmetic settings (app name, colors, logo) -- any new setting added in the future is hidden from that role by default until someone deliberately decides it\'s safe to share.',
   ],

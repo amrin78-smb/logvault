@@ -110,12 +110,12 @@ const COOLDOWN_OPTS: { value: string; label: string }[] = [
   { value: '1440', label: '24 hours' },
 ];
 
-// Color + label for the minimum-risk-score badge based on the threshold.
-function riskBadge(n: number): { color: string; label: string } {
-  if (n <= 30)  return { color: '#16a34a', label: 'Low+' };
-  if (n <= 60)  return { color: '#d97706', label: 'Medium+' };
-  if (n <= 80)  return { color: '#ea580c', label: 'High+' };
-  return { color: '#dc2626', label: 'Critical only' };
+// Background/foreground tint + label for the minimum-risk-score badge based on the threshold.
+function riskBadge(n: number): { bg: string; fg: string; label: string } {
+  if (n <= 30)  return { bg: 'var(--tint-success)', fg: 'var(--tint-success-fg)', label: 'Low+' };
+  if (n <= 60)  return { bg: 'var(--tint-info)',     fg: 'var(--tint-info-fg)',    label: 'Medium+' };
+  if (n <= 80)  return { bg: 'var(--tint-warn)',     fg: 'var(--tint-warn-fg)',    label: 'High+' };
+  return { bg: 'var(--tint-danger)', fg: 'var(--tint-danger-fg)', label: 'Critical only' };
 }
 
 interface AlertRule { id: number; name: string; description: string; notify_email: string; is_enabled: boolean; }
@@ -786,7 +786,7 @@ export default function Settings() {
                       onChange={e => setSettings(s => ({ ...s, email_notify_min_risk: String(e.target.value) }))}
                       style={{ flex: 1, maxWidth: 320, cursor: 'pointer' }} />
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px',
-                      borderRadius: 14, background: b.color, color: '#fff', fontSize: 'var(--text-sm)', fontWeight: 600 }}>
+                      borderRadius: 14, background: b.bg, color: b.fg, fontSize: 'var(--text-sm)', fontWeight: 600 }}>
                       {v} · {b.label}
                     </span>
                   </div>
