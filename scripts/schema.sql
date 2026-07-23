@@ -1097,3 +1097,39 @@ BEGIN
     END IF;
 END
 $$;
+
+-- ── app_settings row-level secrecy (perf/security pass, 2026-07) ────────────
+-- app_settings is a generic key/value table — a few rows (smtp_pass,
+-- abuseipdb_api_key) hold real secrets, most don't (app_name, colors, feature
+-- flags). A column-level GRANT can't distinguish rows sharing one `value`
+-- column, so cross-DB/diagnostic roles get a filtered VIEW instead of table
+-- access — NEVER a table-level GRANT on app_settings itself to any readonly
+-- role. ALLOWLIST, not blocklist: a newly added settings key defaults to
+-- HIDDEN here until someone deliberately adds it below, so a future secret
+-- key can never leak by omission the way smtp_pass/abuseipdb_api_key
+-- silently did (both roles previously had unrestricted table-level SELECT on
+-- app_settings, inherited from the blanket GRANT above — live-verified
+-- readable). Only add a key here once you've confirmed it's genuinely safe
+-- for every other app / diagnostic session to read.
+CREATE OR REPLACE VIEW app_settings_public AS
+SELECT key, value, updated_at FROM app_settings
+WHERE key IN ('app_name', 'app_subtitle', 'logo_url', 'primary_color', 'sidebar_color');
+
+-- REVOKE must run for each role that exists — GRANT/REVOKE against a role
+-- that doesn't exist on this server errors, same guard pattern as the
+-- nocvault_readonly block above. Placed AFTER the blanket GRANT block (order
+-- matters — the LAST statement touching a privilege wins; see CLAUDE.md's
+-- "everyone was right, production is currently safe by luck, not design"
+-- write-up for why this ordering is load-bearing, not cosmetic).
+DO $$
+BEGIN
+  IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'nocvault_readonly') THEN
+    REVOKE SELECT ON app_settings FROM nocvault_readonly;
+    GRANT SELECT ON app_settings_public TO nocvault_readonly;
+  END IF;
+  IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'claude_readonly') THEN
+    REVOKE SELECT ON app_settings FROM claude_readonly;
+    GRANT SELECT ON app_settings_public TO claude_readonly;
+  END IF;
+END
+$$;

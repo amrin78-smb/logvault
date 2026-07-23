@@ -1,6 +1,6 @@
 {
   "name": "logvault-frontend",
-  "version": "2.24.0",
+  "version": "2.25.5",
   "private": true,
   "scripts": {
     "dev": "next dev --port 3004",

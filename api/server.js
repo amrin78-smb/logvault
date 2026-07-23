@@ -2559,6 +2559,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.25.5': [
+    'Security: closed a gap where the cross-app diagnostic/dashboard read role could see the plaintext SMTP password and threat-intel API key stored in this app\'s settings. Those two values now live behind a filtered view that only exposes cosmetic settings (app name, colors, logo) -- any new setting added in the future is hidden from that role by default until someone deliberately decides it\'s safe to share.',
+  ],
   '2.25.4': [
     'Fixed from an end-of-day bug sweep of the 2.25.2/2.25.3 Settings fixes: dropping the old width:100% left 3 standalone fields (DNS Server IP, alert cooldown, digest-send-hour) with no explicit width at all -- for the two dropdowns, the browser sizes a <select> to its currently-selected option\'s text, so the box could visibly change width as a different option was picked. Those three fields now keep a fixed width alongside their cap; the two fields inside the SMTP Host/Port and Username/Password rows (which rely on flex sizing, not a plain width) are unaffected and unchanged.',
   ],
