@@ -246,14 +246,23 @@ if ($psql -and (Test-Path $schema)) {
         # --quiet suppresses NOTICE/INFO chatter psql writes to stderr (which would
         # otherwise raise NativeCommandError over WinRM); consume both streams and
         # gate success on $LASTEXITCODE.
-        try { $null = & $psql --quiet -U postgres -d $dbName -f $schema 2>&1 } catch {}
+        # -v ON_ERROR_STOP=1 (added 2026-07-23): without it, psql prints a genuine
+        # SQL error (e.g. a typo'd column in a REVOKE/GRANT block) to stderr and
+        # keeps going, then still exits 0 - so this step would report "[OK] Schema
+        # applied" even though a statement failed and the DB was left half-migrated.
+        # This is the exact failure mode that bit a sibling NocVault app's own
+        # equivalent schema fix the same day this was added. schema.sql's own
+        # idempotent statements (IF NOT EXISTS/IF EXISTS/OR REPLACE/ON CONFLICT) are
+        # not errors on a re-apply, so this does not affect them - only a genuine SQL
+        # error now surfaces as a real failure.
+        try { $null = & $psql --quiet -U postgres -d $dbName -v ON_ERROR_STOP=1 -f $schema 2>&1 } catch {}
         $psqlExit = $LASTEXITCODE
         $env:PGPASSWORD = ''
         # psql over WinRM commonly returns -1 on a successful run, so treat -1 as 0.
         if ($psqlExit -eq 0 -or $psqlExit -eq -1) {
             Write-OK "Schema applied (as postgres to $dbName)"
         } else {
-            Write-Warn "psql exited with code $psqlExit - apply scripts\schema.sql manually as postgres."
+            Write-Warn "psql exited with code $psqlExit - a SQL error occurred applying scripts\schema.sql (ON_ERROR_STOP halted it partway through) - re-run it manually as postgres and fix the reported statement before assuming the schema is current."
         }
     } else {
         Write-Warn "POSTGRES_PASSWORD not set in .env.local - skipping schema apply."

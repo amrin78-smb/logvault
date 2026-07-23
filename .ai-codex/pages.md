@@ -4,11 +4,11 @@ Whole app is effectively ONE page — `page.tsx` renders a client-side tab switc
 
 [server] / — layout.tsx — root layout: session, ThemeProvider, ToastProvider, AuthProvider, IdleTimeout, LicenseGate, UpdateNotifier
 [client] / — page.tsx (default export) — the entire app: header, sidebar nav, and all 10 tabs' content, switched by client state
-[client] /sso — SSOHandler (in page.tsx) — SSO landing page, calls next-auth signIn() then redirects
+[client] /sso — SSOHandler (in frontend/src/app/sso/page.tsx, its own route file) — SSO landing page, calls next-auth signIn() then redirects
 [server] /api/auth/[...nextauth] — NextAuth route handler (re-exports GET/POST from @/auth)
 
 ## Dashboard tab contents (all rendered inline by page.tsx, not routes)
-KPI tiles, SeverityChart, TimelineChart, TopTalkers, TopDestinations, VendorBreakdown, DashboardWidgets' 5 exports (TopSecurityEvents/TopBlockedDestinations/TopConnectionFailures/VPNStatus/ActiveAlertsSummary/InterfaceEventsSummary/FirewallActions/CapacityIngestionHealth/WhatsChanged/RiskiestEntities), ThreatIntel's KnownBadSources, StorageWidget
+KPI tiles, SeverityChart, TimelineChart, TopTalkers, TopDestinations, VendorBreakdown, DashboardWidgets' 10 exports (TopSecurityEvents/TopBlockedDestinations/TopConnectionFailures/VPNStatus/ActiveAlertsSummary/InterfaceEventsSummary/FirewallActions/CapacityIngestionHealth/WhatsChanged/RiskiestEntities), ThreatIntel's KnownBadSources, StorageWidget
 
 ## Other tabs — code-split via next/dynamic (ssr:false), loaded on first click
 LogExplorer, LiveTail, AlertEvents, NetworkHealth, SecurityAnalysis, IntelligenceConsole, KnownHosts, ReportsTab, Settings

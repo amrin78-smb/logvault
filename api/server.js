@@ -2559,6 +2559,11 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.25.9': [
+    'Fixed a recurring version-drift bug: frontend/package.json (and its lockfile) had fallen 3 releases behind the root package.json again -- confirmed harmless (the app reads its displayed version only from the root package.json, per the 2.22.3 root-cause fix), and re-synced both files to the current version.',
+    'Corrected 3 stale claims in the .ai-codex/ documentation index: the component-file count (was quoting 35, actually 36), DashboardWidgets.tsx\'s export count (was quoting "5 exports" while listing all 10 by name), and where the /sso route\'s handler actually lives (its own frontend/src/app/sso/page.tsx route file, not inline in another page.tsx).',
+    'Reliability: the update script and the fresh-install suite installer now pass -v ON_ERROR_STOP=1 to psql when applying scripts/schema.sql, so a genuine SQL error in the schema is reported as a failure instead of being silently logged as success (schema.sql\'s existing idempotent IF NOT EXISTS-style statements are unaffected).',
+  ],
   '2.25.8': [
     'Settings page redesign: every panel on the General and Email Alerts tabs was stretching to the full page width with mostly empty space around a handful of fields -- same fix already shipped in SpanVault. All panels now cap to a consistent form width, and the "How delivery works" info card correctly sticks below the header while the page scrolls.',
   ],

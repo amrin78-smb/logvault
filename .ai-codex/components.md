@@ -60,4 +60,4 @@ Every file has `'use client'` at the top — this app has no server components b
 (c) pctColor/Skeleton/TableSkeleton/CardSkeleton/EmptyState  — generic UI primitives, from ui.tsx
 
 ## Violations
-None found — no component is defined inside another component's function body (checked both `function X(` and `const X = (` nested-indentation patterns across all 35 files).
+None found — no component is defined inside another component's function body (checked both `function X(` and `const X = (` nested-indentation patterns across all 36 files).
