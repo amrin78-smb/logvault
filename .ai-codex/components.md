@@ -55,7 +55,9 @@ Every file has `'use client'` at the top — this app has no server components b
 (c) MitreBadges  ids?, compact? — from mitre.tsx
 (c) sevLabel/sevStyle(severity)  — helper fns, from severity.tsx
 (c) SevBadge  label — from severity.tsx
+(c) vendorColor(vendor)/riskBand(score)  — helper fns, from palette.tsx (vendor identity + entity risk-band colors, companion to severity.tsx)
+(c) RiskBadge  score, suffix? — from palette.tsx
 (c) pctColor/Skeleton/TableSkeleton/CardSkeleton/EmptyState  — generic UI primitives, from ui.tsx
 
 ## Violations
-None found — no component is defined inside another component's function body (checked both `function X(` and `const X = (` nested-indentation patterns across all 34 files).
+None found — no component is defined inside another component's function body (checked both `function X(` and `const X = (` nested-indentation patterns across all 35 files).
