@@ -2559,6 +2559,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.25.7': [
+    'Settings > Email Alerts now has a short "How delivery works" panel next to the filters/delivery-mode section, explaining behavior that wasn\'t visible from the form alone -- including that Daily Digest mode isn\'t implemented yet (every alert still sends instantly) and that the cooldown timer resets on collector restart. Verified against the actual emailer code before writing it, not guessed.',
+  ],
   '2.25.6': [
     'Consolidated severity/vendor/risk-score colors that had drifted into several independent per-file copies (some literally the same red as the critical-severity color) into two shared modules, so a badge, chip, or dot means the same color everywhere in the app. Purely cosmetic — a few colors that had quietly drifted apart now render as designed (e.g. Live Tail\'s error/warning distinction, and vendor colors on Top Talkers/Vendor Breakdown now match the rest of the app instead of a stale rainbow palette).',
   ],

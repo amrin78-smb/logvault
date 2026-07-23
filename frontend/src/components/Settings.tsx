@@ -44,6 +44,16 @@ const SECTION_HEADER = { fontSize: 'var(--text-base)', fontWeight: 600, color: '
 // the next field. Apply `{ flex: '0 0 auto' }` to a capped field's wrapper and
 // `{ flex: '1 1 220px' }` to a normal field's wrapper (see call sites below).
 const ROW_COMPACT = { display: 'flex', flexWrap: 'wrap' as const, gap: '16px 32px' };
+// A settings panel paired with a short "what this actually does" explainer,
+// for the handful of sections whose behavior isn't obvious from the form
+// alone. The aside sticks just below the fixed 72px header while its (often
+// taller) neighboring panel scrolls.
+const SETTINGS_ROW = { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 20, alignItems: 'start' as const };
+const INFO_CARD = { background: 'var(--tint-info)', border: '1px solid var(--border)', borderRadius: 8,
+  padding: '16px 18px', position: 'sticky' as const, top: 88 };
+const INFO_CARD_TITLE = { margin: '0 0 12px', fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--tint-info-fg)' };
+const INFO_CARD_DT = { fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--text-primary)', marginTop: 12 };
+const INFO_CARD_DD = { margin: '3px 0 0', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.5 };
 
 // Parse a JSON-array string (stored in app_settings) into a string[]. Tolerant
 // of malformed/empty values — always returns an array.
@@ -695,7 +705,9 @@ export default function Settings() {
             </div>
           </div>
 
-          {/* SECTION 3 — Notification Filters */}
+          {/* SECTION 3 + 4 — Notification Filters & Delivery Mode, paired with an explainer */}
+          <div style={SETTINGS_ROW}>
+          <div>
           <div style={CARD}>
             <div style={SECTION_HEADER}>When to Send Alerts</div>
             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
@@ -847,6 +859,17 @@ export default function Settings() {
                 </div>
               </div>
             )}
+          </div>
+          </div>
+          <div style={INFO_CARD}>
+            <div style={INFO_CARD_TITLE}>How delivery works</div>
+            <div style={INFO_CARD_DT}>Cooldown</div>
+            <div style={INFO_CARD_DD}>Tracked per alert rule in memory, not the database. Resets on every collector restart, so a restart can allow one extra email inside the cooldown window.</div>
+            <div style={INFO_CARD_DT}>Daily Digest</div>
+            <div style={INFO_CARD_DD}>Not implemented yet — every eligible alert is still sent instantly regardless of this selection.</div>
+            <div style={INFO_CARD_DT}>Recipients</div>
+            <div style={INFO_CARD_DD}>Global and per-rule recipients are combined and deduplicated automatically — a rule&apos;s override adds to the global list, it doesn&apos;t replace it.</div>
+          </div>
           </div>
 
           {/* Shared Save (SMTP + recipients + filters + delivery) */}
