@@ -2560,6 +2560,11 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.25.12': [
+    'Found via a full adversarial bug sweep of the resilience work (4 real issues, all fixed): the CRITICAL one -- git clean was deleting the rollback\'s own node_modules/.next backup snapshots on every single run, moments after creating them (verified by actually reproducing it against this repo\'s .gitignore), which meant the safety net added in 2.25.10/2.25.11 had never actually been able to restore anything. Fixed by excluding the backup naming pattern from the clean step.',
+    'Two rollback status branches (a missing pre-update commit, and a missing root node_modules backup -- the exact directory that corrupted in the original incident) could let a rollback report full success even though it hadn\'t actually restored what it claimed to. Both now correctly mark the rollback as failed.',
+    'The rollback\'s own service-stop step was weaker than the main update flow\'s: a flat sleep with no fallback for a slow-to-exit process, unlike the main flow\'s port-based force-kill safety net for the identical hazard. Now matches it.',
+  ],
   '2.25.11': [
     'Fixed two real bugs in the resilience mechanism added in 2.25.10, found from a live production incident: (1) the post-start service-status check ran immediately after starting services and treated the normal, brief "STARTPENDING" state as a failure -- even when the health check passed right after, causing a working update to be wrongly rolled back (and the rollback\'s own identical check then made it report "rollback also failed" even though it had actually succeeded). Service status is now polled for up to 30s and is informational only; the health check alone decides success. (2) The rollback restored node_modules/.next BEFORE stopping the just-started services, mutating a live directory tree while the app was still running against it -- this is what actually corrupted node_modules down to a handful of packages in production (LogVault-Collector then crash-looped on a missing module) even though the restore itself reported success. The rollback now stops services first, matching the order the main update flow already used.',
   ],

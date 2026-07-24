@@ -234,7 +234,26 @@ function Invoke-Rollback([string]$Reason) {
         foreach ($svc in @("LogVault-App", "LogVault-API", "LogVault-Collector")) {
             if ((Get-ServiceStatus $svc) -eq "RUNNING") { sc.exe stop $svc | Out-Null }
         }
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds 5
+        # sc.exe stop is asynchronous - it can return before the process has
+        # actually exited, which is exactly the class of race this whole
+        # function exists to close. Mirrors Step 1's own port-based force-kill
+        # fallback (this function previously only did the flat sleep, weaker
+        # than Step 1's own stop sequence for the identical hazard).
+        foreach ($port in @(3004, 3005)) {
+            $lines = netstat -ano 2>$null | Select-String ":$port\s"
+            foreach ($line in $lines) {
+                $parts = ($line -split '\s+') | Where-Object { $_ -ne '' }
+                $pid2 = $parts[-1]
+                if ($pid2 -match '^\d+$') {
+                    $proc = Get-Process -Id $pid2 -ErrorAction SilentlyContinue
+                    if ($proc -and $proc.Name -eq 'node') {
+                        Stop-Process -Id $pid2 -Force -ErrorAction SilentlyContinue
+                        Write-Warn "Killed lingering node PID $pid2 on port $port before restore"
+                    }
+                }
+            }
+        }
 
         Set-Location $AppDir
         if ($prevCommit) {
@@ -243,6 +262,7 @@ function Invoke-Rollback([string]$Reason) {
             if ($LASTEXITCODE -eq 0) { Write-OK "Source reverted" } else { Write-Warn "git reset during rollback failed (exit $LASTEXITCODE)"; $ok = $false }
         } else {
             Write-Warn "No pre-update commit recorded - skipping source revert"
+            $ok = $false
         }
 
         $rootModulesBackup     = "$AppDir\node_modules.lastgood"
@@ -255,6 +275,7 @@ function Invoke-Rollback([string]$Reason) {
             Write-OK "Restored root node_modules"
         } else {
             Write-Warn "No root node_modules snapshot found to restore"
+            $ok = $false
         }
         if (Test-Path $frontendNextBackup) {
             if (Test-Path "$FrontendDir\.next") { Remove-Item "$FrontendDir\.next" -Recurse -Force -ErrorAction SilentlyContinue }
@@ -476,7 +497,7 @@ if ($LASTEXITCODE -ne 0) {
     Fail-Update -Stage 'git-pull' -Message "git reset failed (exit $LASTEXITCODE): $resetResult"
 }
 
-git clean -fd --exclude=".env.local" --exclude="node_modules" 2>&1 | Out-Null
+git clean -fd --exclude=".env.local" --exclude="node_modules" --exclude="*.lastgood" 2>&1 | Out-Null
 
 $commitHash = git rev-parse --short HEAD 2>&1
 $rp = git rev-parse HEAD 2>&1
