@@ -220,6 +220,22 @@ function Invoke-Rollback([string]$Reason) {
     Write-Step "ROLLING BACK - reason: $Reason"
     $ok = $true
     try {
+        # Stop services BEFORE touching node_modules/.next below. Step 7 already
+        # started all 3 services by the time a failure can trigger this function,
+        # so without this, the restore's Remove-Item/Rename-Item would be mutating
+        # a directory tree while LogVault-API/-Collector are still live and
+        # actively require()-ing from it - a real race that produced exactly this
+        # symptom in production: the restore reported success, but the resulting
+        # node_modules ended up with only a handful of packages (Collector then
+        # crash-looped on "Cannot find module 'nodemailer'"). Mirrors the safe
+        # order the main update flow already uses (Step 1 stops services before
+        # Step 5/6 ever touch node_modules/.next).
+        Write-Step "Stopping services before restoring last known-good version"
+        foreach ($svc in @("LogVault-App", "LogVault-API", "LogVault-Collector")) {
+            if ((Get-ServiceStatus $svc) -eq "RUNNING") { sc.exe stop $svc | Out-Null }
+        }
+        Start-Sleep -Seconds 3
+
         Set-Location $AppDir
         if ($prevCommit) {
             Write-Host "    Reverting source to $prevCommit" -ForegroundColor Gray
@@ -267,10 +283,6 @@ function Invoke-Rollback([string]$Reason) {
         }
 
         Write-Step "Restarting services on last known-good version"
-        foreach ($svc in @("LogVault-App", "LogVault-API", "LogVault-Collector")) {
-            if ((Get-ServiceStatus $svc) -eq "RUNNING") { sc.exe stop $svc | Out-Null }
-        }
-        Start-Sleep -Seconds 5
         sc.exe start LogVault-Collector | Out-Null
         Start-Sleep -Seconds 3
         sc.exe start LogVault-API | Out-Null
@@ -278,8 +290,21 @@ function Invoke-Rollback([string]$Reason) {
         sc.exe start LogVault-App | Out-Null
         Start-Sleep -Seconds 5
 
+        # Informational only - same reasoning as the main flow's health-check gate
+        # above: SCM's STARTPENDING -> RUNNING transition can lag several seconds
+        # behind the process actually serving traffic, and letting that alone fail
+        # the rollback (even when Wait-Healthy passes right after) produced the
+        # exact "Rollback verified... healthy" immediately followed by "ROLLBACK
+        # ALSO FAILED" contradiction seen in production. Poll briefly for a clean
+        # status line, but only $healthy below decides the return value.
         foreach ($svc in $Services) {
-            if ((Get-ServiceStatus $svc) -ne "RUNNING") { Write-Warn "$svc is not running after rollback restart"; $ok = $false }
+            $status = 'UNKNOWN'
+            for ($i = 0; $i -lt 30; $i++) {
+                $status = Get-ServiceStatus $svc
+                if ($status -eq "RUNNING") { break }
+                Start-Sleep -Seconds 1
+            }
+            if ($status -ne "RUNNING") { Write-Warn "$svc - $status (SCM status can lag - health check below is authoritative)" }
         }
 
         $healthy = Wait-Healthy -TimeoutSec 30
@@ -609,15 +634,25 @@ Write-OK "Services started"
 Write-Step "Verifying service status"
 $currentStage = 'health-check'
 
-$allOK = $true
-
+# Informational only - do NOT gate on this. SCM's STARTPENDING -> RUNNING
+# transition can legitimately lag several seconds behind the underlying process
+# actually being up and serving traffic (confirmed live: /api/health answered
+# successfully while every service still showed STARTPENDING here). Poll for up
+# to 30s so a normal-speed start still reports RUNNING instead of a stale
+# snapshot, but never fail the update on this alone - Wait-Healthy below is the
+# real, authoritative signal (same reasoning NetVault's single-service gate
+# already used - this brings LogVault in line with it).
 foreach ($svc in $Services) {
-    $status = Get-ServiceStatus $svc
+    $status = 'UNKNOWN'
+    for ($i = 0; $i -lt 30; $i++) {
+        $status = Get-ServiceStatus $svc
+        if ($status -eq "RUNNING") { break }
+        Start-Sleep -Seconds 1
+    }
     if ($status -eq "RUNNING") {
         Write-OK "$svc - $status"
     } else {
-        Write-Err "$svc - $status"
-        $allOK = $false
+        Write-Warn "$svc - $status (SCM status can lag behind the actual process - the health check below is authoritative)"
     }
 }
 
@@ -632,11 +667,7 @@ if ($healthy) {
     Write-OK "API health check passed"
 } else {
     Write-Err "API health check failed"
-    $allOK = $false
-}
-
-if (-not $allOK) {
-    Fail-Update -Stage 'health-check' -Message "Services did not come up healthy after starting (see service status / health check above)"
+    Fail-Update -Stage 'health-check' -Message "API did not answer /api/health within 60s of starting - service may be crash-looping or stuck"
 }
 
 # Update succeeded and is confirmed healthy - the pre-update snapshots are no
