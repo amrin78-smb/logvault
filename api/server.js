@@ -2560,6 +2560,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.25.13': [
+    'Fixed a real production regression from the 2.25.12 fix (the one that made rollback snapshots actually survive git clean): TypeScript\'s build-time type-check only excludes the exact name "node_modules" by default, not the "node_modules.lastgood"/".next.lastgood" snapshot directories now sitting right next to it -- so once those snapshots could survive, the very next build tried to type-check next-auth\'s source code inside the OLD snapshot copy and failed on an import that only resolves from within its own original dependency tree. The two fixes were masking each other: before 2.25.12, the snapshot was always deleted before the build ran, so this was never hit. Snapshot directories are now explicitly excluded from the TypeScript check.',
+  ],
   '2.25.12': [
     'Found via a full adversarial bug sweep of the resilience work (4 real issues, all fixed): the CRITICAL one -- git clean was deleting the rollback\'s own node_modules/.next backup snapshots on every single run, moments after creating them (verified by actually reproducing it against this repo\'s .gitignore), which meant the safety net added in 2.25.10/2.25.11 had never actually been able to restore anything. Fixed by excluding the backup naming pattern from the clean step.',
     'Two rollback status branches (a missing pre-update commit, and a missing root node_modules backup -- the exact directory that corrupted in the original incident) could let a rollback report full success even though it hadn\'t actually restored what it claimed to. Both now correctly mark the rollback as failed.',
