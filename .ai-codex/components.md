@@ -48,6 +48,7 @@ Every file has `'use client'` at the top — this app has no server components b
 (c) TopDestinations  hours, onHostClick?
 (c) TopTalkers  hours, onHostClick?, compact?
 (c) Trend  value, prev, invert? — small up/down indicator, used across widgets
+(c) UpdateFailureBanner  (no props — polls /api/system/last-update-status every 5min; admin/super_admin only via useSession(), dismissible per-timestamp)
 (c) UpdateNotifier  (no props — polls /api/system/update-available)
 (c) VendorBreakdown  hours, onVendorClick?, compact?
 (c) mitreInfo/mitreUrl/mitreTitle(id)  — helper fns, from mitre.tsx
@@ -60,4 +61,4 @@ Every file has `'use client'` at the top — this app has no server components b
 (c) pctColor/Skeleton/TableSkeleton/CardSkeleton/EmptyState  — generic UI primitives, from ui.tsx
 
 ## Violations
-None found — no component is defined inside another component's function body (checked both `function X(` and `const X = (` nested-indentation patterns across all 36 files).
+None found — no component is defined inside another component's function body (checked both `function X(` and `const X = (` nested-indentation patterns across all 37 files).

@@ -23,6 +23,25 @@ $env:PATH = @(
     $env:PATH
 ) -join ";"
 
+# Windows Task Scheduler's default task priority (level 7) maps to the BelowNormal
+# process priority class, unlike a manually-run script (Normal). This starves the
+# CPU-bound npm install/build under contention from the rest of the suite, making
+# an in-app-triggered update (Settings -> Updates, which schedules this as a SYSTEM
+# task - see api/server.js's POST /api/system/update) look "stuck" compared to the
+# same update run manually from an interactive PowerShell window. Reset to Normal
+# regardless of how this script was invoked - a no-op when already Normal (the
+# manual-run case). Child processes inherit the parent's priority class by default,
+# so this also covers the npm/node/next child processes it spawns.
+# (Same fix as NetVault's Update-NetVault.ps1 1.23.26 / DDIVault's Update-DDIVault.ps1.)
+try {
+    $proc = Get-Process -Id $PID
+    $originalPriority = $proc.PriorityClass
+    if ($originalPriority -ne 'Normal') {
+        $proc.PriorityClass = 'Normal'
+        Write-Host "Adjusted process priority to Normal (was $originalPriority)"
+    }
+} catch { Write-Warning "Could not adjust process priority: $($_.Exception.Message)" }
+
 # Self-locate the app root. This script lives at <appRoot>\installer\Update-LogVault.ps1,
 # so the real app root is the PARENT of the script's own folder. This is correct on BOTH
 # the suite install (C:\Apps\LogVault\app) and a standalone install (C:\Apps\logvault),
@@ -53,6 +72,7 @@ $AppDir      = Split-Path -Parent $PSScriptRoot
 $AppDir      = Get-TrueCasePath $AppDir
 $FrontendDir = "$AppDir\frontend"
 $LogDir      = "$AppDir\logs"
+$Services    = @("LogVault-Collector", "LogVault-API", "LogVault-App")
 
 # The in-app updater (Settings -> Updates) is fire-and-forget: api/server.js schedules
 # this script as a SYSTEM scheduled task (schtasks /create ... /ru SYSTEM, then
@@ -75,6 +95,12 @@ function Write-OK($msg)   { Write-Host "    [OK] $msg" -ForegroundColor Green }
 function Write-Warn($msg) { Write-Host "    [!!] $msg" -ForegroundColor Yellow }
 function Write-Err($msg)  { Write-Host "    [XX] $msg" -ForegroundColor Red }
 
+function Get-ServiceStatus($name) {
+    $svc = Get-Service -Name $name -ErrorAction SilentlyContinue
+    if (-not $svc) { return "NOT_FOUND" }
+    return $svc.Status.ToString().ToUpper()
+}
+
 # psql is often not on PATH on Windows. Resolve it from PATH, then fall back to the
 # standard PostgreSQL install locations (newest version first). Returns $null if not
 # found - the schema step treats psql as optional (warn + skip, never fail).
@@ -86,6 +112,204 @@ function Resolve-Psql {
         Sort-Object FullName -Descending | Select-Object -First 1
     if ($found) { return $found.FullName }
     return $null
+}
+
+# --- Resilience: rollback + structured status reporting -------------------
+# LogVault has no `output: 'standalone'` build - LogVault-App runs `next start`
+# directly against a plain `frontend\.next`, sharing the app's normal node_modules
+# (root for the API/Collector, `frontend\node_modules` for the Next.js app). A
+# rollback here has to protect THREE things: the git source, root node_modules
+# (the API/Collector are plain JS with no build step - a broken npm install can
+# break them directly), and both `frontend\.next` and `frontend\node_modules` (the
+# Next.js build output + its deps). Renaming is a metadata-only operation on the
+# same NTFS volume regardless of directory size, so snapshotting all three this way
+# is cheap. (Same shape as DDIVault's Update-DDIVault.ps1 - the closest structural
+# match in the suite, since LogVault is also a non-standalone Next.js build.)
+$StatusPath           = "$LogDir\last-update-status.json"
+$prevCommit           = $null
+$attemptedCommit      = $null
+$currentStage         = 'init'
+$envBackupForRollback = $null  # set once the .env.local backup step below has run
+
+$StageCodes = @{
+    'init'                 = 5
+    'pre-flight'           = 10
+    'git-pull'             = 20
+    'schema-apply'         = 25
+    'npm-install-root'     = 30
+    'npm-install-frontend' = 35
+    'npm-build'            = 40
+    'service-start'        = 50
+    'health-check'         = 60
+    'rollback-failed'      = 70
+}
+
+function Write-StatusJson {
+    param(
+        [bool]$Success,
+        [string]$Stage,
+        [int]$ErrorCode = 0,
+        [string]$ErrorMessage = $null,
+        [bool]$RolledBack = $false,
+        [bool]$HealthCheckPassed = $false
+    )
+    $status = [ordered]@{
+        timestamp         = (Get-Date).ToString('o')
+        success           = $Success
+        stage             = $Stage
+        errorCode         = $ErrorCode
+        errorMessage      = $ErrorMessage
+        previousCommit    = $prevCommit
+        attemptedCommit   = $attemptedCommit
+        finalCommit       = if ($RolledBack) { $prevCommit } else { $attemptedCommit }
+        rolledBack        = $RolledBack
+        healthCheckPassed = $HealthCheckPassed
+    }
+    try {
+        $json = $status | ConvertTo-Json
+        # Write via .NET directly with a BOM-less UTF8Encoding, not Out-File
+        # -Encoding UTF8 (which writes a UTF-8 BOM in Windows PowerShell 5.1) -
+        # Node's fs.readFileSync(path, 'utf8') doesn't strip a BOM, which would
+        # break JSON.parse on every single write. (Same bug found and fixed in
+        # NetVault's Update-NetVault.ps1 1.23.27 / DDIVault's Update-DDIVault.ps1 -
+        # fixed here from the start.)
+        [System.IO.File]::WriteAllText($StatusPath, $json, (New-Object System.Text.UTF8Encoding $false))
+    } catch {
+        Write-Warn "Could not write status file $StatusPath - $($_.Exception.Message)"
+    }
+}
+
+# Poll the API's /api/health until it reports ok, or $TimeoutSec elapses. LogVault's
+# /api/health returns {status:'ok', version, logs_last_hour} - there is no separate
+# 'db' field to check (unlike DDIVault), since the query itself would throw and 500
+# if the DB were unreachable.
+function Wait-Healthy([int]$TimeoutSec = 60) {
+    Write-Host "    Waiting for LogVault API to respond on :3005 " -ForegroundColor Gray -NoNewline
+    $healthy = $false
+    for ($i = 0; $i -lt $TimeoutSec; $i++) {
+        try {
+            # 127.0.0.1 (not localhost): on Windows localhost resolves to IPv6 ::1
+            # first, which the server may not answer, making the poll time out
+            # while the app is actually up.
+            $resp = Invoke-WebRequest -Uri "http://127.0.0.1:3005/api/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+            $body = $resp.Content | ConvertFrom-Json
+            if ($resp.StatusCode -eq 200 -and $body.status -eq 'ok') { $healthy = $true; break }
+        } catch {}
+        Write-Host "." -ForegroundColor DarkGray -NoNewline
+        Start-Sleep -Seconds 1
+    }
+    Write-Host ""
+    return $healthy
+}
+
+# Revert to the pre-update commit + restore the node_modules/.next snapshots,
+# restart all 3 services (Collector -> API -> App, the documented startup order),
+# and confirm the OLD version is actually healthy before declaring the rollback
+# itself successful.
+#
+# Note on database migrations: this rolls back CODE, not schema. The schema-apply
+# step below still refuses to deploy new code against a database it failed to
+# migrate (schema.sql is not applied inside a single transaction, so a code-level
+# rollback cannot undo a partially-applied schema) - but a schema failure now
+# triggers this same rollback instead of leaving the app down entirely, since the
+# old code is far more likely to tolerate a few extra/partial columns than LogVault
+# is to tolerate being completely offline. (Same reasoning as DDIVault's schema-apply
+# step - see its own comment.)
+function Invoke-Rollback([string]$Reason) {
+    Write-Host ""
+    Write-Step "ROLLING BACK - reason: $Reason"
+    $ok = $true
+    try {
+        Set-Location $AppDir
+        if ($prevCommit) {
+            Write-Host "    Reverting source to $prevCommit" -ForegroundColor Gray
+            $null = git reset --hard $prevCommit 2>&1
+            if ($LASTEXITCODE -eq 0) { Write-OK "Source reverted" } else { Write-Warn "git reset during rollback failed (exit $LASTEXITCODE)"; $ok = $false }
+        } else {
+            Write-Warn "No pre-update commit recorded - skipping source revert"
+        }
+
+        $rootModulesBackup     = "$AppDir\node_modules.lastgood"
+        $frontendNextBackup    = "$FrontendDir\.next.lastgood"
+        $frontendModulesBackup = "$FrontendDir\node_modules.lastgood"
+
+        if (Test-Path $rootModulesBackup) {
+            if (Test-Path "$AppDir\node_modules") { Remove-Item "$AppDir\node_modules" -Recurse -Force -ErrorAction SilentlyContinue }
+            Rename-Item -Path $rootModulesBackup -NewName 'node_modules' -ErrorAction Stop
+            Write-OK "Restored root node_modules"
+        } else {
+            Write-Warn "No root node_modules snapshot found to restore"
+        }
+        if (Test-Path $frontendNextBackup) {
+            if (Test-Path "$FrontendDir\.next") { Remove-Item "$FrontendDir\.next" -Recurse -Force -ErrorAction SilentlyContinue }
+            Rename-Item -Path $frontendNextBackup -NewName '.next' -ErrorAction Stop
+            Write-OK "Restored frontend .next build output"
+        } else {
+            Write-Warn "No frontend .next snapshot found to restore"
+            $ok = $false
+        }
+        if (Test-Path $frontendModulesBackup) {
+            if (Test-Path "$FrontendDir\node_modules") { Remove-Item "$FrontendDir\node_modules" -Recurse -Force -ErrorAction SilentlyContinue }
+            Rename-Item -Path $frontendModulesBackup -NewName 'node_modules' -ErrorAction Stop
+            Write-OK "Restored frontend node_modules"
+        } else {
+            Write-Warn "No frontend node_modules snapshot found to restore"
+            $ok = $false
+        }
+
+        if ($envBackupForRollback) {
+            if ($null -ne $envBackupForRollback.Root) {
+                Set-Content -Path "$AppDir\.env.local" -Value $envBackupForRollback.Root -NoNewline
+            }
+            if ($null -ne $envBackupForRollback.Frontend) {
+                Set-Content -Path "$FrontendDir\.env.local" -Value $envBackupForRollback.Frontend -NoNewline
+            }
+        }
+
+        Write-Step "Restarting services on last known-good version"
+        foreach ($svc in @("LogVault-App", "LogVault-API", "LogVault-Collector")) {
+            if ((Get-ServiceStatus $svc) -eq "RUNNING") { sc.exe stop $svc | Out-Null }
+        }
+        Start-Sleep -Seconds 5
+        sc.exe start LogVault-Collector | Out-Null
+        Start-Sleep -Seconds 3
+        sc.exe start LogVault-API | Out-Null
+        Start-Sleep -Seconds 3
+        sc.exe start LogVault-App | Out-Null
+        Start-Sleep -Seconds 5
+
+        foreach ($svc in $Services) {
+            if ((Get-ServiceStatus $svc) -ne "RUNNING") { Write-Warn "$svc is not running after rollback restart"; $ok = $false }
+        }
+
+        $healthy = Wait-Healthy -TimeoutSec 30
+        if ($healthy) { Write-OK "Rollback verified - last known-good version is up and healthy" }
+        else { Write-Warn "Rollback restart did not pass the health check"; $ok = $false }
+        return ($ok -and $healthy)
+    } catch {
+        Write-Warn "Rollback itself failed: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+# Every failure path in this script funnels through here instead of a bare
+# `exit 1`, so a failure always attempts recovery and always leaves a structured
+# record behind - see the resilience block above.
+function Fail-Update {
+    param([string]$Stage, [string]$Message)
+    $code = if ($StageCodes.ContainsKey($Stage)) { $StageCodes[$Stage] } else { 99 }
+    Write-Host ""
+    Write-Err "Update failed at stage '$Stage': $Message"
+    $rollbackOk = Invoke-Rollback -Reason $Message
+    if (-not $rollbackOk) {
+        Write-Err "!!! ROLLBACK ALSO FAILED - LogVault may be DOWN. Manual intervention required. !!!"
+        $code = $StageCodes['rollback-failed']
+    }
+    Write-StatusJson -Success $false -Stage $Stage -ErrorCode $code -ErrorMessage $Message -RolledBack $rollbackOk -HealthCheckPassed $rollbackOk
+    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Add-Content -Path "$LogDir\update.log" -Value "[$ts] FAILED at stage '$Stage': $Message (rolledBack=$rollbackOk)"
+    try { Stop-Transcript | Out-Null } catch {}
+    exit 1
 }
 
 # Header
@@ -167,6 +391,7 @@ if (Test-Path $frontendEnvPath) {
 } else {
     Write-Warn "No .env.local at $frontendEnvPath"
 }
+$envBackupForRollback = @{ Root = $envRoot; Frontend = $envFrontend }
 
 # Ensure git safe.directory is set for SYSTEM account. Derive it from the self-located
 # $AppDir (git wants forward slashes) so it matches the REAL repo on any layout - a
@@ -176,28 +401,61 @@ try {
     $null = git config --global --add safe.directory $gitSafeDir 2>&1
 } catch {}
 
+# Step 2.5: Snapshot current version for rollback
+# Must happen BEFORE git touches anything and BEFORE npm install/build overwrites
+# node_modules/.next, so a failure anywhere from here on can be undone by putting
+# these exact folders back rather than needing to rebuild (which could itself fail
+# for the same reason the original update did).
+Write-Step "Snapshotting current version for rollback"
+$currentStage = 'pre-flight'
+Set-Location $AppDir
+$rp = git rev-parse HEAD 2>&1
+if ($rp -match '^[0-9a-f]{40}$') { $prevCommit = $rp }
+if ($prevCommit) { Write-OK "Current commit: $prevCommit" }
+else { Write-Warn "Could not determine current commit - rollback will not be able to revert source" }
+
+$rootModulesBackup     = "$AppDir\node_modules.lastgood"
+$frontendNextBackup    = "$FrontendDir\.next.lastgood"
+$frontendModulesBackup = "$FrontendDir\node_modules.lastgood"
+# Clear any stale backups left by a prior interrupted run before snapshotting the
+# CURRENTLY-serving version, not an older leftover one.
+foreach ($stale in @($rootModulesBackup, $frontendNextBackup, $frontendModulesBackup)) {
+    if (Test-Path $stale) { Remove-Item $stale -Recurse -Force -ErrorAction SilentlyContinue }
+}
+if (Test-Path "$AppDir\node_modules") {
+    Rename-Item -Path "$AppDir\node_modules" -NewName 'node_modules.lastgood' -ErrorAction SilentlyContinue
+    Write-OK "Snapshotted root node_modules"
+}
+if (Test-Path "$FrontendDir\.next") {
+    Rename-Item -Path "$FrontendDir\.next" -NewName '.next.lastgood' -ErrorAction SilentlyContinue
+    Write-OK "Snapshotted frontend .next build output"
+}
+if (Test-Path "$FrontendDir\node_modules") {
+    Rename-Item -Path "$FrontendDir\node_modules" -NewName 'node_modules.lastgood' -ErrorAction SilentlyContinue
+    Write-OK "Snapshotted frontend node_modules"
+}
+
 # Step 3: Pull latest from GitHub
 Write-Step "Pulling latest code from GitHub"
+$currentStage = 'git-pull'
 
 Set-Location $AppDir
 
 $fetchResult = git fetch origin 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Err "git fetch failed: $fetchResult"
-    Add-Content -Path "$LogDir\update.log" -Value "[$timestamp] FAILED at git fetch"
-    exit 1
+    Fail-Update -Stage 'git-pull' -Message "git fetch failed (exit $LASTEXITCODE): $fetchResult"
 }
 
 $resetResult = git reset --hard origin/main 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Err "git reset failed: $resetResult"
-    Add-Content -Path "$LogDir\update.log" -Value "[$timestamp] FAILED at git reset"
-    exit 1
+    Fail-Update -Stage 'git-pull' -Message "git reset failed (exit $LASTEXITCODE): $resetResult"
 }
 
 git clean -fd --exclude=".env.local" --exclude="node_modules" 2>&1 | Out-Null
 
 $commitHash = git rev-parse --short HEAD 2>&1
+$rp = git rev-parse HEAD 2>&1
+if ($rp -match '^[0-9a-f]{40}$') { $attemptedCommit = $rp }
 Write-OK "Updated to commit: $commitHash"
 
 # Step 4: Restore .env.local
@@ -225,6 +483,7 @@ if ($ServerIp -and (Test-Path $rootEnvPath) -and -not (Get-Content $rootEnvPath 
 
 # Step 4.5: Apply database schema (idempotent) - mirrors the SpanVault pattern
 Write-Step "Applying database schema"
+$currentStage = 'schema-apply'
 
 $psql   = Resolve-Psql
 $schema = "$AppDir\scripts\schema.sql"
@@ -262,7 +521,14 @@ if ($psql -and (Test-Path $schema)) {
         if ($psqlExit -eq 0 -or $psqlExit -eq -1) {
             Write-OK "Schema applied (as postgres to $dbName)"
         } else {
-            Write-Warn "psql exited with code $psqlExit - a SQL error occurred applying scripts\schema.sql (ON_ERROR_STOP halted it partway through) - re-run it manually as postgres and fix the reported statement before assuming the schema is current."
+            # A real SQL error halted schema.sql partway through (ON_ERROR_STOP=1) -
+            # refuse to deploy new code against a database it failed to migrate. This
+            # rolls back CODE only; the database itself is left in whatever partial
+            # state the failed statement produced (schema.sql is not applied inside a
+            # single transaction, so a code-level rollback cannot undo that part).
+            # Same reasoning DDIVault's Update-DDIVault.ps1 uses for its own
+            # schema-apply failure path.
+            Fail-Update -Stage 'schema-apply' -Message "psql exited with code $psqlExit applying scripts\schema.sql as postgres to $dbName - re-run manually and fix the reported statement before assuming the schema is current"
         }
     } else {
         Write-Warn "POSTGRES_PASSWORD not set in .env.local - skipping schema apply."
@@ -274,48 +540,54 @@ if ($psql -and (Test-Path $schema)) {
 
 # Step 5: Install root dependencies
 Write-Step "Installing root dependencies"
+$currentStage = 'npm-install-root'
 
 Set-Location $AppDir
 npm install 2>&1 | Out-File -FilePath "$LogDir\npm-install-root.log" -Encoding utf8
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Err "npm install (root) failed - see $LogDir\npm-install-root.log"
-    Add-Content -Path "$LogDir\update.log" -Value "[$timestamp] FAILED at root npm install"
-    exit 1
+    # Root deps failing to install is exactly the class of failure the rollback
+    # exists for - previously this was a bare exit 1 leaving services stopped on a
+    # broken root node_modules with no recovery attempt.
+    Fail-Update -Stage 'npm-install-root' -Message "npm install (root) failed (exit $LASTEXITCODE) - see $LogDir\npm-install-root.log"
 }
 Write-OK "Root dependencies installed"
 
 # Step 6: Install frontend dependencies and build
 Write-Step "Installing frontend dependencies"
+$currentStage = 'npm-install-frontend'
 
 Set-Location $FrontendDir
 npm install 2>&1 | Out-File -FilePath "$LogDir\npm-install-frontend.log" -Encoding utf8
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Err "npm install (frontend) failed - see $LogDir\npm-install-frontend.log"
-    Add-Content -Path "$LogDir\update.log" -Value "[$timestamp] FAILED at frontend npm install"
-    exit 1
+    Fail-Update -Stage 'npm-install-frontend' -Message "npm install (frontend) failed (exit $LASTEXITCODE) - see $LogDir\npm-install-frontend.log"
 }
 Write-OK "Frontend dependencies installed"
 
 Write-Step "Building Next.js frontend"
+$currentStage = 'npm-build'
 
 $buildResult = npm run build 2>&1
 $buildResult | Out-File -FilePath "$LogDir\npm-build.log" -Encoding utf8
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Err "Build FAILED - old version still running"
+    Write-Err "Build FAILED"
     Write-Err "See: $LogDir\npm-build.log"
     Write-Host ""
     $buildResult | Select-Object -Last 20 | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
-    Add-Content -Path "$LogDir\update.log" -Value "[$timestamp] FAILED at npm run build"
-    Write-Warn "Services NOT restarted - previous build still running"
-    exit 1
+    # Previously this warned "Services NOT restarted - previous build still
+    # running" and stopped here - which was misleading on two counts: services
+    # were stopped in Step 1 (nothing was "still running"), and there was no
+    # recovery path at all. Fail-Update now actually restores the last-known-good
+    # build output and restarts services on it.
+    Fail-Update -Stage 'npm-build' -Message "npm run build failed (exit $LASTEXITCODE) - see $LogDir\npm-build.log"
 }
 Write-OK "Frontend built successfully"
 
 # Step 7: Start services
 Write-Step "Starting LogVault services"
+$currentStage = 'service-start'
 
 Set-Location $AppDir
 
@@ -333,51 +605,56 @@ Start-Sleep -Seconds 5
 
 Write-OK "Services started"
 
-# Step 8: Verify
+# Step 8: Verify (now a mandatory gate, not advisory)
 Write-Step "Verifying service status"
+$currentStage = 'health-check'
 
-$services = @("LogVault-Collector", "LogVault-API", "LogVault-App")
-$allOK    = $true
+$allOK = $true
 
-foreach ($svc in $services) {
-    $status = (sc.exe query $svc 2>&1 | Out-String)
-    if ($status -match "RUNNING") {
-        Write-OK "$svc - SERVICE_RUNNING"
-    } elseif ($status -match "PAUSED") {
-        Write-Warn "$svc - SERVICE_PAUSED (may still be starting)"
+foreach ($svc in $Services) {
+    $status = Get-ServiceStatus $svc
+    if ($status -eq "RUNNING") {
+        Write-OK "$svc - $status"
     } else {
-        Write-Warn "$svc - status unclear (check manually)"
+        Write-Err "$svc - $status"
+        $allOK = $false
     }
 }
 
-# Quick health check
-Start-Sleep -Seconds 2
-try {
-    # 127.0.0.1 (not localhost): on Windows localhost resolves to IPv6 ::1 first, which the
-    # server may not answer, making the poll time out while the app is actually up.
-    $health = Invoke-WebRequest -Uri "http://127.0.0.1:3005/api/health" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
-    if ($health.StatusCode -eq 200) {
-        Write-OK "API health check passed - $($health.Content)"
-    }
-} catch {
-    Write-Warn "API health check skipped (service may still be starting)"
+Write-Host ""
+# Mandatory final health check (matches NetVault/DDIVault's resilience upgrade): a
+# service reporting RUNNING per SCM is not proof the app is actually serving
+# traffic - poll /api/health with retries instead of a single best-effort attempt,
+# and treat a failure here the same as any other stage failure (triggers a
+# rollback) rather than just printing a warning and reporting success anyway.
+$healthy = Wait-Healthy -TimeoutSec 60
+if ($healthy) {
+    Write-OK "API health check passed"
+} else {
+    Write-Err "API health check failed"
+    $allOK = $false
 }
+
+if (-not $allOK) {
+    Fail-Update -Stage 'health-check' -Message "Services did not come up healthy after starting (see service status / health check above)"
+}
+
+# Update succeeded and is confirmed healthy - the pre-update snapshots are no
+# longer needed. Remove them so they don't accumulate across updates or get
+# mistaken for a stale rollback target on the next run.
+foreach ($snap in @("$AppDir\node_modules.lastgood", "$FrontendDir\.next.lastgood", "$FrontendDir\node_modules.lastgood")) {
+    if (Test-Path $snap) { Remove-Item $snap -Recurse -Force -ErrorAction SilentlyContinue }
+}
+Write-StatusJson -Success $true -Stage $null -ErrorCode 0 -RolledBack $false -HealthCheckPassed $true
 
 # Done
 Write-Host ""
-if ($allOK) {
-    Write-Host "  ================================================" -ForegroundColor Green
-    Write-Host "  Update complete - LogVault is running" -ForegroundColor Green
-    Write-Host "  http://localhost:3004" -ForegroundColor Green
-    Write-Host "  Commit: $commitHash" -ForegroundColor DarkGray
-    Write-Host "  ================================================" -ForegroundColor Green
-    Add-Content -Path "$LogDir\update.log" -Value "[$timestamp] Update completed successfully - $commitHash"
-} else {
-    Write-Host "  ================================================" -ForegroundColor Yellow
-    Write-Host "  Update finished with warnings - check status above" -ForegroundColor Yellow
-    Write-Host "  ================================================" -ForegroundColor Yellow
-    Add-Content -Path "$LogDir\update.log" -Value "[$timestamp] Update completed with warnings - $commitHash"
-}
+Write-Host "  ================================================" -ForegroundColor Green
+Write-Host "  Update complete - LogVault is running" -ForegroundColor Green
+Write-Host "  http://localhost:3004" -ForegroundColor Green
+Write-Host "  Commit: $commitHash" -ForegroundColor DarkGray
+Write-Host "  ================================================" -ForegroundColor Green
+Add-Content -Path "$LogDir\update.log" -Value "[$timestamp] Update completed successfully - $commitHash"
 Write-Host ""
 
 # Best-effort - if Start-Transcript never succeeded (see top of script), this

@@ -143,7 +143,7 @@ async function enforceLicense(req, res, next) {
     }
   }
 
-  const exemptPaths = ['/api/health', '/api/stats', '/api/license-status', '/api/system/update-available'];
+  const exemptPaths = ['/api/health', '/api/stats', '/api/license-status', '/api/system/update-available', '/api/system/last-update-status'];
   if (state.disabled && !exemptPaths.some(p => req.path.startsWith(p))) {
     return res.status(402).json({
       error: 'License has expired. Please renew your NocVault license.',
@@ -2504,6 +2504,7 @@ app.get('/api/stats/disk', asyncHandler(async (req, res) => {
 // updater through a one-time Windows Scheduled Task running as SYSTEM (fully
 // detached from this service's process tree, so it survives the service stop).
 // Super-admin only. No RBAC site filtering applies to these endpoints.
+const fs = require('fs');
 const appRoot = path.join(__dirname, '..');
 
 // ── Git-commit-based update check (commit hash + package.json) ───────────────
@@ -2559,6 +2560,12 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.25.10': [
+    'Made the updater (Update-LogVault.ps1) resilient to a failed update instead of just reporting one -- it now snapshots the current commit, root node_modules, and the frontend build (.next + node_modules) before touching anything, and if any stage fails (git pull, either npm install, the frontend build, service start, a database schema migration, or a new mandatory post-start health check) it automatically reverts to the last known-good version, restarts all 3 services (Collector, API, App), and re-verifies health -- instead of leaving the app stopped with no recovery attempt, which is what every one of those failures did before.',
+    'A failed schema migration now also triggers the same rollback (restores the previous working code + restarts services) instead of just leaving the app stopped -- the new code still isn\'t deployed against a database it failed to migrate, but the service comes back up on the last known-good version instead of staying down.',
+    'Every update run (success or failure) now writes a structured result to logs/last-update-status.json -- what stage it reached, an error code, the error message, and whether it rolled back -- surfaced as a new in-app failure banner for admins (GET /api/system/last-update-status) so a failed update can\'t go unnoticed.',
+    'The post-start health check, which used to be a best-effort probe that never blocked anything, is now a hard gate -- an update is no longer reported as successful unless the running version is actually confirmed serving traffic.',
+  ],
   '2.25.9': [
     'Fixed a recurring version-drift bug: frontend/package.json (and its lockfile) had fallen 3 releases behind the root package.json again -- confirmed harmless (the app reads its displayed version only from the root package.json, per the 2.22.3 root-cause fix), and re-synced both files to the current version.',
     'Corrected 3 stale claims in the .ai-codex/ documentation index: the component-file count (was quoting 35, actually 36), DashboardWidgets.tsx\'s export count (was quoting "5 exports" while listing all 10 by name), and where the /sso route\'s handler actually lives (its own frontend/src/app/sso/page.tsx route file, not inline in another page.tsx).',
@@ -3062,6 +3069,30 @@ app.get('/api/system/update-available', (_req, res) => {
     res.json({ available: true, current: updateAvailable.current, latest: updateAvailable.latest });
   } else {
     res.json({ available: false });
+  }
+});
+
+// Update-LogVault.ps1 writes a structured result of the last update attempt to
+// logs/last-update-status.json on every run (success or failure) - see the
+// script's Write-StatusJson function. This route just surfaces that file so the
+// frontend can show a banner the moment a failed update needs attention, without
+// anyone having to go looking at the updater's log files. Same public access
+// level as /api/system/update-available (no auth required) - matches its sibling
+// exactly, including the enforceLicense exemption below and proxy.ts's
+// PUBLIC_API_PATHS (both must list this path - see CLAUDE.md's "Adding a new
+// intentionally-public API route").
+app.get('/api/system/last-update-status', (_req, res) => {
+  const statusPath = path.join(appRoot, 'logs', 'last-update-status.json');
+  if (!fs.existsSync(statusPath)) {
+    return res.json({ exists: false });
+  }
+  try {
+    const BOM = String.fromCharCode(0xfeff);
+    const raw = fs.readFileSync(statusPath, 'utf8');
+    const status = JSON.parse(raw.startsWith(BOM) ? raw.slice(1) : raw);
+    res.json({ exists: true, ...status });
+  } catch (e) {
+    res.json({ exists: false, error: 'Could not read update status file' });
   }
 });
 

@@ -8,6 +8,7 @@ import AuthProvider        from '@/components/AuthProvider';
 import IdleTimeout         from '@/components/IdleTimeout';
 import { LicenseProvider, LicenseGate } from '@/components/LicenseGuard';
 import UpdateNotifier      from '@/components/UpdateNotifier';
+import UpdateFailureBanner from '@/components/UpdateFailureBanner';
 
 export const metadata: Metadata = {
   title: 'LogVault — Syslog Analyzer',
@@ -33,6 +34,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     matching DDIVault — instead of above it. */}
                 <LicenseGate>
                   <UpdateNotifier />
+                  <UpdateFailureBanner />
                   <IdleTimeout />
                   {children}
                 </LicenseGate>

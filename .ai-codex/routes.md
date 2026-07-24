@@ -4,7 +4,7 @@ Two surfaces:
 - **Express API** (`api/server.js`, port 3005 internal-only) — the real API, 74 routes. Express has no `dynamic` export concept; force-dynamic check N/A for all of these.
 - **Next.js routes** (`frontend/src/app/api/`) — 1 route, NextAuth only.
 
-Auth model (frontend/src/proxy.ts): every `/api/*` request is proxied to Express with `X-User-Id`/`X-User-Role` stamped from the verified session token. Only 4 EXACT paths bypass the session check: `/api/health`, `/api/stats`, `/api/license-status`, `/api/system/update-available` — sub-paths (e.g. `/api/stats/summary`) are NOT covered by the `/api/stats` allow-list entry and still require a session. `[auth]` below = requires session; `[admin]`/`[super-admin]` = also gated by `requireAdmin`/`requireSuperAdmin` in api/rbac.js.
+Auth model (frontend/src/proxy.ts): every `/api/*` request is proxied to Express with `X-User-Id`/`X-User-Role` stamped from the verified session token. Only 5 EXACT paths bypass the session check: `/api/health`, `/api/stats`, `/api/license-status`, `/api/system/update-available`, `/api/system/last-update-status` — sub-paths (e.g. `/api/stats/summary`) are NOT covered by the `/api/stats` allow-list entry and still require a session. `[auth]` below = requires session; `[admin]`/`[super-admin]` = also gated by `requireAdmin`/`requireSuperAdmin` in api/rbac.js.
 
 ## Next.js (frontend/src/app/api/)
 GET/POST /api/auth/[...nextauth] [public] [external] — NextAuth handler, exports from @/auth
@@ -104,6 +104,7 @@ GET /api/license-status [public] [external] — license state from NocVault hub 
 GET /api/health [public] [db] — liveness + version + logs_last_hour
 GET /api/system/update-available [public] [external] — git-commit-hash update check (git transport, not GitHub API)
 GET /api/system/update-status [super-admin] [external] — in-progress update status
+GET /api/system/last-update-status [public] [db=file] — reads logs/last-update-status.json written by Update-LogVault.ps1's Write-StatusJson (BOM-stripped defensively); {exists:false} if the file doesn't exist yet. Feeds UpdateFailureBanner.
 POST /api/system/update [super-admin] [external] — trigger update via detached SYSTEM scheduled task
 GET /api/ws-ticket [auth] — RBAC-scoped ticket for the Live Tail WebSocket
 

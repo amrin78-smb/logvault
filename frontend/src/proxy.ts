@@ -57,6 +57,7 @@ const PUBLIC_API_PATHS = new Set([
   '/api/health',
   '/api/stats',
   '/api/system/update-available',
+  '/api/system/last-update-status',
 ]);
 
 // Per-user app-access gate (NocVault suite). `apps` is the list of app slugs the
