@@ -105,7 +105,7 @@ GET /api/health [public] [db] — liveness + version + logs_last_hour
 GET /api/system/update-available [public] [external] — git-commit-hash update check (git transport, not GitHub API)
 GET /api/system/update-status [super-admin] [external] — in-progress update status
 GET /api/system/last-update-status [public] [db=file] — reads logs/last-update-status.json written by Update-LogVault.ps1's Write-StatusJson (BOM-stripped defensively); {exists:false} if the file doesn't exist yet. Feeds UpdateFailureBanner.
-POST /api/system/update [super-admin] [external] — trigger update via detached SYSTEM scheduled task
+POST /api/system/update [super-admin] [external] — trigger update via detached SYSTEM scheduled task; 409 if logs/update.lock shows one is already running (PID still alive) — mirrors Update-LogVault.ps1's own concurrency-guard lock file
 GET /api/ws-ticket [auth] — RBAC-scoped ticket for the Live Tail WebSocket
 
 ## Needs force-dynamic

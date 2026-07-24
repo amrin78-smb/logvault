@@ -2560,6 +2560,16 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.25.14': [
+    'CRITICAL: the "kill any remaining node process" safety net (main flow AND rollback) only ever checked ports 3004/3005 (App/API) -- LogVault-Collector (514/1514, TCP+UDP) was never checked, even though sc.exe stop is asynchronous and this is the exact mechanism of the original production incident (the Collector kept running against a node_modules directory being renamed/restored underneath it). Both port lists now include 514/1514.',
+    'Invoke-Rollback no longer proceeds to restore node_modules/.next and restart services when the source revert itself fails (missing pre-update commit, or a failed git reset) -- it now short-circuits and reports "MANUAL INTERVENTION REQUIRED" instead of risking the new broken code combined with the OLD dependencies.',
+    'Fixed the rollback\'s own service-stop step, which only stopped a service sampled as exactly "RUNNING" (unlike the main flow, which already stops unconditionally) -- a crash-looping service could be skipped and left eligible for NSSM auto-restart while files were being restored underneath it.',
+    'The pre-update snapshot step used to rename node_modules/.next with silent error suppression and an unconditional "Snapshotted" success message -- a failed rename (locked file, permissions) was invisible and poisoned any later rollback attempt. Now verified with Test-Path and routed through the same failure-handling as every other stage.',
+    'Added a concurrency guard (a PID-stamped lock file, checked by both the script and the in-app update-trigger API) so a manual on-server run can no longer race an in-app-triggered update against the same files; the "Update Now" overlay now surfaces a clear error instead of silently colliding.',
+    'The "Update Now" overlay used to declare success purely from a health-poll transition, which looks identical whether the update actually succeeded or silently rolled back to the old version. It now checks the real outcome and shows distinct states for a successful update, a failed-and-rolled-back update, and the more urgent "rollback also failed" case (no auto-reload).',
+    'Aligned the rollback health-check timeout with the main flow\'s (60s, was 30s) -- rollback doesn\'t skip the slow part (service cold-start), so the shorter budget could misreport a genuinely healthy-but-slow rollback as failed.',
+    'Smaller reliability fixes: the status file is now written atomically (temp file + rename) so a crash mid-write can\'t leave a corrupt JSON behind, and rollback now removes a .env.local that didn\'t exist before the update but was created during a failed attempt.',
+  ],
   '2.25.13': [
     'Fixed a real production regression from the 2.25.12 fix (the one that made rollback snapshots actually survive git clean): TypeScript\'s build-time type-check only excludes the exact name "node_modules" by default, not the "node_modules.lastgood"/".next.lastgood" snapshot directories now sitting right next to it -- so once those snapshots could survive, the very next build tried to type-check next-auth\'s source code inside the OLD snapshot copy and failed on an import that only resolves from within its own original dependency tree. The two fixes were masking each other: before 2.25.12, the snapshot was always deleted before the build ran, so this was never hit. Snapshot directories are now explicitly excluded from the TypeScript check.',
   ],
@@ -3176,6 +3186,36 @@ app.post('/api/system/update', requireSuperAdmin, asyncHandler(async (req, res) 
       license_status: license?.status,
       days_remaining: license?.daysRemaining,
     });
+  }
+
+  // Concurrency guard: refuse to schedule a second update run while one is
+  // already in flight — e.g. a manual on-server run racing this in-app
+  // trigger, or a double-click of "Update Now". Reads the SAME PID-stamped
+  // lock file Update-LogVault.ps1 itself writes/removes (logs/update.lock),
+  // with the identical "PID no longer running = stale, ignore it" logic, so a
+  // crashed prior run never permanently wedges the in-app trigger. This is a
+  // best-effort check (there's a small window between this check and the
+  // scheduled task actually starting/writing its own lock) — the script's own
+  // lock is the authoritative guard; this just avoids scheduling a run that's
+  // very likely to collide.
+  const lockPath = path.join(appRoot, 'logs', 'update.lock');
+  if (fs.existsSync(lockPath)) {
+    try {
+      const BOM = String.fromCharCode(0xfeff);
+      let raw = fs.readFileSync(lockPath, 'utf8').trim();
+      if (raw.startsWith(BOM)) raw = raw.slice(1);
+      const lockedPid = parseInt(raw, 10);
+      if (lockedPid) {
+        let stillRunning = true;
+        try { process.kill(lockedPid, 0); } catch (_e) { stillRunning = false; }
+        if (stillRunning) {
+          return res.status(409).json({ error: `An update is already running (PID ${lockedPid}). Wait for it to finish before starting another.` });
+        }
+      }
+    } catch (_e) {
+      // Unreadable lock file — fall through and let the scheduled run proceed;
+      // the script's own guard is authoritative and will sort out a stale lock.
+    }
   }
 
   // SERVER_IP is only persisted to .env.local for future use by the updater — the

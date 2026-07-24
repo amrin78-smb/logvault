@@ -147,6 +147,21 @@ interface UpdateStatus {
   error?:            string;
 }
 
+// Shape of GET /api/system/last-update-status (Update-LogVault.ps1's
+// Write-StatusJson output) — the ACTUAL outcome of an update run, distinct
+// from the version-check shape above. Matches UpdateFailureBanner.tsx's own
+// interface of the same underlying data.
+interface UpdateRunStatus {
+  exists?:            boolean;
+  success?:           boolean;
+  stage?:             string | null;
+  errorCode?:         number;
+  errorMessage?:      string | null;
+  rolledBack?:        boolean;
+  healthCheckPassed?: boolean;
+  timestamp?:         string;
+}
+
 const UPDATE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes — covers slow npm install + Next.js build before services are back
 // After the API is confirmed stably back up, wait this long before reloading so
 // the Next.js frontend (which starts AFTER the API) has time to finish booting —
@@ -165,10 +180,24 @@ function fmtReleaseDate(d?: string): string {
 // Full-screen overlay shown during an update; polls /api/health for recovery.
 // The API must be seen DOWN before an UP response counts as recovery, so we
 // never declare "complete" against the still-running pre-restart service.
+// Once the health poll confirms SOMETHING is stably back up, this does NOT
+// assume that means "the update succeeded" — a health-poll recovery looks
+// IDENTICAL whether the update actually succeeded, or it failed and the
+// script's own Invoke-Rollback silently put the OLD version back (the API on
+// port 3005 answers /api/health either way). So before declaring success it
+// also checks /api/system/last-update-status (the same structured result
+// UpdateFailureBanner reads) for the ACTUAL outcome of this run, and shows a
+// distinct state for each of the three real outcomes: succeeded, failed-but-
+// rolled-back (still running, but on the OLD version — needs attention), or
+// rollback-also-failed (the most urgent state — no auto-reload, since the app
+// may genuinely be down/unstable and a reload could just spin forever).
 // Defined at module level (never inside another component).
 function UpdateOverlay() {
-  const [phase, setPhase] = useState<'starting' | 'down' | 'back_up' | 'timeout'>('starting');
+  const [phase, setPhase] = useState<
+    'starting' | 'down' | 'checking_result' | 'success' | 'rolled_back' | 'rollback_failed' | 'timeout'
+  >('starting');
   const [countdown, setCountdown] = useState(RELOAD_COUNTDOWN_SECONDS);
+  const [resultInfo, setResultInfo] = useState<UpdateRunStatus | null>(null);
   const wentDown = useRef(false);
   const consecutiveUp = useRef(0);
 
@@ -178,6 +207,45 @@ function UpdateOverlay() {
     let pollId:   ReturnType<typeof setInterval> | null = null;
 
     const stopPolling = () => { if (pollId !== null) { clearInterval(pollId); pollId = null; } };
+
+    // Once the health poll confirms recovery, consult the real outcome from
+    // logs/last-update-status.json (written by Update-LogVault.ps1's
+    // Write-StatusJson) rather than trusting the health-poll transition alone.
+    // Retries briefly in case the script is still finishing its own writes;
+    // if the outcome can't be confirmed at all, falls back to declaring
+    // success rather than blocking the user forever — the health poll above
+    // already proved SOMETHING is up and stably responding.
+    const checkOutcome = async () => {
+      if (!active) return;
+      setPhase('checking_result');
+      for (let attempt = 0; attempt < 5; attempt++) {
+        if (!active) return;
+        try {
+          const res  = await fetch('/api/system/last-update-status', { cache: 'no-store' });
+          const data: UpdateRunStatus = await res.json();
+          // Only trust a status file whose timestamp is AFTER this update run
+          // started — otherwise this could be reading a stale result left
+          // over from a previous update.
+          if (data?.exists && data?.timestamp && new Date(data.timestamp).getTime() > startedAt) {
+            if (!active) return;
+            if (data.success === true) {
+              setPhase('success');
+            } else if (data.rolledBack === true) {
+              setResultInfo(data);
+              setPhase('rolled_back');
+            } else {
+              setResultInfo(data);
+              setPhase('rollback_failed');
+            }
+            return;
+          }
+        } catch {
+          // fall through and retry
+        }
+        await new Promise(r => setTimeout(r, 1500));
+      }
+      if (active) setPhase('success');
+    };
 
     const tick = async () => {
       if (!active) return;
@@ -220,10 +288,8 @@ function UpdateOverlay() {
         // mid-startup, which would trigger a premature reload.
         consecutiveUp.current += 1;
         if (consecutiveUp.current >= 3) {
-          setPhase('back_up');
           stopPolling();
-          // The reload itself is driven by the countdown effect below — the API
-          // is up, but Next.js needs a little longer before it can serve pages.
+          checkOutcome();
         }
       }
       // else: still the pre-restart API — keep waiting for it to go down.
@@ -238,19 +304,40 @@ function UpdateOverlay() {
     };
   }, []);
 
-  // Once the API is confirmed stably back up, count down (15…14…13…) before
-  // reloading so the Next.js frontend has time to finish starting after the API.
+  // Once the outcome is confirmed as a genuine success OR a failed-but-
+  // rolled-back run (both leave a running app it's safe to reload into),
+  // count down before reloading so the Next.js frontend has time to finish
+  // starting. "rollback_failed" deliberately does NOT auto-reload — the app
+  // may be down/unstable, and a countdown-driven reload there would just
+  // mislead the admin into thinking it's routine.
   useEffect(() => {
-    if (phase !== 'back_up') return;
+    if (phase !== 'success' && phase !== 'rolled_back') return;
     if (countdown <= 0) { window.location.href = '/?updated=true'; return; }
     const id = setTimeout(() => setCountdown(c => c - 1), 1000);
     return () => clearTimeout(id);
   }, [phase, countdown]);
 
+  let heading = 'Updating LogVault...';
   let statusLine = 'Starting update...';
-  if (phase === 'down')          statusLine = 'Services restarting...';
-  else if (phase === 'back_up')  statusLine = `✓ Services are back online. Reloading in ${countdown} second${countdown === 1 ? '' : 's'}...`;
-  else if (phase === 'timeout')  statusLine = 'Update is taking longer than expected. Try refreshing the page manually.';
+  if (phase === 'down') {
+    statusLine = 'Services restarting...';
+  } else if (phase === 'checking_result') {
+    statusLine = 'Services are back online. Verifying the update outcome...';
+  } else if (phase === 'success') {
+    heading = 'Update Complete';
+    statusLine = `✓ Update completed successfully. Reloading in ${countdown} second${countdown === 1 ? '' : 's'}...`;
+  } else if (phase === 'rolled_back') {
+    heading = 'Update Failed — Rolled Back';
+    statusLine = `The update failed and was automatically rolled back — LogVault is back on the previous version. Reloading in ${countdown} second${countdown === 1 ? '' : 's'}...`;
+  } else if (phase === 'rollback_failed') {
+    heading = 'Update Failed — Rollback Also Failed';
+    statusLine = 'LogVault may be DOWN or unstable — the automatic rollback also failed. MANUAL INTERVENTION REQUIRED — check the server / update logs.';
+  } else if (phase === 'timeout') {
+    statusLine = 'Update is taking longer than expected. Try refreshing the page manually.';
+  }
+
+  const spinning = phase === 'starting' || phase === 'down' || phase === 'checking_result';
+  const showCountdownNumber = phase === 'success' || phase === 'rolled_back';
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.5)',
@@ -258,29 +345,39 @@ function UpdateOverlay() {
       <style>{'@keyframes lv-spin { to { transform: rotate(360deg); } }'}</style>
       <div style={{ background: 'var(--bg-card)', borderRadius: 8, boxShadow: 'var(--shadow-md)',
         padding: 40, maxWidth: 480, width: '100%', textAlign: 'center' }}>
-        {phase !== 'back_up' && phase !== 'timeout' && (
+        {spinning && (
           <div style={{ fontSize: 44, lineHeight: 1, display: 'inline-block',
             color: 'var(--primary)', animation: 'lv-spin 1s linear infinite' }}>⟳</div>
         )}
-        {phase === 'back_up' && <div style={{ fontSize: 44, lineHeight: 1 }}>✓</div>}
+        {phase === 'success' && <div style={{ fontSize: 44, lineHeight: 1 }}>✓</div>}
+        {phase === 'rolled_back' && <div style={{ fontSize: 44, lineHeight: 1, color: '#d97706' }}>⚠</div>}
+        {phase === 'rollback_failed' && <div style={{ fontSize: 44, lineHeight: 1, color: '#dc2626' }}>⛔</div>}
         {phase === 'timeout' && <div style={{ fontSize: 44, lineHeight: 1 }}>⚠</div>}
-        <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, marginTop: 14, color: 'var(--text-primary)' }}>Updating LogVault...</div>
-        <p style={{ fontSize: 'var(--text-base)', color: 'var(--text-muted)', marginTop: 6 }}>
-          Pulling latest code and restarting services. Do not close this window.
-        </p>
-        <p style={{ fontWeight: 600, margin: '14px 0', color: 'var(--text-primary)' }}>{statusLine}</p>
-        {phase === 'back_up' && (
+        <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, marginTop: 14, color: 'var(--text-primary)' }}>{heading}</div>
+        {spinning && (
+          <p style={{ fontSize: 'var(--text-base)', color: 'var(--text-muted)', marginTop: 6 }}>
+            Pulling latest code and restarting services. Do not close this window.
+          </p>
+        )}
+        <p style={{ fontWeight: 600, margin: '14px 0', color: phase === 'rollback_failed' ? '#dc2626' : 'var(--text-primary)' }}>{statusLine}</p>
+        {(phase === 'rolled_back' || phase === 'rollback_failed') && resultInfo?.errorMessage && (
+          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', wordBreak: 'break-word' }}>
+            {resultInfo.stage ? `Failed at ${resultInfo.stage}: ` : ''}{resultInfo.errorMessage}
+          </p>
+        )}
+        {showCountdownNumber && (
           <div style={{ fontSize: 40, fontWeight: 800, lineHeight: 1, margin: '4px 0 10px', color: 'var(--primary)' }}>
             {countdown}
           </div>
         )}
-        {phase !== 'back_up' && (
+        {spinning && (
           <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>(This usually takes 1-3 minutes)</p>
         )}
-        <button onClick={phase === 'back_up' ? () => { window.location.href = '/?updated=true'; } : () => window.location.reload()}
+        <button onClick={showCountdownNumber ? () => { window.location.href = '/?updated=true'; } : () => window.location.reload()}
           style={{ marginTop: 10, padding: '9px 22px', borderRadius: 6, border: 'none',
-            background: 'var(--primary)', color: '#fff', fontSize: 'var(--text-base)', fontWeight: 600, cursor: 'pointer' }}>
-          Reload Now
+            background: phase === 'rollback_failed' ? '#dc2626' : 'var(--primary)', color: '#fff',
+            fontSize: 'var(--text-base)', fontWeight: 600, cursor: 'pointer' }}>
+          {phase === 'rollback_failed' ? 'Reload Anyway' : 'Reload Now'}
         </button>
       </div>
     </div>
@@ -357,6 +454,12 @@ export default function Settings() {
   const [showUpdateOverlay, setShowUpdateOverlay] = useState(false);
   const [showConfirmModal,  setShowConfirmModal]  = useState(false);
   const [updateBlocked,    setUpdateBlocked]    = useState<string | null>(null);
+  // Whether updateBlocked's message is specifically a license block (shows the
+  // "Manage License" link) vs. any other reason an update couldn't start
+  // (e.g. a concurrent update already running) — previously the render always
+  // showed a hardcoded "License expired" message regardless of what
+  // updateBlocked actually contained.
+  const [updateBlockedIsLicense, setUpdateBlockedIsLicense] = useState(false);
   const [appVersion,       setAppVersion]       = useState<string>('');
   const [updateAvail,      setUpdateAvail]      = useState(false);
 
@@ -399,6 +502,7 @@ export default function Settings() {
   const startUpdate = async () => {
     setShowConfirmModal(false);
     setUpdateBlocked(null);
+    setUpdateBlockedIsLicense(false);
     setUpdating(true);
     setShowUpdateOverlay(true);
     try {
@@ -409,16 +513,20 @@ export default function Settings() {
         try { const d = await r.json(); if (d?.error) msg = d.error; } catch { /* keep default */ }
         setShowUpdateOverlay(false);
         setUpdating(false);
+        setUpdateBlockedIsLicense(true);
         setUpdateBlocked(msg);
         return;
       }
-      // Any other non-OK response (e.g. 400/500) means the update never started —
-      // surface the server's error instead of leaving the overlay spinning forever.
+      // Any other non-OK response (e.g. 400/500, or 409 when an update is
+      // already running — see the concurrency guard in api/server.js) means
+      // the update never started — surface the server's error instead of
+      // leaving the overlay spinning forever.
       if (!r.ok) {
         let msg = 'Failed to start update. Please try again or update manually.';
         try { const d = await r.json(); if (d?.error) msg = d.error; } catch { /* keep default */ }
         setShowUpdateOverlay(false);
         setUpdating(false);
+        setUpdateBlockedIsLicense(false);
         setUpdateBlocked(msg);
         return;
       }
@@ -1056,13 +1164,18 @@ export default function Settings() {
 
               {updateBlocked && (
                 <div style={{ marginTop: 12, fontSize: 'var(--text-base)', color: 'var(--primary)' }}>
-                  ⚠ License expired — updates disabled. Renew your license to receive updates.{' '}
-                  <a
-                    href={getHubUrl() + '/settings/license'}
-                    style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'underline' }}
-                  >
-                    Manage License →
-                  </a>
+                  ⚠ {updateBlocked}
+                  {updateBlockedIsLicense && (
+                    <>
+                      {' '}
+                      <a
+                        href={getHubUrl() + '/settings/license'}
+                        style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'underline' }}
+                      >
+                        Manage License →
+                      </a>
+                    </>
+                  )}
                 </div>
               )}
             </div>
