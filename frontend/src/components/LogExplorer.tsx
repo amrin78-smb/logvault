@@ -93,6 +93,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
   // Apply initial filter from dashboard click
   useEffect(() => {
     if (initialFilter && Object.keys(initialFilter).length > 0) {
+      if (initialFilter.q        !== undefined) setQ(initialFilter.q);
       if (initialFilter.severity !== undefined) setSev(initialFilter.severity);
       if (initialFilter.vendor   !== undefined) setVendor(initialFilter.vendor);
       if (initialFilter.category !== undefined) setCategory(initialFilter.category);

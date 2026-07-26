@@ -203,7 +203,10 @@ export default function Home() {
   }, []);
 
   const openExplorer = (filter: ExplorerFilter) => {
-    setExplorerFilter({ ...filter, hours: String(hours) });
+    // Respect a range the caller explicitly passed (e.g. the Threat Map / SOC
+    // views have their OWN local time range that differs from the global one);
+    // fall back to the global range only when the caller didn't specify one.
+    setExplorerFilter({ ...filter, hours: filter.hours ?? String(hours) });
     setTab('explorer');
   };
 

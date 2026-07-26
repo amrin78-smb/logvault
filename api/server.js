@@ -2562,6 +2562,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.26.2': [
+    'Fixed drill-through from the Threat Map (and any view with its own time range) into Log Explorer: clicking a country now correctly carries the country name into the search box AND the time range you were viewing. Two bugs: Log Explorer ignored the incoming free-text "q" filter (it applied every other field but not the search term), and the "open in Explorer" handler always overrode the caller\'s time range with the global one — so clicking Germany at 30d landed on an empty 24h search. Both fixed; the drill now lands pre-filtered with results.',
+  ],
   '2.26.1': [
     'Threat Map now draws the actual world continents behind the attack bubbles instead of just a coordinate grid — it was hard to read as a map with only two dots on a graticule. The landmass is a bundled, pre-generated world outline (Natural Earth 110m) rendered with the same projection as the bubbles, so coastlines and country bubbles line up exactly. Fully dependency-free (a static ~55 KB JSON, no runtime map library) and dark-mode safe.',
   ],
