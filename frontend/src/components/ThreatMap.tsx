@@ -5,6 +5,7 @@ import { PageHeader, EmptyState, Skeleton, Spinner } from './ui';
 import { countryFlag, GLOBE } from './ThreatIntel';
 import { Trend } from './Trend';
 import type { ExplorerFilter } from '@/app/page';
+import worldLandData from './worldLand.json';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ThreatMap — Phase 3 "geo/attack map".
@@ -208,6 +209,32 @@ function num(v: number | string | null | undefined): number {
   return typeof n === 'number' && !isNaN(n) ? n : 0;
 }
 
+// ── World landmass backdrop (bundled, dependency-free) ────────────────────────
+// worldLand.json is a pre-projected-agnostic set of land polygons ([lon,lat]
+// rings, Natural Earth 110m, Antarctica dropped) generated once from the
+// `world-atlas` dataset and committed — the shipped app carries only this static
+// JSON, no runtime map library. Projected with the SAME projX/projY as the
+// bubbles so coastlines and attack bubbles line up exactly. Precomputed once at
+// module load into SVG path `d` strings (117 polygons / ~4.5k points — cheap).
+const LAND_PATHS: string[] = (worldLandData as { polygons: number[][][][] }).polygons.map(poly =>
+  poly.map(ring => {
+    let d = '';
+    for (let i = 0; i < ring.length; i++) {
+      d += (i === 0 ? 'M' : 'L') + projX(ring[i][0]).toFixed(1) + ',' + projY(ring[i][1]).toFixed(1);
+    }
+    return d + 'Z';
+  }).join(' '),
+);
+function WorldLand() {
+  // fill-rule evenodd so inland water (e.g. the Caspian) reads as ocean, not land.
+  return (
+    <g fill="var(--text-muted)" fillOpacity={0.25} fillRule="evenodd"
+      stroke="var(--text-muted)" strokeOpacity={0.55} strokeWidth={0.4} strokeLinejoin="round">
+      {LAND_PATHS.map((d, i) => <path key={i} d={d} />)}
+    </g>
+  );
+}
+
 // ── Graticule backdrop (meridians + parallels every 30°) — module level ───────
 function Graticule() {
   const meridians: number[] = [];
@@ -215,15 +242,15 @@ function Graticule() {
   const parallels: number[] = [];
   for (let lat = -90; lat <= 90; lat += 30) parallels.push(lat);
   return (
-    <g stroke="var(--border)" strokeWidth={0.5} opacity={0.5}>
+    <g stroke="var(--border)" strokeWidth={0.5} opacity={0.3}>
       {meridians.map(lon => (
         <line key={`m${lon}`} x1={projX(lon)} y1={0} x2={projX(lon)} y2={MAP_H} />
       ))}
       {parallels.map(lat => (
         <line key={`p${lat}`} x1={0} y1={projY(lat)} x2={MAP_W} y2={projY(lat)} />
       ))}
-      {/* Equator + prime meridian slightly stronger for orientation */}
-      <line x1={0} y1={projY(0)} x2={MAP_W} y2={projY(0)} strokeWidth={0.8} opacity={0.9} />
+      {/* Equator slightly stronger for orientation */}
+      <line x1={0} y1={projY(0)} x2={MAP_W} y2={projY(0)} strokeWidth={0.7} opacity={0.6} />
     </g>
   );
 }
@@ -483,10 +510,19 @@ export default function ThreatMap({ hours, openExplorer }: {
                 style={{ display: 'block', borderRadius: 8 }}
                 preserveAspectRatio="xMidYMid meet"
                 role="img" aria-label="World map of attack activity by source country">
+                <defs>
+                  <clipPath id="tm-frame-clip">
+                    <rect x={0} y={0} width={MAP_W} height={MAP_H} rx={6} />
+                  </clipPath>
+                </defs>
                 {/* Ocean / frame field */}
                 <rect x={0} y={0} width={MAP_W} height={MAP_H}
                   fill="var(--surface-subtle)" stroke="var(--border)" strokeWidth={1} rx={6} />
-                <Graticule />
+                {/* Land + graticule, clipped to the rounded frame */}
+                <g clipPath="url(#tm-frame-clip)">
+                  <WorldLand />
+                  <Graticule />
+                </g>
 
                 {/* Country bubbles (drawn small→large so big ones sit on top) */}
                 {[...bubbles].sort((a, b) => a.r - b.r).map(b => (

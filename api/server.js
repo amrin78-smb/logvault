@@ -2562,6 +2562,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.26.1': [
+    'Threat Map now draws the actual world continents behind the attack bubbles instead of just a coordinate grid — it was hard to read as a map with only two dots on a graticule. The landmass is a bundled, pre-generated world outline (Natural Earth 110m) rendered with the same projection as the bubbles, so coastlines and country bubbles line up exactly. Fully dependency-free (a static ~55 KB JSON, no runtime map library) and dark-mode safe.',
+  ],
   '2.26.0': [
     'SIEM Phase 3+4: three new analyst surfaces added to the sidebar. Security Overview (SOC single-pane) composes the whole security picture — a deterministic, plain-language narrative digest (incidents, anomalies, riskiest entities, external threats, volume-vs-baseline — no AI/LLM, no email), severity breakdown, KPI totals, top source countries, riskiest entities, security signals, and an active-incidents list.',
     'Kill-chain timeline: clicking an active incident opens a modal that pulls the underlying log entries behind the fired alert and groups them into MITRE ATT&CK tactic phases (ordered along the kill chain) with the techniques involved.',
