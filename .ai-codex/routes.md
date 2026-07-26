@@ -95,6 +95,12 @@ GET /api/ueba/baseline-status [auth] [db] — baseline-readiness indicator, neve
 GET /api/reports/ [auth] [db] — list available report types
 GET /api/reports/:type [auth] [db] — generate report (format=json|csv|pdf), logs to report_run_history
 
+## Express — SOC console (api/soc.js, mounted at /api/soc)
+GET /api/soc/overview [auth] [db] — one composed dashboard payload (severity + totals + top entities/countries + active incidents + security counters); reuses stats/summary, ueba/top, stats/geo, alerts, security/summary, threats/known-bad SQL; cached 30s per rbac scope
+GET /api/soc/digest [auth] [db] — deterministic templated NLG digest (no LLM, no email); headline + 5 sections (incidents/anomalies/entities/threats/volume) each with worst-finding severity; cached 30s per rbac scope
+GET /api/soc/killchain/:alertId [auth] [db] — underlying syslog entries behind a fired alert, chronological; reuses /api/alerts/events/:id/logs lookback query (window from rule.threshold_window, cap 200); 404 if not found/not site-visible
+GET /api/soc/entity-timeline/:type/:value [auth] [db] — daily activity series (syslog_entity_activity_rollup) + anomalies for one entity over ?days=14; :type in device|user|srcip
+
 ## Express — Hosts sync / audit / settings / system
 GET /api/settings [auth] [db] — app_settings key/value read
 POST /api/settings [super-admin] [db] — app_settings write

@@ -17,6 +17,7 @@ const { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter, getStats
 const { getLicense, getLicenseState } = require('./licenseCheck');
 const { writeAudit } = require('./auditLog');
 const { createReportsRouter } = require('./reports');
+const { createSocRouter } = require('./soc');
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env.local') });
 
 // App version — single source of truth is the root package.json.
@@ -161,6 +162,7 @@ app.use(enforceLicense);
 // prefix list does NOT include /api/reports, so it follows the normal
 // license gate, matching every other business route in this file).
 app.use('/api/reports', createReportsRouter(pool));
+app.use('/api/soc', createSocRouter(pool));
 
 // ── DASHBOARD STATS ──────────────────────────────────────────
 
@@ -2560,6 +2562,13 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.26.0': [
+    'SIEM Phase 3+4: three new analyst surfaces added to the sidebar. Security Overview (SOC single-pane) composes the whole security picture — a deterministic, plain-language narrative digest (incidents, anomalies, riskiest entities, external threats, volume-vs-baseline — no AI/LLM, no email), severity breakdown, KPI totals, top source countries, riskiest entities, security signals, and an active-incidents list.',
+    'Kill-chain timeline: clicking an active incident opens a modal that pulls the underlying log entries behind the fired alert and groups them into MITRE ATT&CK tactic phases (ordered along the kill chain) with the techniques involved.',
+    'Entities page: a dedicated UEBA entity-profile explorer (device / user / source-IP) with a searchable list, per-entity risk score and explainable risk-factor breakdown, a 14-day activity trend, recent anomalies, and an events-by-category summary — the flagship version of what was previously only a dashboard widget + slide-in panel.',
+    'Threat Map: a dependency-free world attack map plotting failed-auth/attack activity by source country (equirectangular SVG with bubbles sized by volume) alongside a ranked country list with period-over-period trend.',
+    'All of the above is compute-on-read over existing tables/rollups via a new /api/soc/* module (overview, digest, killchain, entity-timeline) — no new database tables, schema, or installer changes; every query reuses the same site-scoping (RBAC) as the endpoints it composes.',
+  ],
   '2.25.14': [
     'CRITICAL: the "kill any remaining node process" safety net (main flow AND rollback) only ever checked ports 3004/3005 (App/API) -- LogVault-Collector (514/1514, TCP+UDP) was never checked, even though sc.exe stop is asynchronous and this is the exact mechanism of the original production incident (the Collector kept running against a node_modules directory being renamed/restored underneath it). Both port lists now include 514/1514.',
     'Invoke-Rollback no longer proceeds to restore node_modules/.next and restart services when the source revert itself fails (missing pre-update commit, or a failed git reset) -- it now short-circuits and reports "MANUAL INTERVENTION REQUIRED" instead of risking the new broken code combined with the OLD dependencies.',

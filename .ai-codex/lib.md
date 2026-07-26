@@ -32,6 +32,9 @@ api/pdfCharts.js
 api/reports.js
   createReportsRouter(pool) — Express router factory mounted at /api/reports; REPORTS array defines report types, logRun() best-effort-logs to report_run_history (wrapped in try/catch so a logging failure never breaks an export)
 
+api/soc.js
+  createSocRouter(pool) — Express router factory mounted at /api/soc; composes existing stats/security/ueba/anomaly/alert/threat aggregates into SOC-console payloads (overview, deterministic NLG digest, alert killchain, entity timeline). No new tables — compute-on-read only. Uses ./rbac site filters + a local anomalySiteFilter/getCached/rbacCacheKey copy (those are module-private in server.js)
+
 ## Frontend (frontend/src/lib/)
 
 publicUrl.ts

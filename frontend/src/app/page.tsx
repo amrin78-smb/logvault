@@ -50,18 +50,24 @@ const IntelligenceConsole = dynamic(() => import('@/components/IntelligenceConso
 const KnownHosts       = dynamic(() => import('@/components/KnownHosts'),       { ssr: false, loading: () => tabLoading });
 const ReportsTab       = dynamic(() => import('@/components/ReportsTab'),       { ssr: false, loading: () => tabLoading });
 const Settings         = dynamic(() => import('@/components/Settings'),         { ssr: false, loading: () => tabLoading });
+const SocOverview      = dynamic(() => import('@/components/SocOverview'),      { ssr: false, loading: () => tabLoading });
+const EntityProfile    = dynamic(() => import('@/components/EntityProfile'),    { ssr: false, loading: () => tabLoading });
+const ThreatMap        = dynamic(() => import('@/components/ThreatMap'),        { ssr: false, loading: () => tabLoading });
 
-type Tab = 'dashboard' | 'explorer' | 'livetail' | 'alerts' | 'health' | 'security' | 'intelligence' | 'hosts' | 'reports' | 'settings';
+type Tab = 'dashboard' | 'soc' | 'explorer' | 'livetail' | 'alerts' | 'health' | 'security' | 'threatmap' | 'intelligence' | 'entities' | 'hosts' | 'reports' | 'settings';
 export interface ExplorerFilter { severity?: string; vendor?: string; host?: string; hours?: string; category?: string; q?: string; technique?: string; threat?: string; }
 
 const Icons: Record<Tab, JSX.Element> = {
   dashboard: (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1" fill="currentColor"/><rect x="9" y="1" width="6" height="6" rx="1" fill="currentColor"/><rect x="1" y="9" width="6" height="6" rx="1" fill="currentColor"/><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor"/></svg>),
+  soc:       (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.4" stroke="currentColor" strokeWidth="1.3"/><circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.1" opacity="0.55"/><line x1="8" y1="1.6" x2="8" y2="14.4" stroke="currentColor" strokeWidth="1" opacity="0.5"/><line x1="1.6" y1="8" x2="14.4" y2="8" stroke="currentColor" strokeWidth="1" opacity="0.5"/><circle cx="11" cy="5" r="1.2" fill="currentColor"/></svg>),
   explorer:  (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="1.5" rx="0.75" fill="currentColor"/><rect x="1" y="7" width="10" height="1.5" rx="0.75" fill="currentColor"/><rect x="1" y="11" width="12" height="1.5" rx="0.75" fill="currentColor"/></svg>),
   livetail:  (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3" fill="currentColor"/><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.5"/></svg>),
   alerts:    (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1L1 13h14L8 1z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none"/><line x1="8" y1="6" x2="8" y2="9.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><circle cx="8" cy="11.5" r="0.8" fill="currentColor"/></svg>),
   health:    (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polyline points="1,8 4,4 6,10 9,3 11,8 13,6 15,8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>),
   security:  (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.4L2.6 3.7v4.4c0 3.3 2.3 5.5 5.4 6.5 3.1-1 5.4-3.2 5.4-6.5V3.7L8 1.4z" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round"/><polyline points="5.4,7.8 7.2,9.6 10.6,5.9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>),
+  threatmap: (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.4" stroke="currentColor" strokeWidth="1.3"/><ellipse cx="8" cy="8" rx="2.6" ry="6.4" stroke="currentColor" strokeWidth="1.1"/><line x1="1.6" y1="8" x2="14.4" y2="8" stroke="currentColor" strokeWidth="1.1"/><line x1="2.7" y1="4.8" x2="13.3" y2="4.8" stroke="currentColor" strokeWidth="1" opacity="0.6"/><line x1="2.7" y1="11.2" x2="13.3" y2="11.2" stroke="currentColor" strokeWidth="1" opacity="0.6"/></svg>),
   intelligence: (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.6c-2.5 0-4.4 1.9-4.4 4.2 0 1.5.8 2.6 1.6 3.4.5.5.8 1 .8 1.7v.3h4v-.3c0-.7.3-1.2.8-1.7.8-.8 1.6-1.9 1.6-3.4C12.4 3.5 10.5 1.6 8 1.6z" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round"/><line x1="6" y1="13.4" x2="10" y2="13.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><line x1="6.6" y1="14.8" x2="9.4" y2="14.8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
+  entities:  (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="5" r="2.8" stroke="currentColor" strokeWidth="1.3"/><path d="M2.8 14c0-2.9 2.3-5 5.2-5s5.2 2.1 5.2 5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
   hosts:     (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" fill="none"/><line x1="5" y1="13" x2="11" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><line x1="8" y1="10" x2="8" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
   reports:   (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="1.5" width="11" height="13" rx="1.3" stroke="currentColor" strokeWidth="1.3" fill="none"/><line x1="5" y1="5" x2="11" y2="5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><line x1="5" y1="8" x2="11" y2="8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><line x1="5" y1="11" x2="9" y2="11" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>),
   settings:  (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>),
@@ -71,12 +77,15 @@ const Icons: Record<Tab, JSX.Element> = {
 // colored; inactive items use the neutral faint-white chip.
 const NAV_COLORS: Record<Tab, { color: string; bg: string }> = {
   dashboard: { color: '#f87171', bg: 'rgba(248,113,113,0.22)' },
+  soc:       { color: '#fb7185', bg: 'rgba(251,113,133,0.20)' },
   explorer:  { color: '#60a5fa', bg: 'rgba(96,165,250,0.20)' },
   livetail:  { color: '#22d3ee', bg: 'rgba(34,211,238,0.20)' },
   alerts:    { color: '#fbbf24', bg: 'rgba(251,191,36,0.20)' },
   health:    { color: '#34d399', bg: 'rgba(52,211,153,0.20)' },
   security:  { color: '#a78bfa', bg: 'rgba(167,139,250,0.20)' },
+  threatmap: { color: '#2dd4bf', bg: 'rgba(45,212,191,0.20)' },
   intelligence: { color: '#f472b6', bg: 'rgba(244,114,182,0.20)' },
+  entities:  { color: '#818cf8', bg: 'rgba(129,140,248,0.20)' },
   hosts:     { color: '#38bdf8', bg: 'rgba(56,189,248,0.20)' },
   reports:   { color: '#fb923c', bg: 'rgba(251,146,60,0.20)' },
   settings:  { color: '#9ca3af', bg: 'rgba(156,163,175,0.20)' },
@@ -209,10 +218,13 @@ export default function Home() {
   const warnCount  = summary.filter(r => parseInt(r.severity) === 4).reduce((s, r) => s + parseInt(r.log_count), 0);
 
   const TABS: { id: Tab; label: string }[] = [
-    { id: 'dashboard', label: 'Dashboard' }, { id: 'explorer', label: 'Log Explorer' },
+    { id: 'dashboard', label: 'Dashboard' }, { id: 'soc', label: 'Security Overview' },
+    { id: 'explorer', label: 'Log Explorer' },
     { id: 'livetail',  label: 'Live Tail' }, { id: 'alerts',   label: 'Alerts' },
     { id: 'health',    label: 'Network Health' }, { id: 'security', label: 'Security' },
+    { id: 'threatmap', label: 'Threat Map' },
     { id: 'intelligence', label: 'Intelligence' },
+    { id: 'entities',  label: 'Entities' },
     { id: 'hosts',     label: 'Known Hosts' },
     { id: 'reports',   label: 'Reports' },
     // Settings is admin-only (super_admin / admin)
@@ -471,12 +483,15 @@ export default function Home() {
             </>
           )}
 
+          {tab === 'soc'       && <ErrorBoundary name="Security Overview"><SocOverview hours={hours} openExplorer={openExplorer} openAlerts={openAlerts} /></ErrorBoundary>}
           {tab === 'explorer'  && <ErrorBoundary name="Log Explorer"><LogExplorer initialFilter={explorerFilter} onFilterUsed={() => setExplorerFilter({})} /></ErrorBoundary>}
           {tab === 'livetail'  && <ErrorBoundary name="Live Tail"><LiveTail /></ErrorBoundary>}
           {tab === 'alerts'    && <ErrorBoundary name="Alerts"><AlertEvents initialTechnique={alertTechnique} hours={hours} onTechniqueConsumed={() => setAlertTechnique(undefined)} /></ErrorBoundary>}
           {tab === 'health'    && <ErrorBoundary name="Network Health"><NetworkHealth hours={hours} onHoursChange={setHours} refreshInterval={refreshInterval} onRefreshChange={setRefreshInterval} /></ErrorBoundary>}
           {tab === 'security'  && <ErrorBoundary name="Security"><SecurityAnalysis hours={hours} onHoursChange={setHours} refreshInterval={refreshInterval} onRefreshChange={setRefreshInterval} onTechnique={(t, info) => (info && info.alerts > 0 ? openAlerts(t) : openExplorer({ technique: t }))} onDrill={openExplorer} /></ErrorBoundary>}
+          {tab === 'threatmap' && <ErrorBoundary name="Threat Map"><ThreatMap hours={hours} openExplorer={openExplorer} /></ErrorBoundary>}
           {tab === 'intelligence' && <ErrorBoundary name="Intelligence"><IntelligenceConsole openExplorer={openExplorer} hours={String(hours)} /></ErrorBoundary>}
+          {tab === 'entities'  && <ErrorBoundary name="Entities"><EntityProfile hours={hours} openExplorer={openExplorer} /></ErrorBoundary>}
           {tab === 'hosts'     && <ErrorBoundary name="Known Hosts"><KnownHosts /></ErrorBoundary>}
           {tab === 'reports'   && <ErrorBoundary name="Reports"><ReportsTab /></ErrorBoundary>}
           {tab === 'settings'  && isAdmin && <ErrorBoundary name="Settings"><Settings /></ErrorBoundary>}

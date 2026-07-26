@@ -34,6 +34,10 @@ Every file has `'use client'` at the top — this app has no server components b
 (c) RecentCritical  hours, onRowClick?
 (c) ReportsTab  (no props — self-contained)
 (c) SecurityAnalysis  hours, onHoursChange, refreshInterval, onRefreshChange, onTechnique, onDrill
+(c) SocOverview  hours, openExplorer, openAlerts — SIEM Phase 4 SOC single-pane (soc tab); fetches /api/soc/overview + /api/soc/digest; opens KillChainTimeline
+(c) KillChainTimeline  alertId, onClose — modal; fetches /api/soc/killchain/:alertId; groups events into MITRE tactic phases (mitre.tsx)
+(c) EntityProfile  hours, openExplorer — SIEM Phase 3 UEBA entity explorer (entities tab); /api/ueba/top + /api/ueba/entity/:type/:value + /api/soc/entity-timeline
+(c) ThreatMap  hours, openExplorer — SIEM Phase 3 world attack map (threatmap tab); /api/stats/geo + bundled COUNTRY_CENTROIDS, inline SVG (no map dep)
 (c) Settings  (no props — self-contained, largest component file)
 (c) SeverityChart  summary, onSeverityClick?, compact?
 (c) StorageWidget  (no props — self-fetching)
