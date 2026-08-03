@@ -2562,6 +2562,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.26.3': [
+    'When an update check cannot reach the remote (offline, air-gapped, or a transient git failure), the Updates panel now still shows the version and commit this server is actually running. It previously dropped those fields on that path, so a check that failed for network reasons also blanked out information the server already knew locally. Matches what NetVault has always returned.',
+  ],
   '2.26.2': [
     'Fixed drill-through from the Threat Map (and any view with its own time range) into Log Explorer: clicking a country now correctly carries the country name into the search box AND the time range you were viewing. Two bugs: Log Explorer ignored the incoming free-text "q" filter (it applied every other field but not the search term), and the "open in Explorer" handler always overrode the caller\'s time range with the global one — so clicking Germany at 30d landed on an empty 24h search. Both fixed; the drill now lands pre-filtered with results.',
   ],
@@ -3150,7 +3153,18 @@ app.get('/api/system/update-status', requireSuperAdmin, asyncHandler(async (req,
     // "Could not check for updates" response as a hard failure.
     if (!remoteHash) {
       console.error('[update-status] could not read remote commit hash (git ls-remote)');
-      return res.json({ current_version: localVersion, up_to_date: true, error: 'Could not check for updates' });
+      // Same field set as the success shape (minus what genuinely can't be known),
+      // so a client never has to special-case the degraded response.
+      // current_commit/current_hash are LOCAL facts and are still known here;
+      // omitting them blanked the "current commit" readout on an offline check.
+      return res.json({
+        current_version: localVersion,
+        current_commit: localHash,
+        current_hash: localHash,
+        up_to_date: true,
+        update_available: false,
+        error: 'Could not check for updates',
+      });
     }
 
     // Any differing commit = update available; both hashes must be present.
@@ -3179,7 +3193,14 @@ app.get('/api/system/update-status', requireSuperAdmin, asyncHandler(async (req,
     });
   } catch (err) {
     console.error('[update-status] version check failed:', err.message);
-    res.json({ current_version: localVersion, up_to_date: true, error: 'Could not check for updates' });
+    res.json({
+      current_version: localVersion,
+      current_commit: localHash,
+      current_hash: localHash,
+      up_to_date: true,
+      update_available: false,
+      error: 'Could not check for updates',
+    });
   }
 }));
 
