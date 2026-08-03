@@ -11,6 +11,13 @@
 const rootVersion = require('../package.json').version;
 
 const nextConfig = {
+  // This app has TWO lockfiles — root (api/collector deps) and frontend/ — so Next
+  // cannot tell which directory is the workspace root and guesses, warning loudly
+  // on every build (399 lines in app-err.log). Pin it: the frontend IS its own
+  // root here; the root package.json belongs to the Express/collector side, which
+  // Next has no part in. Removing either lockfile is NOT an option — both halves
+  // are installed independently by the updater.
+  outputFileTracingRoot: __dirname,
   env: {
     NEXTAUTH_URL: process.env.NEXTAUTH_URL,
     // Suite-standard hub URL var. Falls back to the legacy NETVAULT name so SSO
