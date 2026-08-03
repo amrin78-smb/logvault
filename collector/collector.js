@@ -1356,17 +1356,27 @@ async function main() {
   startUDP(514); startUDP(1514);
   startTCP(514); startTCP(1514);
 
+  // Every timer this process arms, so shutdown can stop them ALL before pool.end().
+  // Previously only flushTimer was cleared, leaving ~13 scheduled jobs (rollups,
+  // UEBA, anomaly, baselines) free to fire into a pool that had just been closed —
+  // "Cannot use a pool after calling end on the pool", 172 times in the error log.
+  // Harmless in effect (the work is idempotent and the process is exiting anyway)
+  // but it buries real shutdown errors.
+  const timers = [];
+  const trackInterval = (fn, ms) => { const t = setInterval(fn, ms); timers.push(t); return t; };
+  const trackTimeout  = (fn, ms) => { const t = setTimeout(fn, ms);  timers.push(t); return t; };
+
   // Flush the DB buffer and durable-sync the spool on the same cadence.
-  flushTimer = setInterval(() => { spoolFsync(); flushBuffer(); }, BATCH_INTERVAL);
+  flushTimer = trackInterval(() => { spoolFsync(); flushBuffer(); }, BATCH_INTERVAL);
   await getAlertRules();
 
   // Prime ingestion-guard settings + keep the cache warm (5-min TTL).
   await getIngestSettings();
-  setInterval(() => { getIngestSettings().catch(() => {}); }, INGEST_SETTINGS_TTL);
+  trackInterval(() => { getIngestSettings().catch(() => {}); }, INGEST_SETTINGS_TTL);
 
   // Aggregate drop visibility — log every 60s only when something was dropped
   // (avoids per-packet spam). Also prunes stale rate-limit buckets.
-  setInterval(() => {
+  trackInterval(() => {
     if (droppedByAllowList || droppedByRateLimit) {
       console.log(`[Ingest] Dropped in last 60s — allow-list: ${droppedByAllowList}, rate-limit: ${droppedByRateLimit}`);
       droppedByAllowList = 0;
@@ -1379,7 +1389,7 @@ async function main() {
 
   // Sync NetVault assets immediately then every 15 minutes
   syncFromNetVault(pool).catch(err => console.error('[NetVaultSync] Initial sync error:', err.message));
-  setInterval(() => {
+  trackInterval(() => {
     syncFromNetVault(pool).catch(err => console.error('[NetVaultSync] Sync error:', err.message));
   }, 15 * 60 * 1000);
 
@@ -1387,10 +1397,10 @@ async function main() {
   // scheduled task needed. Runs ~60s after startup (let ingestion settle) then
   // every 24h. Reuses the collector's pool; never exits on error.
   const DAILY_MS = 24 * 60 * 60 * 1000;
-  setTimeout(() => {
+  trackTimeout(() => {
     runCleanup(pool).catch(err => console.error('[Cleanup] error:', err.message));
   }, 60 * 1000);
-  setInterval(() => {
+  trackInterval(() => {
     runCleanup(pool).catch(err => console.error('[Cleanup] error:', err.message));
   }, DAILY_MS);
 
@@ -1401,10 +1411,10 @@ async function main() {
   // merge them. Runs ~60s after startup (let ingestion settle) then every 5m.
   // Reuses the collector's pool; never blocks ingestion, never exits on error.
   const ROLLUP_INTERVAL_MS = 5 * 60 * 1000;
-  setTimeout(() => {
+  trackTimeout(() => {
     runRollupMaintenance(pool).catch(err => console.error('[Rollup] error:', err.message));
   }, 60 * 1000);
-  setInterval(() => {
+  trackInterval(() => {
     runRollupMaintenance(pool).catch(err => console.error('[Rollup] error:', err.message));
   }, ROLLUP_INTERVAL_MS);
 
@@ -1418,27 +1428,27 @@ async function main() {
   const QUARTER_HOUR_MS = 15 * 60 * 1000;
 
   // Baselines: first run ~90s after startup (let ingestion settle), then every 24h.
-  setTimeout(() => {
+  trackTimeout(() => {
     buildBaselines(pool).catch(err => console.error('[Baseline] error:', err.message));
   }, 90 * 1000);
-  setInterval(() => {
+  trackInterval(() => {
     buildBaselines(pool).catch(err => console.error('[Baseline] error:', err.message));
   }, DAILY_MS);
 
   // Anomaly detection: first run ~120s after startup (after a baseline pass had a
   // chance to write), then every 30m.
-  setTimeout(() => {
+  trackTimeout(() => {
     detectAnomalies(pool).catch(err => console.error('[Anomaly] error:', err.message));
   }, 120 * 1000);
-  setInterval(() => {
+  trackInterval(() => {
     detectAnomalies(pool).catch(err => console.error('[Anomaly] error:', err.message));
   }, HALF_HOUR_MS);
 
   // UEBA risk rollup: first run ~150s after startup, then every 15m.
-  setTimeout(() => {
+  trackTimeout(() => {
     rollupEntityRisk(pool).catch(err => console.error('[UEBA] error:', err.message));
   }, 150 * 1000);
-  setInterval(() => {
+  trackInterval(() => {
     rollupEntityRisk(pool).catch(err => console.error('[UEBA] error:', err.message));
   }, QUARTER_HOUR_MS);
 
@@ -1448,6 +1458,8 @@ async function main() {
   const shutdown = async () => {
     console.log('[Collector] Shutting down gracefully...');
     clearInterval(flushTimer);
+    // Stop every other scheduled job too, BEFORE the pool closes.
+    for (const t of timers) { clearInterval(t); clearTimeout(t); }
     spoolFsync();
     await flushBuffer();
     if (spoolFd !== null) { try { fs.fsyncSync(spoolFd); fs.closeSync(spoolFd); } catch (_) {} spoolFd = null; }

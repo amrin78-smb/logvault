@@ -2562,6 +2562,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.26.4': [
+    'The collector now stops all of its scheduled work before closing its database connection when shutting down. Previously only one of its fourteen background jobs was stopped, so the rest could fire into a connection that had just been closed and log an error on the way out (172 of them). Nothing was lost — the work is repeated on the next run and the service was exiting anyway — but it filled the error log with noise that hid genuine shutdown problems.',
+  ],
   '2.26.3': [
     'When an update check cannot reach the remote (offline, air-gapped, or a transient git failure), the Updates panel now still shows the version and commit this server is actually running. It previously dropped those fields on that path, so a check that failed for network reasons also blanked out information the server already knew locally. Matches what NetVault has always returned.',
   ],
