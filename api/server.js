@@ -2474,12 +2474,25 @@ const path = require('path');
 
 app.get('/api/stats/disk', asyncHandler(async (req, res) => {
   try {
-    // Use PowerShell to get real disk info for C: drive
-    const ps = `powershell.exe -NonInteractive -Command "` +
+    // Use PowerShell to get real disk info for C: drive.
+    // execFileP, NOT execSync: this runs inside the API process, and execSync blocks the
+    // WHOLE event loop until powershell.exe exits — every other in-flight request, plus
+    // pg's connection callbacks and its connectionTimeoutMillis timer, stall for that
+    // long. That is not theoretical: the identical pattern in DDIVault's collector
+    // surfaced as bogus "Connection terminated due to connection timeout" errors from a
+    // perfectly healthy database (fixed in ddivault 1.28.0). Never put sync I/O in a
+    // request path. execFile also takes the script as ONE argument with no shell in
+    // between, so the old cmd.exe -Command "..." quoting is no longer needed.
+    const psScript =
       `$d = Get-PSDrive C; ` +
       `$used = $d.Used; $free = $d.Free; $total = $used + $free; ` +
-      `Write-Output ($used.ToString() + ',' + $free.ToString() + ',' + $total.ToString())" `;
-    const output = execSync(ps, { encoding: 'utf8', timeout: 10000 }).trim();
+      `Write-Output ($used.ToString() + ',' + $free.ToString() + ',' + $total.ToString())`;
+    const { stdout } = await execFileP(
+      'powershell.exe',
+      ['-NonInteractive', '-Command', psScript],
+      { encoding: 'utf8', timeout: 10000 }
+    );
+    const output = stdout.trim();
     const [usedBytes, freeBytes, totalBytes] = output.split(',').map(v => parseInt(v.trim()));
 
     const toGB = (b) => Math.round((b / 1024 / 1024 / 1024) * 100) / 100;
@@ -2562,6 +2575,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.26.6': [
+    'The disk-space panel no longer stalls the rest of the application while it refreshes. Reading the drive figures runs a short Windows command, and LogVault was waiting for it in a way that stopped the server from doing anything else at the same time — roughly 0.85 seconds, measured, on every refresh. During that pause every other request from every other user simply waited, and background database work could be reported as timing out even though the database was healthy. The reading is now taken without holding everything else up; the figures shown are unchanged.',
+  ],
   '2.26.5': [
     'Silenced a build-time warning that was written to the error log 399 times. LogVault has two dependency lockfiles — one for the API and collector, one for the web frontend — and the web framework could not tell which folder was the project root, so it guessed and warned every time. It is now told explicitly. No behaviour change; the log is just readable again.',
   ],
