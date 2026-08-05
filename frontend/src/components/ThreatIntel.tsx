@@ -1,5 +1,4 @@
 'use client';
-import { PagedTableBody } from './ui';
 
 import { useEffect, useState } from 'react';
 

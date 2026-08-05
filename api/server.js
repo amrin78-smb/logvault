@@ -2657,6 +2657,10 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.28.1': [
+    'Fixed a dead end that appeared when an update was deployed while you had LogVault open. Each section of the app downloads separately the first time you open it, and a new release replaces those files — so a tab left open from before the update would ask for a file that no longer existed and show "failed to load", with a Retry button that could never work because it kept requesting the same missing file. The app now recognises this exact situation, says a newer version was deployed, and reloads itself once to pick it up. Genuine errors still show the normal message and a working Retry.',
+    'This could affect any section opened for the first time after an update — Security, Network Health, Intelligence, Reports and the rest. Nothing was ever wrong on the server; the page simply needed reloading.',
+  ],
   '2.28.0': [
     'Long tables are now paged instead of rendering everything at once. Twenty lists across Security, Network Health, Intelligence, Alerts, Log Explorer, Reports and Known Hosts now show 25 rows at a time with First/Prev/Next/Last controls and a "showing X to Y of Z" count, so pages no longer scroll for screen after screen.',
     'The pager only appears when a list actually needs one — anything that already fits on a single page looks exactly as it did before.',
