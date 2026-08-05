@@ -22,7 +22,7 @@ export default function RecentCritical({ hours, onRowClick }: {
   }, [hours]);
 
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16 }}>
       <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Recent Critical &amp; Error Events</div>
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
         {onRowClick ? 'Click a row to view similar logs' : 'Latest severity 0–3 events'}
@@ -55,10 +55,10 @@ export default function RecentCritical({ hours, onRowClick }: {
                     {row.source_host || row.source_ip}
                   </td>
                   <td style={{ padding: '8px 12px' }}>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', background: 'var(--border-light)', padding: '2px 8px', borderRadius: 10, textTransform: 'capitalize' }}>{row.vendor}</span>
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', background: 'var(--border-light)', padding: '2px 8px', borderRadius: 'var(--radius-pill)', textTransform: 'capitalize' }}>{row.vendor}</span>
                   </td>
                   <td style={{ padding: '8px 12px' }}>
-                    <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 'var(--text-xs)', fontWeight: 700,
+                    <span style={{ padding: '2px 8px', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)', fontWeight: 700,
                       background: sev.bg, color: sev.color, border: `1px solid ${sev.border}`,
                       textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       {row.severity_label}

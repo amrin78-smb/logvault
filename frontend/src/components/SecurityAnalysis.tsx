@@ -7,7 +7,7 @@ import TimeRangePicker from './TimeRangePicker';
 import { Trend } from './Trend';
 import { Heatmap } from './Heatmap';
 
-const CARD = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 };
+const CARD = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16 };
 const TH   = { padding: '8px 12px', textAlign: 'left' as const, color: 'var(--text-muted)', fontWeight: 600, fontSize: 'var(--text-xs)' };
 const TD   = { padding: '9px 12px', fontSize: 'var(--text-sm)' };
 const MONO = { fontFamily: 'var(--font-mono)' };
@@ -39,7 +39,7 @@ function ThreatBadge({ knownBad, abuseScore }: { knownBad?: boolean; abuseScore?
   if (!knownBad && (score === null || score < 50)) return null;
   const label = knownBad ? 'Known Bad' : `Abuse ${score}`;
   return (
-    <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 'var(--text-xs)', fontWeight: 700,
+    <span style={{ padding: '2px 7px', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)', fontWeight: 700,
       background: 'var(--tint-danger)', color: 'var(--tint-danger-fg)', border: '1px solid var(--tint-danger)',
       textTransform: 'uppercase', letterSpacing: '0.4px', whiteSpace: 'nowrap' }}>
       {label}
@@ -59,7 +59,7 @@ function SevBadge({ label }: { label: string }) {
   };
   const st = s[label] || s.info;
   return (
-    <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 'var(--text-xs)', fontWeight: 700,
+    <span style={{ padding: '2px 7px', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)', fontWeight: 700,
       background: st.bg, color: st.color, border: `1px solid ${st.border}`,
       textTransform: 'uppercase', letterSpacing: '0.4px' }}>
       {label}
@@ -80,7 +80,7 @@ function CrLevelBadge({ level }: { level?: string | null }) {
   const st = map[lv];
   if (!st) return null; // only surface meaningful severity levels
   return (
-    <span style={{ padding: '1px 6px', borderRadius: 4, fontSize: 'var(--text-xs)', fontWeight: 700,
+    <span style={{ padding: '1px 6px', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)', fontWeight: 700,
       background: st.bg, color: st.color, textTransform: 'uppercase', letterSpacing: '0.3px', whiteSpace: 'nowrap' }}>
       {lv}
     </span>
@@ -93,7 +93,7 @@ function RiskBadge({ count, thresholds }: { count: number; thresholds: [number, 
   if (count >= danger) { bg = 'var(--tint-danger)'; color = 'var(--tint-danger-fg)'; label = 'High'; }
   else if (count >= warn) { bg = 'var(--tint-warn)'; color = 'var(--tint-warn-fg)'; label = 'Med'; }
   return (
-    <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)', fontWeight: 700,
+    <span style={{ padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)', fontWeight: 700,
       background: bg, color }}>
       {label}
     </span>
@@ -104,7 +104,7 @@ function StatCard({ value, label, color, bg, border, warn = false }: {
   value: number; label: string; color: string; bg: string; border: string; warn?: boolean;
 }) {
   return (
-    <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 8, padding: '10px 13px',
+    <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 'var(--radius)', padding: '10px 13px',
       position: 'relative', overflow: 'hidden' }}>
       {warn && value > 0 && (
         <div style={{ position: 'absolute', top: 7, right: 9, fontSize: 'var(--text-base)' }}>⚠️</div>
@@ -254,22 +254,22 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
 
       {/* Section nav */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--bg-card)',
-        border: '1px solid var(--border)', borderRadius: 8, padding: 6, flexWrap: 'wrap' }}>
+        border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 6, flexWrap: 'wrap' }}>
         {SECTIONS.map(s => (
           <button key={s.id} onClick={() => setActiveSection(s.id)}
-            style={{ padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
+            style={{ padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
               fontSize: 'var(--text-sm)', fontWeight: activeSection === s.id ? 600 : 400,
               background: activeSection === s.id ? '#1a202c' : 'transparent',
               color: activeSection === s.id ? '#fff' : 'var(--text-muted)',
               display: 'flex', alignItems: 'center', gap: 5, transition: 'all 0.15s' }}>
             {(s as any).alert && activeSection !== s.id && (
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#dc2626',
+              <span style={{ width: 7, height: 7, borderRadius: '50%', /* intentional: 50% keeps this alert dot circular */ background: '#dc2626',
                 display: 'inline-block', boxShadow: '0 0 4px #dc2626' }} />
             )}
             {s.label}
           </button>
         ))}
-        <button onClick={fetchAll} style={{ marginLeft: 'auto', padding: '6px 12px', borderRadius: 6,
+        <button onClick={fetchAll} style={{ marginLeft: 'auto', padding: '6px 12px', borderRadius: 'var(--radius-sm)',
           border: '1px solid var(--border)', cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--surface-subtle)', color: 'var(--text-muted)' }}>
           ↻ Refresh
         </button>
@@ -307,7 +307,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
 
               {/* Critical banners */}
               {summary.brute_force_success > 0 && (
-                <div style={{ background: 'var(--tint-purple)', border: '1px solid var(--tint-purple)', borderRadius: 8,
+                <div style={{ background: 'var(--tint-purple)', border: '1px solid var(--tint-purple)', borderRadius: 'var(--radius)',
                   padding: '14px 20px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontSize: 'var(--text-xl)' }}>🚨</span>
                   <div>
@@ -317,7 +317,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                     </div>
                   </div>
                   <button onClick={() => setActiveSection('brute')}
-                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 6, border: '1px solid var(--tint-purple)',
+                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--tint-purple)',
                       cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--bg-card)', color: 'var(--tint-purple-fg)' }}>
                     Investigate →
                   </button>
@@ -325,7 +325,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
               )}
 
               {summary.ips_events > 0 && (
-                <div style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 8,
+                <div style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 'var(--radius)',
                   padding: '14px 20px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontSize: 'var(--text-xl)' }}>🛡️</span>
                   <div>
@@ -335,7 +335,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                     </div>
                   </div>
                   <button onClick={() => setActiveSection('ips')}
-                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 6, border: '1px solid var(--tint-danger)',
+                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--tint-danger)',
                       cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--bg-card)', color: 'var(--tint-danger-fg)' }}>
                     Review →
                   </button>
@@ -343,7 +343,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
               )}
 
               {summary.after_hours_events > 0 && (
-                <div style={{ background: 'var(--tint-warn)', border: '1px solid var(--tint-warn)', borderRadius: 8,
+                <div style={{ background: 'var(--tint-warn)', border: '1px solid var(--tint-warn)', borderRadius: 'var(--radius)',
                   padding: '14px 20px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontSize: 'var(--text-xl)' }}>🌙</span>
                   <div>
@@ -353,7 +353,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                     </div>
                   </div>
                   <button onClick={() => setActiveSection('afterhours')}
-                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 6, border: '1px solid var(--tint-warn)',
+                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--tint-warn)',
                       cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--bg-card)', color: 'var(--tint-warn-fg)' }}>
                     Review →
                   </button>
@@ -391,7 +391,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                               {users.length > 0 ? users.slice(0, 3).join(', ') : '—'}
                               {distinct > 1 && <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 'var(--text-xs)' }}>+{distinct} accounts</span>}
                             </td>
-                            <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 10 }}>{r.failure_count}</span></td>
+                            <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 'var(--radius-pill)' }}>{r.failure_count}</span></td>
                             <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.last_attempt).toLocaleTimeString()}</td>
                             <td style={{ ...TD, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{r.vendor}</td>
                             <td style={TD}><RiskBadge count={parseInt(r.failure_count)} thresholds={[5, 20]} /></td>
@@ -447,7 +447,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                             {users.length > 0 ? users.slice(0, 5).join(', ') : '—'}
                             {distinct > 1 && <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 'var(--text-xs)' }}>+{distinct} accounts</span>}
                           </td>
-                          <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-sm)' }}>{r.failure_count}</span></td>
+                          <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-sm)' }}>{r.failure_count}</span></td>
                           <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.first_attempt).toLocaleString()}</td>
                           <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.last_attempt).toLocaleString()}</td>
                           <td style={TD}><RiskBadge count={parseInt(r.failure_count)} thresholds={[5, 20]} /></td>
@@ -482,7 +482,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                       return (
                         <tr key={i} {...d} style={{ borderBottom: '1px solid var(--border-light)', background: rowBg, ...(d.style || {}) }}>
                           <td style={{ ...TD, ...MONO, color: 'var(--text-primary)', fontWeight: 600 }}>{r.username || '—'}</td>
-                          <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 10 }}>{fails}</span></td>
+                          <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 'var(--radius-pill)' }}>{fails}</span></td>
                           <td style={{ ...TD, color: 'var(--text-secondary)' }}>{parseInt(r.distinct_sources) || 0}</td>
                           <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{r.last_attempt ? new Date(r.last_attempt).toLocaleString() : '—'}</td>
                           <td style={TD}><RiskBadge count={fails} thresholds={[5, 20]} /></td>
@@ -511,12 +511,12 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                     const pct = Math.round((fails / max) * 100);
                     const d = drillRow({ q: r.country }, 'transparent');
                     return (
-                      <div key={i} {...d} style={{ display: 'flex', alignItems: 'center', gap: 12, borderRadius: 4, ...(d.style || {}) }}>
+                      <div key={i} {...d} style={{ display: 'flex', alignItems: 'center', gap: 12, borderRadius: 'var(--radius-sm)', ...(d.style || {}) }}>
                         <div style={{ width: 180, fontSize: 'var(--text-sm)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           <CountryLabel country={r.country} code={r.country_code} />
                         </div>
-                        <div style={{ flex: 1, height: 14, background: 'var(--border-light)', borderRadius: 3, overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${pct}%`, background: '#dc2626', borderRadius: 3 }} />
+                        <div style={{ flex: 1, height: 14, background: 'var(--border-light)', borderRadius: 'var(--radius-pill)', overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${pct}%`, background: '#dc2626', borderRadius: 'var(--radius-pill)' }} />
                         </div>
                         <div style={{ width: 70, textAlign: 'right', fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--tint-danger-fg)' }}>{fails.toLocaleString()}</div>
                         <div style={{ width: 56, textAlign: 'right' }}><Trend value={fails} prev={prev} /></div>
@@ -561,12 +561,12 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                       <tr key={i} {...d} style={{ borderBottom: '1px solid var(--border-light)', background: rowBg, ...(d.style || {}) }}>
                         <td style={{ ...TD, ...MONO, color: r.success_after_failure ? 'var(--tint-purple-fg)' : '#dc2626', fontWeight: 600 }}>{r.source_ip}</td>
                         <td style={{ ...TD, ...MONO, color: 'var(--text-primary)' }}>{r.host}</td>
-                        <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 10 }}>{r.fail_count}</span></td>
+                        <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '2px 8px', borderRadius: 'var(--radius-pill)' }}>{r.fail_count}</span></td>
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.first_fail).toLocaleString()}</td>
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.last_fail).toLocaleString()}</td>
                         <td style={TD}>
                           {r.success_after_failure
-                            ? <span style={{ color: 'var(--tint-purple-fg)', fontWeight: 700, background: 'var(--tint-purple)', padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)' }}>🚨 YES</span>
+                            ? <span style={{ color: 'var(--tint-purple-fg)', fontWeight: 700, background: 'var(--tint-purple)', padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)' }}>🚨 YES</span>
                             : <span style={{ color: '#16a34a', fontSize: 'var(--text-xs)' }}>✓ No</span>}
                         </td>
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: r.success_after_failure ? 'var(--tint-purple-fg)' : 'var(--text-muted)' }}>
@@ -602,7 +602,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                           return (
                           <tr key={i} {...d} style={{ borderBottom: '1px solid var(--border-light)', background: rowBg, ...(d.style || {}) }}>
                             <td style={{ ...TD, ...MONO, color: '#dc2626', fontWeight: 600 }}>{r.src_ip}</td>
-                            <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-warn-fg)', background: 'var(--tint-warn)', padding: '2px 8px', borderRadius: 10 }}>{r.deny_count}</span></td>
+                            <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-warn-fg)', background: 'var(--tint-warn)', padding: '2px 8px', borderRadius: 'var(--radius-pill)' }}>{r.deny_count}</span></td>
                             <td style={{ ...TD, color: 'var(--text-secondary)', fontSize: 'var(--text-xs)' }}>{Array.isArray(r.destinations) ? r.destinations.slice(0, 3).join(', ') : '—'}</td>
                           </tr>
                         ); })}
@@ -629,7 +629,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                           return (
                           <tr key={i} {...d} style={{ borderBottom: '1px solid var(--border-light)', background: rowBg, ...(d.style || {}) }}>
                             <td style={{ ...TD, ...MONO, color: '#2563eb', fontWeight: 600 }}>{r.dst_ip}</td>
-                            <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-warn-fg)', background: 'var(--tint-warn)', padding: '2px 8px', borderRadius: 10 }}>{r.deny_count}</span></td>
+                            <td style={TD}><span style={{ fontWeight: 700, color: 'var(--tint-warn-fg)', background: 'var(--tint-warn)', padding: '2px 8px', borderRadius: 'var(--radius-pill)' }}>{r.deny_count}</span></td>
                             <td style={{ ...TD, color: 'var(--text-secondary)', fontSize: 'var(--text-xs)' }}>{Array.isArray(r.sources) ? r.sources.slice(0, 3).join(', ') : '—'}</td>
                           </tr>
                         ); })}
@@ -648,12 +648,12 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                     const pct = Math.round((r.deny_count / maxCount) * 100);
                     const d = drillRow({ q: r.service }, 'var(--surface-subtle)');
                     return (
-                      <div key={i} {...d} style={{ background: 'var(--surface-subtle)', border: '1px solid var(--border)', borderRadius: 8,
+                      <div key={i} {...d} style={{ background: 'var(--surface-subtle)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
                         padding: '10px 14px', minWidth: 120, ...(d.style || {}) }}>
                         <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>{r.service}</div>
                         <div style={{ fontSize: 'var(--text-xs)', color: '#ea580c', fontWeight: 700, marginBottom: 6 }}>{r.deny_count} denies</div>
-                        <div style={{ height: 4, background: 'var(--border-light)', borderRadius: 2 }}>
-                          <div style={{ height: '100%', width: `${pct}%`, background: '#ea580c', borderRadius: 2 }} />
+                        <div style={{ height: 4, background: 'var(--border-light)', borderRadius: 'var(--radius-pill)' }}>
+                          <div style={{ height: '100%', width: `${pct}%`, background: '#ea580c', borderRadius: 'var(--radius-pill)' }} />
                         </div>
                       </div>
                     );
@@ -690,7 +690,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                         <td style={{ ...TD, ...MONO, color: 'var(--text-primary)' }}>{r.username || '—'}</td>
                         <td style={TD}><CountryLabel country={r.country} code={null} /></td>
                         <td style={TD}>
-                          <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)', fontWeight: 600,
+                          <span style={{ padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)', fontWeight: 600,
                             background: r.event_type === 'failure' ? 'var(--tint-danger)' : r.event_type === 'success' ? 'var(--tint-success)' : 'var(--tint-info)',
                             color: r.event_type === 'failure' ? 'var(--tint-danger-fg)' : r.event_type === 'success' ? 'var(--tint-success-fg)' : 'var(--tint-info-fg)' }}>
                             {r.event_type}
@@ -720,15 +720,15 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                       const pct = Math.round((r.hit_count / max) * 100);
                       const d = drillRow({ threat: r.threat }, 'var(--tint-danger)');
                       return (
-                        <div key={i} {...d} style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 8, padding: '10px 14px', minWidth: 150, ...(d.style || {}) }}>
+                        <div key={i} {...d} style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 'var(--radius)', padding: '10px 14px', minWidth: 150, ...(d.style || {}) }}>
                           <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--tint-danger-fg)', marginBottom: 2, wordBreak: 'break-word' }}>{r.threat}</div>
                           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 4, textTransform: 'capitalize' }}>{r.subtype}</div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                             <span style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--tint-danger-fg)' }}>{r.hit_count} hits</span>
                             <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{r.unique_sources} src</span>
                           </div>
-                          <div style={{ height: 3, background: 'var(--border-light)', borderRadius: 2 }}>
-                            <div style={{ height: '100%', width: `${pct}%`, background: '#dc2626', borderRadius: 2 }} />
+                          <div style={{ height: 3, background: 'var(--border-light)', borderRadius: 'var(--radius-pill)' }}>
+                            <div style={{ height: '100%', width: `${pct}%`, background: '#dc2626', borderRadius: 'var(--radius-pill)' }} />
                           </div>
                         </div>
                       );
@@ -771,7 +771,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                               </span>
                               <CrLevelBadge level={r.crlevel} />
                               {r.web_category && (
-                                <span style={{ padding: '1px 6px', borderRadius: 4, fontSize: 'var(--text-xs)', fontWeight: 600,
+                                <span style={{ padding: '1px 6px', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)', fontWeight: 600,
                                   background: 'var(--tint-info)', color: 'var(--tint-info-fg)', whiteSpace: 'nowrap' }}>
                                   {r.web_category}
                                 </span>
@@ -812,7 +812,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                         <td style={{ ...TD, ...MONO, color: 'var(--text-primary)', fontWeight: 500 }}>{r.source_host || r.source_ip}</td>
                         <td style={{ ...TD, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{r.vendor}</td>
                         <td style={TD}>
-                          <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)', fontWeight: 600,
+                          <span style={{ padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)', fontWeight: 600,
                             background: 'var(--tint-warn)', color: 'var(--tint-warn-fg)', border: '1px solid var(--tint-warn)' }}>
                             {r.event_type}
                           </span>
@@ -880,7 +880,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 10, alignItems: 'start' }}>
                   {covTactics.map(tac => (
-                    <div key={tac} style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                    <div key={tac} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
                       <div style={{ padding: '6px 10px', background: 'var(--surface-subtle)', fontSize: 'var(--text-xs)',
                         fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
                         {tac}
@@ -896,7 +896,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                               title={`${id} · ${MITRE_TECHNIQUES[id].name}${active ? ` — ${ev.toLocaleString()} logs · ${al.toLocaleString()} alerts (click to view)` : ' — no activity in window'}`}
                               style={{ textAlign: 'left', cursor: active && onTechnique ? 'pointer' : 'default',
                                 border: `1px solid ${active ? 'var(--tint-purple)' : 'var(--border-light)'}`,
-                                background: active ? 'var(--tint-purple)' : 'var(--bg-primary)', borderRadius: 6,
+                                background: active ? 'var(--tint-purple)' : 'var(--bg-primary)', borderRadius: 'var(--radius-sm)',
                                 padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: 2, opacity: active ? 1 : 0.5 }}>
                               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', fontWeight: 700,
                                 color: active ? 'var(--tint-purple-fg)' : 'var(--text-muted)' }}>

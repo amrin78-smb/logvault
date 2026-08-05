@@ -18,7 +18,7 @@ function formatInterval(val: any): string {
   return String(val);
 }
 
-const CARD = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 20, marginBottom: 16 };
+const CARD = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 20, marginBottom: 16 };
 const TH   = { padding: '8px 12px', textAlign: 'left' as const, color: 'var(--text-muted)', fontWeight: 600, fontSize: 'var(--text-xs)' };
 const TD   = { padding: '9px 12px' };
 
@@ -206,22 +206,22 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
       {techniqueFilter && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
           <span>Filtered to ATT&amp;CK technique</span>
-          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, background: 'var(--tint-purple)', color: 'var(--tint-purple-fg)', borderRadius: 6, padding: '2px 8px' }}>{techniqueFilter}</span>
-          <button onClick={() => setTechniqueFilter(undefined)} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 8px', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--text-xs)' }}>Clear ✕</button>
+          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, background: 'var(--tint-purple)', color: 'var(--tint-purple-fg)', borderRadius: 'var(--radius-sm)', padding: '2px 8px' }}>{techniqueFilter}</span>
+          <button onClick={() => setTechniqueFilter(undefined)} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--text-xs)' }}>Clear ✕</button>
         </div>
       )}
       {/* Bulk actions bar */}
       {selected.size > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-          background: 'var(--tint-info)', border: '1px solid var(--tint-info)', borderRadius: 8, marginBottom: 12 }}>
+          background: 'var(--tint-info)', border: '1px solid var(--tint-info)', borderRadius: 'var(--radius)', marginBottom: 12 }}>
           <span style={{ fontSize: 'var(--text-base)', color: 'var(--tint-info-fg)', fontWeight: 500 }}>{selected.size} alert(s) selected</span>
           <button onClick={acknowledgeSelected} disabled={loading}
-            style={{ padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
+            style={{ padding: '5px 14px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
               background: '#2563eb', color: '#fff', fontSize: 'var(--text-sm)', fontWeight: 600 }}>
             {loading ? 'Processing...' : 'Acknowledge Selected'}
           </button>
           <button onClick={() => setSelected(new Set())}
-            style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid #bfdbfe', cursor: 'pointer',
+            style={{ padding: '5px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid #bfdbfe', cursor: 'pointer',
               background: 'var(--bg-card)', color: '#2563eb', fontSize: 'var(--text-sm)' }}>
             Clear Selection
           </button>
@@ -241,7 +241,7 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
           : group.rule_name.toLowerCase().includes('vpn') ? '#ea580c' : '#ca8a04';
 
         return (
-          <div key={group.rule_name} style={{ marginBottom: 8, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+          <div key={group.rule_name} style={{ marginBottom: 8, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
             {/* Group header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
               background: group.unacked_count > 0 ? 'var(--tint-warn)' : 'var(--surface-subtle)', cursor: 'pointer',
@@ -256,7 +256,7 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
 
               {/* CORR badge */}
               {group.is_correlation && (
-                <span style={{ fontSize: 'var(--text-xs)', padding: '1px 5px', borderRadius: 4, background: 'var(--tint-info)',
+                <span style={{ fontSize: 'var(--text-xs)', padding: '1px 5px', borderRadius: 'var(--radius-sm)', background: 'var(--tint-info)',
                   color: 'var(--tint-info-fg)', border: '1px solid var(--tint-info)', fontWeight: 600, flexShrink: 0 }}>CORR</span>
               )}
 
@@ -272,7 +272,7 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {group.unacked_count > 0 && (
                   <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)',
-                    border: '1px solid var(--tint-danger)', padding: '2px 8px', borderRadius: 10 }}>
+                    border: '1px solid var(--tint-danger)', padding: '2px 8px', borderRadius: 'var(--radius-pill)' }}>
                     {group.unacked_count} unacked
                   </span>
                 )}
@@ -285,7 +285,7 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
                 {group.unacked_count > 0 && (
                   <button onClick={(e) => { e.stopPropagation(); acknowledgeGroup(group.rule_name); }}
                     disabled={loading}
-                    style={{ padding: '3px 10px', borderRadius: 5, border: '1px solid var(--tint-warn)',
+                    style={{ padding: '3px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--tint-warn)',
                       cursor: 'pointer', fontSize: 'var(--text-xs)', fontWeight: 600, background: 'var(--tint-warn)',
                       color: 'var(--tint-warn-fg)', flexShrink: 0 }}>
                     Ack All ({group.unacked_count})
@@ -337,7 +337,7 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
                             <span style={{ color: '#16a34a', fontSize: 'var(--text-xs)', fontWeight: 600 }}>✓ Acked</span>
                           ) : (
                             <button onClick={(e) => { e.stopPropagation(); acknowledge(evt.id); }}
-                              style={{ padding: '3px 10px', borderRadius: 5, border: '1px solid var(--border)',
+                              style={{ padding: '3px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                                 cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--surface-subtle)', color: 'var(--text-secondary)', fontWeight: 500 }}>
                               Acknowledge
                             </button>
@@ -368,10 +368,10 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
 
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--bg-card)',
-        border: '1px solid var(--border)', borderRadius: 8, padding: 6, alignItems: 'center' }}>
+        border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 6, alignItems: 'center' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id as any)}
-            style={{ padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+            style={{ padding: '6px 16px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
               fontSize: 'var(--text-sm)', fontWeight: activeTab === t.id ? 600 : 400,
               background: activeTab === t.id ? '#1a202c' : 'transparent',
               color: activeTab === t.id ? '#fff' : 'var(--text-muted)', transition: 'all 0.15s' }}>
@@ -393,7 +393,7 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
         {/* Acknowledge all button */}
         {activeTab === 'active' && totalUnacked > 0 && (
           <button onClick={acknowledgeAll} disabled={loading}
-            style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--tint-danger)',
+            style={{ padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--tint-danger)',
               cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--tint-danger)',
               color: 'var(--tint-danger-fg)', transition: 'all 0.15s' }}>
             {loading ? 'Processing...' : `Acknowledge All (${totalUnacked})`}
@@ -445,7 +445,7 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
               {thresholdRules.map((rule, i) => (
                 <tr key={rule.id} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
                   <td style={TD}>
-                    <span style={{ padding: '3px 12px', borderRadius: 12, fontSize: 'var(--text-xs)', fontWeight: 600,
+                    <span style={{ padding: '3px 12px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)', fontWeight: 600,
                       background: rule.is_enabled ? 'var(--tint-success)' : 'var(--surface-subtle)',
                       color: rule.is_enabled ? 'var(--tint-success-fg)' : 'var(--text-muted)' }}>
                       {rule.is_enabled ? 'Active' : 'Disabled'}
@@ -476,8 +476,8 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
               const unackedCount = events.filter(e => e.rule_name === rule.name && !e.acknowledged).length;
               return (
                 <div key={i} style={{ background: 'var(--surface-subtle)', border: '1px solid var(--border)',
-                  borderRadius: 8, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 8, background: sev.bg,
+                  borderRadius: 'var(--radius)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 'var(--radius)', background: sev.bg,
                     border: `1px solid ${sev.bg}`, display: 'flex', alignItems: 'center',
                     justifyContent: 'center', flexShrink: 0 }}>
                     <span style={{ fontSize: 'var(--text-lg)' }}>
@@ -487,11 +487,11 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                       <span style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)' }}>{rule.name}</span>
-                      <span style={{ padding: '1px 7px', borderRadius: 10, fontSize: 'var(--text-xs)', fontWeight: 600,
+                      <span style={{ padding: '1px 7px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)', fontWeight: 600,
                         background: sev.bg, color: sev.color, textTransform: 'uppercase' }}>
                         {rule.severity}
                       </span>
-                      <span style={{ padding: '1px 7px', borderRadius: 10, fontSize: 'var(--text-xs)',
+                      <span style={{ padding: '1px 7px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)',
                         background: 'var(--tint-info)', color: 'var(--tint-info-fg)' }}>
                         window: {rule.window}
                       </span>
@@ -503,7 +503,7 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
                     {firedCount > 0 ? (
                       <div style={{ background: unackedCount > 0 ? 'var(--tint-danger)' : 'var(--tint-success)',
                         border: `1px solid ${unackedCount > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'}`,
-                        borderRadius: 8, padding: '6px 12px', textAlign: 'center' }}>
+                        borderRadius: 'var(--radius)', padding: '6px 12px', textAlign: 'center' }}>
                         <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: unackedCount > 0 ? 'var(--tint-danger-fg)' : 'var(--tint-success-fg)' }}>
                           {unackedCount > 0 ? unackedCount : firedCount}
                         </div>
@@ -513,7 +513,7 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
                       </div>
                     ) : (
                       <div style={{ background: 'var(--tint-success)', border: '1px solid var(--tint-success)',
-                        borderRadius: 8, padding: '6px 12px', textAlign: 'center' }}>
+                        borderRadius: 'var(--radius)', padding: '6px 12px', textAlign: 'center' }}>
                         <div style={{ fontSize: 'var(--text-sm)', color: 'var(--tint-success-fg)', fontWeight: 600 }}>✓ Clear</div>
                       </div>
                     )}

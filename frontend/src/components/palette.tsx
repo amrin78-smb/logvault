@@ -59,7 +59,7 @@ export function riskBand(score: number): RiskBand {
 export function RiskBadge({ score, suffix }: { score: number; suffix?: string }) {
   const band = riskBand(score);
   return (
-    <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 'var(--text-xs)', fontWeight: 700,
+    <span style={{ padding: '2px 8px', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)', fontWeight: 700,
       background: band.bg, color: band.fg, whiteSpace: 'nowrap' }}>
       {band.label}{suffix ?? ''} · {score}
     </span>

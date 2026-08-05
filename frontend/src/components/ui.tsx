@@ -15,10 +15,10 @@ export function pctColor(pct: number): string {
 }
 
 // ── Skeleton block ────────────────────────────────────────────
-export function Skeleton({ width = '100%', height = 14, radius = 6, style }: {
+export function Skeleton({ width = '100%', height = 14, radius = 'var(--radius-sm)', style }: {
   width?: number | string;
   height?: number | string;
-  radius?: number;
+  radius?: number | string;
   style?: React.CSSProperties;
 }) {
   return <span className="skeleton" style={{ width, height, borderRadius: radius, ...style }} />;
@@ -72,7 +72,7 @@ export function EmptyState({ icon, title, message, actionLabel, onAction }: {
     }}>
       {icon && (
         <div style={{
-          width: 56, height: 56, borderRadius: 14, marginBottom: 16,
+          width: 56, height: 56, borderRadius: 'var(--radius)', marginBottom: 16,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: 'var(--bg-primary)', border: '1px solid var(--border)', color: 'var(--text-muted)',
         }}>
@@ -162,6 +162,7 @@ export function Spinner({ size = 14, color = 'var(--primary)' }: { size?: number
     <span style={{
       display: 'inline-block', width: size, height: size,
       border: `2px solid var(--border)`, borderTopColor: color,
+      // intentional: 50% keeps the spinner ring circular
       borderRadius: '50%', animation: 'spin 0.8s linear infinite',
     }} />
   );
@@ -241,7 +242,7 @@ export function Pagination({ page, pageCount, total, start, shown, unit = 'rows'
   if (pageCount <= 1) return null;
   const btn = (disabled: boolean): React.CSSProperties => ({
     padding: '4px 10px',
-    borderRadius: 6,
+    borderRadius: 'var(--radius-sm)',
     border: '1px solid var(--border)',
     background: 'var(--bg-card)',
     color: disabled ? 'var(--text-muted)' : 'var(--text-primary)',

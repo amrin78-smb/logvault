@@ -67,3 +67,5 @@ Every file has `'use client'` at the top — this app has no server components b
 
 ## Violations
 None found — no component is defined inside another component's function body (checked both `function X(` and `const X = (` nested-indentation patterns across all 37 files).
+
+(c) CornersToggle — Rounded/Square segmented row rendered INSIDE the avatar dropdown in Header.tsx, below the Light/Dark Mode item. Not in Settings (that tab is role-gated and this is a per-browser preference every role must reach) and not in the top bar (it looked wrong there). Reads its value in useEffect, never at render — the <html> attribute does not exist during SSR, so reading at render is a hydration mismatch. NOTE: ui.tsx Skeleton default radius prop is now var(--radius-sm), not 6 — a numeric default would silently opt every skeleton out of the square switch.

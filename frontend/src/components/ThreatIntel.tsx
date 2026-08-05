@@ -43,7 +43,7 @@ export interface KnownBadRow extends EnrichedFields {
 }
 
 const CARD = {
-  background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10,
+  background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
   padding: '16px 20px', boxShadow: 'var(--shadow-sm)',
 };
 
@@ -55,7 +55,7 @@ export function KnownBadBadge({ score, compact }: { score?: number | null; compa
     <span title={hasScore ? `AbuseIPDB confidence ${score}%` : 'Flagged as known-bad'}
       style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
         background: 'var(--tint-danger)', color: 'var(--tint-danger-fg)',
-        borderRadius: 4, padding: compact ? '0 4px' : '1px 6px',
+        borderRadius: 'var(--radius-sm)', padding: compact ? '0 4px' : '1px 6px',
         fontSize: 'var(--text-xs)', fontWeight: 700, lineHeight: 1.5, whiteSpace: 'nowrap' }}>
       ⚠ {hasScore ? `${score}` : 'BAD'}
     </span>
@@ -143,7 +143,7 @@ export function KnownBadSources({ onNavigate }: { onNavigate?: (ip: string) => v
         </div>
         {loaded && rows.length > 0 && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
-            background: 'var(--tint-danger)', color: 'var(--tint-danger-fg)', borderRadius: 12,
+            background: 'var(--tint-danger)', color: 'var(--tint-danger-fg)', borderRadius: 'var(--radius-pill)',
             padding: '1px 9px', fontSize: 'var(--text-xs)', fontWeight: 700 }}>
             {rows.length}
           </span>
@@ -180,7 +180,7 @@ export function KnownBadSources({ onNavigate }: { onNavigate?: (ip: string) => v
               <div key={row.ip_address || i}
                 onClick={() => onNavigate?.(row.ip_address)}
                 title={`${row.ip_address}${row.hostname ? ` · ${row.hostname}` : ''}`}
-                style={{ padding: '8px 10px', borderRadius: 8, background: 'var(--surface-subtle)',
+                style={{ padding: '8px 10px', borderRadius: 'var(--radius)', background: 'var(--surface-subtle)',
                   border: '1px solid var(--border-light)', cursor: onNavigate ? 'pointer' : 'default' }}>
                 {/* Row 1: IP + flag/country + abuse badge */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -208,7 +208,7 @@ export function KnownBadSources({ onNavigate }: { onNavigate?: (ip: string) => v
                     {tags.slice(0, 4).map(tag => (
                       <span key={tag} style={{ fontSize: 'var(--text-xs)', fontWeight: 600,
                         background: 'var(--tint-warn)', color: 'var(--tint-warn-fg)',
-                        borderRadius: 4, padding: '0 5px', lineHeight: 1.6 }}>
+                        borderRadius: 'var(--radius-sm)', padding: '0 5px', lineHeight: 1.6 }}>
                         {tag}
                       </span>
                     ))}

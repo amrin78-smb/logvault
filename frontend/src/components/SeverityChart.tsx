@@ -42,7 +42,7 @@ export default function SeverityChart({ summary, onSeverityClick, compact }: {
   });
 
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
       padding: '16px 20px', height: '100%', boxSizing: 'border-box',
       display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
       <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 1, flexShrink: 0 }}>Severity Distribution</div>
@@ -86,7 +86,7 @@ export default function SeverityChart({ summary, onSeverityClick, compact }: {
             </svg>
             {tooltip && (
               <div style={{ position: 'absolute', left: tooltip.x + 8, top: tooltip.y - 14,
-                background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6,
+                background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
                 padding: '4px 8px', fontSize: 'var(--text-xs)', color: 'var(--text-primary)', pointerEvents: 'none',
                 boxShadow: '0 2px 8px rgba(0,0,0,0.1)', whiteSpace: 'nowrap', zIndex: 10 }}>
                 <span style={{ textTransform: 'capitalize', fontWeight: 600 }}>{tooltip.label}</span>
@@ -98,10 +98,11 @@ export default function SeverityChart({ summary, onSeverityClick, compact }: {
             {data.map(d => (
               <div key={d.name} onClick={() => handleClick(d)}
                 style={{ display: 'flex', alignItems: 'center', gap: 3, background: 'var(--surface-subtle)',
-                  border: '1px solid var(--border)', borderRadius: 20, padding: '2px 6px',
+                  border: '1px solid var(--border)', borderRadius: 'var(--radius-pill)', padding: '2px 6px',
                   cursor: onSeverityClick ? 'pointer' : 'default' }}
                 onMouseEnter={e => { if (onSeverityClick) (e.currentTarget as HTMLElement).style.background = 'var(--tint-info)'; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'var(--surface-subtle)'; }}>
+                {/* intentional: 2px on a 5x5 legend swatch — a 6px token radius would render it as a circle */}
                 <div style={{ width: 5, height: 5, borderRadius: 2, background: d.color }} />
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{d.name}</span>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 700 }}>{d.value}</span>

@@ -19,7 +19,7 @@ export default function StorageWidget() {
   }, []);
 
   if (loading) return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16 }}>
       <div style={{ color: 'var(--text-muted)', fontSize: 'var(--text-base)' }}>Loading storage info...</div>
     </div>
   );
@@ -47,10 +47,10 @@ export default function StorageWidget() {
     ? Math.min(Math.round((data.db_size_bytes / disk.total_bytes) * 100), 100)
     : null;
 
-  const CARD_INNER = { background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px' };
+  const CARD_INNER = { background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px 14px' };
 
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
       <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Storage & Capacity</div>
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>Database size and log volume trends</div>
 
@@ -86,12 +86,12 @@ export default function StorageWidget() {
             ) : '—'}
           </span>
         </div>
-        <div style={{ height: 8, background: 'var(--border-light)', borderRadius: 4, overflow: 'hidden' }}>
+        <div style={{ height: 8, background: 'var(--border-light)', borderRadius: 'var(--radius-pill)', overflow: 'hidden' }}>
           {diskPct !== null ? (
-            <div style={{ height: '100%', width: `${diskPct}%`, borderRadius: 4, transition: 'width 0.5s',
+            <div style={{ height: '100%', width: `${diskPct}%`, borderRadius: 'var(--radius-pill)', transition: 'width 0.5s',
               background: diskPct > 80 ? '#dc2626' : diskPct > 60 ? '#ca8a04' : '#2563eb' }} />
           ) : (
-            <div style={{ height: '100%', width: '30%', borderRadius: 4, background: 'var(--border)' }} />
+            <div style={{ height: '100%', width: '30%', borderRadius: 'var(--radius-pill)', background: 'var(--border)' }} />
           )}
         </div>
       </div>
@@ -104,10 +104,10 @@ export default function StorageWidget() {
             {data.db_size} used — {data.days_stored} days of logs stored
           </span>
         </div>
-        <div style={{ height: 8, background: 'var(--border-light)', borderRadius: 4, overflow: 'hidden' }}>
+        <div style={{ height: 8, background: 'var(--border-light)', borderRadius: 'var(--radius-pill)', overflow: 'hidden' }}>
           <div style={{ height: '100%',
             width: dbPct !== null ? `${dbPct}%` : `${Math.min((data.db_size_bytes / (200 * 1024 * 1024 * 1024)) * 100, 100)}%`,
-            background: '#7c3aed', borderRadius: 4, transition: 'width 0.5s' }} />
+            background: '#7c3aed', borderRadius: 'var(--radius-pill)', transition: 'width 0.5s' }} />
         </div>
       </div>
 
@@ -120,7 +120,7 @@ export default function StorageWidget() {
         </div>
         <div style={{ background: projected90dGB && parseFloat(projected90dGB) > 10 ? 'var(--tint-warn)' : 'var(--tint-success)',
           border: `1px solid ${projected90dGB && parseFloat(projected90dGB) > 10 ? 'var(--tint-warn)' : 'var(--tint-success)'}`,
-          borderRadius: 8, padding: '12px 14px' }}>
+          borderRadius: 'var(--radius)', padding: '12px 14px' }}>
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Projected 90-Day Usage</div>
           <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: projected90dGB && parseFloat(projected90dGB) > 10 ? 'var(--tint-warn-fg)' : 'var(--tint-success-fg)' }}>
             {projected90dGB ? `${projected90dGB} GB` : 'Insufficient data'}
@@ -138,7 +138,7 @@ export default function StorageWidget() {
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
               <XAxis dataKey="day" tick={{ fontSize: 'var(--text-xs)', fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 'var(--text-xs)', fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 'var(--text-sm)' }} />
+              <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-sm)' }} />
               <Bar dataKey="logs" fill="#2563eb" radius={[4, 4, 0, 0]} name="Logs" />
             </BarChart>
           </ResponsiveContainer>
@@ -147,10 +147,10 @@ export default function StorageWidget() {
 
       {/* Retention info */}
       <div style={{ marginTop: 16, padding: '10px 14px', background: 'var(--tint-info)',
-        border: '1px solid var(--tint-info)', borderRadius: 8, fontSize: 'var(--text-xs)', color: 'var(--tint-info-fg)' }}>
+        border: '1px solid var(--tint-info)', borderRadius: 'var(--radius)', fontSize: 'var(--text-xs)', color: 'var(--tint-info-fg)' }}>
         <strong>Retention policy:</strong> Logs older than {process.env.RETENTION_DAYS || 90} days are automatically deleted nightly.
-        Adjust <code style={{ background: 'var(--tint-info)', padding: '1px 4px', borderRadius: 3 }}>RETENTION_DAYS</code> in{' '}
-        <code style={{ background: 'var(--tint-info)', padding: '1px 4px', borderRadius: 3 }}>.env.local</code> to change.
+        Adjust <code style={{ background: 'var(--tint-info)', padding: '1px 4px', borderRadius: 'var(--radius-sm)' }}>RETENTION_DAYS</code> in{' '}
+        <code style={{ background: 'var(--tint-info)', padding: '1px 4px', borderRadius: 'var(--radius-sm)' }}>.env.local</code> to change.
       </div>
     </div>
   );

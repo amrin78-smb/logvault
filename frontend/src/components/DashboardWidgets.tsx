@@ -9,7 +9,7 @@ import type { ExplorerFilter } from '@/app/page';
 // `import type` is erased at build time, so this does NOT create a runtime
 // circular import even though page.tsx imports this module (mirrors LogExplorer).
 
-const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' };
+const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' };
 const TITLE = { fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 };
 const SUB   = { fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 10 };
 
@@ -17,12 +17,12 @@ const SUB   = { fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBo
 const CustomTooltip = ({ active, payload, label, unit = 'events' }: any) => {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
       padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: 'var(--text-sm)' }}>
       <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>{label}</div>
       {payload.map((p: any, i: number) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, color: p.color }}>
-          <div style={{ width: 8, height: 8, borderRadius: 2, background: p.color }} />
+          <div style={{ width: 8, height: 8, borderRadius: 2, /* intentional: 2px on an 8x8 chart-legend swatch - a 6px radius would render it as a circle */ background: p.color }} />
           <span style={{ color: 'var(--text-secondary)' }}>{parseInt(p.value).toLocaleString()} {unit}</span>
         </div>
       ))}
@@ -63,8 +63,8 @@ export function TopSecurityEvents({ hours, onNavigate }: { hours: number; onNavi
                     {parseInt(row.count).toLocaleString()}
                   </span>
                 </div>
-                <div style={{ height: 5, background: 'var(--border-light)', borderRadius: 2, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2, transition: 'width 0.5s' }} />
+                <div style={{ height: 5, background: 'var(--border-light)', borderRadius: 'var(--radius-pill)', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 'var(--radius-pill)', transition: 'width 0.5s' }} />
                 </div>
               </div>
             );
@@ -108,7 +108,7 @@ export function TopBlockedDestinations({ hours, onNavigate }: { hours: number; o
                     <GeoInline row={row} />
                     {row.vendor && (
                       <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', background: 'var(--border-light)',
-                        padding: '1px 4px', borderRadius: 4, flexShrink: 0, textTransform: 'capitalize' }}>
+                        padding: '1px 4px', borderRadius: 'var(--radius-sm)', flexShrink: 0, textTransform: 'capitalize' }}>
                         {row.vendor}
                       </span>
                     )}
@@ -117,8 +117,8 @@ export function TopBlockedDestinations({ hours, onNavigate }: { hours: number; o
                     {parseInt(row.deny_count).toLocaleString()}
                   </span>
                 </div>
-                <div style={{ height: 5, background: 'var(--border-light)', borderRadius: 2, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: '#dc2626', borderRadius: 2, transition: 'width 0.5s' }} />
+                <div style={{ height: 5, background: 'var(--border-light)', borderRadius: 'var(--radius-pill)', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: '#dc2626', borderRadius: 'var(--radius-pill)', transition: 'width 0.5s' }} />
                 </div>
               </div>
             );
@@ -159,7 +159,7 @@ export function TopConnectionFailures({ hours, onNavigate }: { hours: number; on
                     <GeoInline row={row} />
                     {row.service && (
                       <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', background: 'var(--border-light)',
-                        padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>
+                        padding: '1px 5px', borderRadius: 'var(--radius-sm)', flexShrink: 0 }}>
                         {row.service}
                       </span>
                     )}
@@ -168,8 +168,8 @@ export function TopConnectionFailures({ hours, onNavigate }: { hours: number; on
                     {parseInt(row.fail_count).toLocaleString()}
                   </span>
                 </div>
-                <div style={{ height: 5, background: 'var(--border-light)', borderRadius: 2, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: '#ea580c', borderRadius: 2, transition: 'width 0.5s' }} />
+                <div style={{ height: 5, background: 'var(--border-light)', borderRadius: 'var(--radius-pill)', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: '#ea580c', borderRadius: 'var(--radius-pill)', transition: 'width 0.5s' }} />
                 </div>
               </div>
             );
@@ -209,7 +209,7 @@ export function VPNStatus({ hours, onNavigate }: { hours: number; onNavigate?: (
               { label: 'SSL Alerts', value: parseInt(data.ssl_alerts || 0), color: 'var(--tint-warn-fg)',    bg: 'var(--tint-warn)',    border: 'var(--tint-warn)',    tip: 'SSL handshake errors' },
             ].map(s => (
               <div key={s.label} title={s.tip}
-                style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: 6, padding: '8px', textAlign: 'center' }}>
+                style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: 'var(--radius-sm)', padding: '8px', textAlign: 'center' }}>
                 <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: s.color }}>{s.value.toLocaleString()}</div>
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 500, marginTop: 2 }}>{s.label}</div>
               </div>
@@ -219,13 +219,13 @@ export function VPNStatus({ hours, onNavigate }: { hours: number; onNavigate?: (
             <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 500 }}>Success Rate</span>
             <span style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: successRate >= 80 ? '#16a34a' : '#dc2626' }}>{successRate}%</span>
           </div>
-          <div style={{ height: 6, background: 'var(--border-light)', borderRadius: 3, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${successRate}%`, borderRadius: 3,
+          <div style={{ height: 6, background: 'var(--border-light)', borderRadius: 'var(--radius-pill)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${successRate}%`, borderRadius: 'var(--radius-pill)',
               background: successRate >= 80 ? '#16a34a' : '#dc2626', transition: 'width 0.5s' }} />
           </div>
           {parseInt(data.ssl_alerts || 0) > 10 && (
             <div style={{ marginTop: 10, padding: '6px 10px', background: 'var(--tint-warn)', border: '1px solid var(--tint-warn)',
-              borderRadius: 6, fontSize: 'var(--text-xs)', color: 'var(--tint-warn-fg)' }}>
+              borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)', color: 'var(--tint-warn-fg)' }}>
               ⚠️ High SSL alerts — possible cert/protocol issue
             </div>
           )}
@@ -265,14 +265,14 @@ export function ActiveAlertsSummary({ onNavigate }: { onNavigate: () => void }) 
             <div title={`${data.unacknowledged} alerts need attention`}
               style={{ background: data.unacknowledged > 0 ? 'var(--tint-danger)' : 'var(--tint-success)',
                 border: `1px solid ${data.unacknowledged > 0 ? 'var(--tint-danger)' : 'var(--tint-success)'}`,
-                borderRadius: 6, padding: '10px 8px', textAlign: 'center' }}>
+                borderRadius: 'var(--radius-sm)', padding: '10px 8px', textAlign: 'center' }}>
               <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: data.unacknowledged > 0 ? 'var(--tint-danger-fg)' : 'var(--tint-success-fg)' }}>
                 {data.unacknowledged}
               </div>
               <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 600 }}>UNACKED</div>
             </div>
             <div title="Alerts fired in last 24 hours"
-              style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 8px', textAlign: 'center' }}>
+              style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '10px 8px', textAlign: 'center' }}>
               <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--text-primary)' }}>{data.total_24h}</div>
               <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 600 }}>FIRED 24H</div>
             </div>
@@ -335,10 +335,10 @@ export function FirewallActions({ hours }: { hours: number }) {
             return (
               <div key={i} title={`${tip} — ${parseInt(row.count).toLocaleString()} events (${pct}%)`}
                 style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <div style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
+                <div style={{ width: 8, height: 8, borderRadius: 2, /* intentional: 2px on an 8x8 chart-legend swatch - a 6px radius would render it as a circle */ background: color, flexShrink: 0 }} />
                 <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 500, minWidth: 85 }}>{row.action}</span>
-                <div style={{ flex: 1, height: 5, background: 'var(--border-light)', borderRadius: 2, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2, transition: 'width 0.5s' }} />
+                <div style={{ flex: 1, height: 5, background: 'var(--border-light)', borderRadius: 'var(--radius-pill)', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 'var(--radius-pill)', transition: 'width 0.5s' }} />
                 </div>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', minWidth: 32, textAlign: 'right' }}>{pct}%</span>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', minWidth: 48, textAlign: 'right' }}>{parseInt(row.count).toLocaleString()}</span>
@@ -391,7 +391,7 @@ export function InterfaceEventsSummary({ hours, onNavigate }: { hours: number; o
             return (
               <div key={item.key} title={item.tip}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '5px 8px', background: bg, borderRadius: 6 }}>
+                  padding: '5px 8px', background: bg, borderRadius: 'var(--radius-sm)' }}>
                 <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>{item.icon} {item.label}</span>
                 <span style={{ fontSize: 'var(--text-base)', fontWeight: 700, color }}>{value}</span>
               </div>
@@ -490,18 +490,18 @@ export function CapacityIngestionHealth({ openExplorer }: { openExplorer?: (filt
             </div>
             {spike && (
               <span style={{ flexShrink: 0, fontSize: 'var(--text-xs)', fontWeight: 700, padding: '3px 8px',
-                borderRadius: 6, background: 'var(--tint-warn)', color: 'var(--tint-warn-fg)' }}>
+                borderRadius: 'var(--radius-sm)', background: 'var(--tint-warn)', color: 'var(--tint-warn-fg)' }}>
                 ⚠ Ingestion spike
               </span>
             )}
           </div>
 
           {/* Volume trend: status + confidence + 30d projection + sparkline */}
-          <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px' }}>
+          <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
               <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 600 }}>Volume trend</span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, padding: '2px 7px', borderRadius: 5,
+                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--radius-sm)',
                   background: statusMeta.bg, color: statusMeta.fg }}>{statusMeta.label}</span>
                 {volume.confidence && (
                   <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', textTransform: 'capitalize' }}>
@@ -533,7 +533,7 @@ export function CapacityIngestionHealth({ openExplorer }: { openExplorer?: (filt
                     <div key={i} onClick={() => { if (openExplorer && drill) openExplorer({ host: drill }); }}
                       title={`${label} — normally ${prior.toLocaleString()} logs · last seen ${d.last_seen || 'unknown'}`}
                       style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-                        padding: '5px 8px', background: 'rgba(217,119,6,0.12)', borderRadius: 6,
+                        padding: '5px 8px', background: 'rgba(217,119,6,0.12)', borderRadius: 'var(--radius-sm)',
                         cursor: openExplorer && drill ? 'pointer' : 'default' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                         <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 600,
@@ -588,7 +588,7 @@ function ChangeItemRow({ row, drill }: { row: ChangeRow; drill?: (value: string)
     <div onClick={() => { if (drill && row?.value) drill(row.value); }}
       title={`${value} — ${count.toLocaleString()} events`}
       style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-        padding: '4px 8px', background: 'var(--surface-subtle)', borderRadius: 5,
+        padding: '4px 8px', background: 'var(--surface-subtle)', borderRadius: 'var(--radius-sm)',
         cursor: drill && row?.value ? 'pointer' : 'default' }}>
       <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 500,
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
@@ -646,7 +646,7 @@ export function WhatsChanged({ openExplorer }: { openExplorer?: (filter: Explore
               return (
                 <div key={d.key}
                   onClick={() => { setActive(d.key); setExpanded(false); }}
-                  style={{ cursor: 'pointer', padding: '7px 9px', borderRadius: 8,
+                  style={{ cursor: 'pointer', padding: '7px 9px', borderRadius: 'var(--radius)',
                     background: on ? 'var(--tint-info)' : 'var(--surface-subtle)',
                     border: `1px solid ${on ? 'var(--tint-info-fg)' : 'var(--border)'}`,
                     transition: 'background 0.15s, border-color 0.15s' }}>
@@ -758,7 +758,7 @@ export function RiskiestEntities({ openExplorer, onNavigate }:
               <div key={i} onClick={(e) => { e.stopPropagation(); drill(row); }}
                 title={`${type}: ${value} — risk ${score} · ${events.toLocaleString()} events · ${anomalies.toLocaleString()} anomalies`}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-                  padding: '7px 8px', background: 'var(--surface-subtle)', borderRadius: 6,
+                  padding: '7px 8px', background: 'var(--surface-subtle)', borderRadius: 'var(--radius-sm)',
                   cursor: canDrill ? 'pointer' : 'default' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                   <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', fontWeight: 600,
@@ -770,7 +770,7 @@ export function RiskiestEntities({ openExplorer, onNavigate }:
                   </span>
                 </div>
                 <span style={{ flexShrink: 0, fontSize: 'var(--text-xs)', fontWeight: 700, padding: '3px 8px',
-                  borderRadius: 6, background: band.bg, color: band.fg }}
+                  borderRadius: 'var(--radius-sm)', background: band.bg, color: band.fg }}
                   title={`${band.label} risk`}>
                   {score}
                 </span>

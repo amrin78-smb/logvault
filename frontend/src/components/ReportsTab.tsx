@@ -106,7 +106,7 @@ function ReportChartView({ chart }: { chart: ReportChart }) {
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
               <XAxis dataKey="x" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border)' }} tickLine={false} interval="preserveStartEnd" />
               <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
-              <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }} />
+              <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 12 }} />
               {chart.series.map((s, i) => (
                 <Bar key={s.label} dataKey={s.label} name={s.label}
                   fill={s.color || CHART_PALETTE[i % CHART_PALETTE.length]} radius={[3, 3, 0, 0]} />
@@ -117,7 +117,7 @@ function ReportChartView({ chart }: { chart: ReportChart }) {
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
               <XAxis dataKey="x" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border)' }} tickLine={false} interval="preserveStartEnd" />
               <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
-              <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }} />
+              <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 12 }} />
               {chart.series.map((s, i) => (
                 <Area key={s.label} type="monotone" dataKey={s.label} name={s.label}
                   stroke={s.color || CHART_PALETTE[i % CHART_PALETTE.length]}
@@ -129,7 +129,7 @@ function ReportChartView({ chart }: { chart: ReportChart }) {
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
               <XAxis dataKey="x" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border)' }} tickLine={false} interval="preserveStartEnd" />
               <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
-              <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }} />
+              <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 12 }} />
               {chart.series.map((s, i) => (
                 <Line key={s.label} type="monotone" dataKey={s.label} name={s.label}
                   stroke={s.color || CHART_PALETTE[i % CHART_PALETTE.length]} strokeWidth={1.75} dot={false} />
@@ -142,6 +142,7 @@ function ReportChartView({ chart }: { chart: ReportChart }) {
         <div style={{ display: 'flex', gap: 12, marginTop: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
           {chart.series.map((s, i) => (
             <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              {/* intentional: 1px on an 8x2 legend sliver — a token radius would round it away */}
               <div style={{ width: 8, height: 2, borderRadius: 1, background: s.color || CHART_PALETTE[i % CHART_PALETTE.length] }} />
               <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{s.label}</span>
             </div>
@@ -231,7 +232,7 @@ export default function ReportsTab() {
                   display: 'flex', gap: 12, alignItems: 'flex-start',
                   border: on ? `1px solid ${r.color}` : '1px solid var(--border)',
                   background: on ? 'var(--surface-subtle)' : 'var(--bg-card)' }}>
-                <span style={{ width: 36, height: 36, borderRadius: 9, flexShrink: 0, color: r.color,
+                <span style={{ width: 36, height: 36, borderRadius: 'var(--radius)', flexShrink: 0, color: r.color,
                   background: `color-mix(in srgb, ${r.color} 13%, transparent)`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {r.icon}
@@ -280,7 +281,7 @@ export default function ReportsTab() {
                   {preview.summary && preview.summary.length > 0 && (
                     <div style={{ display: 'flex', gap: 12, padding: '14px 18px', flexWrap: 'wrap', borderBottom: '1px solid var(--border-light)' }}>
                       {preview.summary.map((s, i) => (
-                        <div key={i} style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 16px', minWidth: 120 }}>
+                        <div key={i} style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '10px 16px', minWidth: 120 }}>
                           <div style={{ fontSize: 'var(--text-xl)', fontWeight: 800, color: s.color || 'var(--text-primary)', lineHeight: 1 }}>{s.value}</div>
                           <div style={{ ...MUTED, marginTop: 4 }}>{s.label}</div>
                         </div>

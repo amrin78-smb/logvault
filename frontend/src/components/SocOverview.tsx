@@ -28,7 +28,7 @@ import type { ExplorerFilter } from '@/app/page';
 
 // ── Shared card style (matches DashboardWidgets/SeverityChart) ────────────────
 const CARD = {
-  background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10,
+  background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
   padding: '16px 20px', boxShadow: 'var(--shadow-sm)',
 } as const;
 const TITLE = { fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 } as const;
@@ -111,10 +111,11 @@ function DigestSectionRow({ section }: { section: DigestSection }) {
   const tint = digestTint(section.severity);
   return (
     <div style={{ display: 'flex', gap: 10, alignItems: 'stretch' }}>
+      {/* intentional: decorative 4px-wide accent sliver — its radius is relative to the sliver, not a surface */}
       <div style={{ width: 4, borderRadius: 3, background: tint.fg, flexShrink: 0 }} />
-      <div style={{ flex: 1, minWidth: 0, background: tint.bg, borderRadius: 8, padding: '10px 12px' }}>
+      <div style={{ flex: 1, minWidth: 0, background: tint.bg, borderRadius: 'var(--radius)', padding: '10px 12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: tint.fg, flexShrink: 0 }} />
+          <span style={{ width: 8, height: 8, borderRadius: '50%' /* intentional: status dot must stay circular */, background: tint.fg, flexShrink: 0 }} />
           <span style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--text-primary)',
             textTransform: 'uppercase', letterSpacing: '0.4px' }}>{section.title}</span>
         </div>
@@ -136,7 +137,7 @@ function DigestPanel({ digest, loading, error }:
     <div style={{ ...CARD, background: 'var(--bg-card)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--tint-info-fg)',
-          background: 'var(--tint-info)', borderRadius: 4, padding: '2px 8px',
+          background: 'var(--tint-info)', borderRadius: 'var(--radius-sm)', padding: '2px 8px',
           textTransform: 'uppercase', letterSpacing: '0.5px' }}>Briefing</span>
         {digest?.generated_at && (
           <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
@@ -146,9 +147,9 @@ function DigestPanel({ digest, loading, error }:
       </div>
       {loading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div className="skeleton" style={{ height: 24, width: '70%', borderRadius: 6 }} />
-          <div className="skeleton" style={{ height: 44, width: '100%', borderRadius: 8 }} />
-          <div className="skeleton" style={{ height: 44, width: '100%', borderRadius: 8 }} />
+          <div className="skeleton" style={{ height: 24, width: '70%', borderRadius: 'var(--radius-sm)' }} />
+          <div className="skeleton" style={{ height: 44, width: '100%', borderRadius: 'var(--radius)' }} />
+          <div className="skeleton" style={{ height: 44, width: '100%', borderRadius: 'var(--radius)' }} />
         </div>
       ) : error ? (
         <div style={{ fontSize: 'var(--text-sm)', color: 'var(--tint-danger-fg)' }}>
@@ -182,7 +183,7 @@ function KpiTile({ label, value, tone, onClick, hint }:
   const border = active ? (tone === 'danger' ? 'var(--tint-danger)' : 'var(--tint-warn)') : 'var(--border)';
   return (
     <div onClick={onClick} title={hint}
-      style={{ background: bg, border: `1px solid ${border}`, borderRadius: 10, padding: '14px 16px',
+      style={{ background: bg, border: `1px solid ${border}`, borderRadius: 'var(--radius)', padding: '14px 16px',
         cursor: onClick ? 'pointer' : 'default', transition: 'box-shadow 0.15s' }}
       onMouseEnter={e => { if (onClick) (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'; }}
       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = 'none'; }}>
@@ -226,7 +227,7 @@ function TopCountriesCard({ rows, onDrill }:
               <div key={r.country_code || i} onClick={() => onDrill?.(r)}
                 title={`${r.country || r.country_code} — ${fmt(r.count)} events`}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-                  padding: '6px 8px', background: 'var(--surface-subtle)', borderRadius: 6,
+                  padding: '6px 8px', background: 'var(--surface-subtle)', borderRadius: 'var(--radius-sm)',
                   cursor: onDrill ? 'pointer' : 'default' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                   <span style={{ flexShrink: 0 }}>{flag}</span>
@@ -274,7 +275,7 @@ function SecuritySignalsCard({ signals, openExplorer }:
             <div key={sig.key}
               onClick={() => { if (sig.filter) openExplorer(sig.filter); }}
               title={clickable ? `${sig.label} — click to investigate` : sig.label}
-              style={{ background: sig.bg, borderRadius: 8, padding: '10px 8px', textAlign: 'center',
+              style={{ background: sig.bg, borderRadius: 'var(--radius)', padding: '10px 8px', textAlign: 'center',
                 cursor: clickable ? 'pointer' : 'default' }}>
               <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: sig.fg }}>{value.toLocaleString()}</div>
               <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 600, marginTop: 2 }}>
@@ -319,7 +320,7 @@ function RiskiestEntitiesCard({ rows, openExplorer }:
               <div key={`${value}-${i}`} onClick={() => drill(row)}
                 title={`${type}: ${value} — risk ${score} · ${events.toLocaleString()} events · ${anomalies.toLocaleString()} anomalies`}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-                  padding: '7px 8px', background: 'var(--surface-subtle)', borderRadius: 6,
+                  padding: '7px 8px', background: 'var(--surface-subtle)', borderRadius: 'var(--radius-sm)',
                   cursor: row.entity_value ? 'pointer' : 'default' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                   <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', fontWeight: 600,
@@ -349,7 +350,7 @@ function IncidentRow({ incident, onOpen }: { incident: ActiveIncident; onOpen: (
     <div onClick={() => onOpen(incident.id)}
       title="Open kill-chain timeline"
       style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
-        background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 8,
+        background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
         cursor: 'pointer', transition: 'background 0.12s' }}
       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--surface-subtle)'; }}
       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-primary)'; }}>
@@ -358,7 +359,7 @@ function IncidentRow({ incident, onOpen }: { incident: ActiveIncident; onOpen: (
           <span style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--text-primary)' }}>
             {incident.rule_name || 'Incident'}
           </span>
-          <span style={{ padding: '1px 8px', borderRadius: 12, fontSize: 'var(--text-xs)', fontWeight: 700,
+          <span style={{ padding: '1px 8px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)', fontWeight: 700,
             background: acked ? 'var(--tint-success)' : 'var(--tint-danger)',
             color: acked ? 'var(--tint-success-fg)' : 'var(--tint-danger-fg)' }}>
             {acked ? 'Acknowledged' : 'Active'}

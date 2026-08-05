@@ -67,7 +67,7 @@ function RiskFactorBreakdown({ factors, score }: { factors: RiskFactor[]; score:
         </span>
       </button>
       <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)',
-        borderRadius: 8, padding: '10px 12px' }}>
+        borderRadius: 'var(--radius)', padding: '10px 12px' }}>
         <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.5,
           marginBottom: open ? 10 : 0 }}>
           {summary}
@@ -83,10 +83,10 @@ function RiskFactorBreakdown({ factors, score }: { factors: RiskFactor[]; score:
                 +{f.points}
               </span>
             </div>
-            <div style={{ marginTop: 4, height: 4, borderRadius: 2, background: 'var(--surface-subtle)',
+            <div style={{ marginTop: 4, height: 4, borderRadius: 'var(--radius-pill)', background: 'var(--surface-subtle)',
               overflow: 'hidden' }}>
               <div style={{ height: '100%', width: `${Math.round((f.points / max) * 100)}%`,
-                background: 'var(--primary)', borderRadius: 2 }} />
+                background: 'var(--primary)', borderRadius: 'var(--radius-pill)' }} />
             </div>
           </div>
         ))}
@@ -197,18 +197,18 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {typeof log.risk_score === 'number' && (
               <span title={`Risk score: ${log.risk_score}/100`}
-                style={{ padding: '3px 10px', borderRadius: 16, fontSize: 'var(--text-xs)', fontWeight: 700,
+                style={{ padding: '3px 10px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)', fontWeight: 700,
                   background: risk.bg, color: risk.fg }}>
                 {risk.label} Risk · {log.risk_score}
               </span>
             )}
-            <span style={{ padding: '3px 10px', borderRadius: 16, fontSize: 'var(--text-xs)', fontWeight: 700,
+            <span style={{ padding: '3px 10px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)', fontWeight: 700,
               background: sevSt.bg, color: sevSt.color, textTransform: 'uppercase' }}>
               {log.severity_label}
             </span>
             <button onClick={onClose}
               style={{ background: 'rgba(255,255,255,0.1)', border: 'none', cursor: 'pointer',
-                color: '#94a3b8', fontSize: 'var(--text-lg)', width: 28, height: 28, borderRadius: 6,
+                color: '#94a3b8', fontSize: 'var(--text-lg)', width: 28, height: 28, borderRadius: 'var(--radius-sm)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               ×
             </button>
@@ -223,7 +223,7 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
             <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-muted)',
               textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Message</div>
             <div style={{ padding: 12, background: 'var(--bg-primary)', border: '1px solid var(--border)',
-              borderRadius: 8, fontSize: 'var(--text-sm)', color: 'var(--text-primary)', lineHeight: 1.6,
+              borderRadius: 'var(--radius)', fontSize: 'var(--text-sm)', color: 'var(--text-primary)', lineHeight: 1.6,
               wordBreak: 'break-all', fontFamily: 'var(--font-mono)' }}>
               {log.message}
             </div>
@@ -238,7 +238,7 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
               <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-muted)',
                 textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Remote Source</div>
               <div style={{ background: 'var(--tint-danger)', border: '1px solid var(--border)',
-                borderRadius: 8, padding: '0 12px' }}>
+                borderRadius: 'var(--radius)', padding: '0 12px' }}>
                 <Field label="Remote IP"   value={remoteIP}   mono />
                 {hasRealUser && <Field label="User"    value={remoteUser} mono />}
                 {!hasRealUser && (
@@ -257,7 +257,7 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
             <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-muted)',
               textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Details</div>
             <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)',
-              borderRadius: 8, padding: '0 12px' }}>
+              borderRadius: 'var(--radius)', padding: '0 12px' }}>
               <Field label={showRemote ? 'Reporting device' : 'Source IP'} value={cleanIP} mono />
               <Field label="Hostname"     value={log.source_host}     mono />
               <Field label="Vendor"       value={log.vendor} />
@@ -288,7 +288,7 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
                 Parsed Fields ({sdEntries.length})
               </div>
               <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)',
-                borderRadius: 8, padding: '0 12px' }}>
+                borderRadius: 'var(--radius)', padding: '0 12px' }}>
                 {sdEntries.map(([k, v]) => (
                   <Field key={k} label={k} value={String(v)} mono />
                 ))}
@@ -302,31 +302,31 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
               textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Quick Actions</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               <button onClick={() => { onFilterIP(cleanIP); onClose(); }}
-                style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--border)',
+                style={{ padding: '7px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                   cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   display: 'flex', alignItems: 'center', gap: 5 }}>
                 📍 Filter by IP
               </button>
               <button onClick={() => { onFilterVendor(log.vendor); onClose(); }}
-                style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--border)',
+                style={{ padding: '7px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                   cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   display: 'flex', alignItems: 'center', gap: 5 }}>
                 🏷️ Filter by Vendor
               </button>
               <button onClick={() => { onFilterSeverity(SEVERITIES[log.severity] || ''); onClose(); }}
-                style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--border)',
+                style={{ padding: '7px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                   cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   display: 'flex', alignItems: 'center', gap: 5 }}>
                 🔴 Filter by Severity
               </button>
               <button onClick={() => navigator.clipboard.writeText(log.message)}
-                style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--border)',
+                style={{ padding: '7px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                   cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   display: 'flex', alignItems: 'center', gap: 5 }}>
                 ⎘ Copy Message
               </button>
               <button onClick={() => navigator.clipboard.writeText(JSON.stringify(log, null, 2))}
-                style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--border)',
+                style={{ padding: '7px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                   cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   display: 'flex', alignItems: 'center', gap: 5 }}>
                 ⎘ Copy Raw JSON
@@ -344,7 +344,7 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
               <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', padding: 12 }}>Loading...</div>
             ) : related.length === 0 ? (
               <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', padding: 12,
-                background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 8 }}>
+                background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
                 No other logs from this IP in the last 5 minutes
               </div>
             ) : (
@@ -353,7 +353,7 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
                   const rs = sevStyle(r.severity_label);
                   return (
                     <div key={i} style={{ padding: '8px 12px', background: 'var(--bg-primary)',
-                      border: '1px solid var(--border)', borderRadius: 8 }}>
+                      border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
                         <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, textTransform: 'uppercase',
                           color: rs.color }}>{r.severity_label}</span>

@@ -136,7 +136,7 @@ export function MitrePopover({ id }: { id: string }) {
         position: 'absolute', zIndex: 1000, top: 'calc(100% + 6px)', left: 0,
         width: 'max-content', maxWidth: 280, textAlign: 'left',
         background: 'var(--bg-card)', color: 'var(--text-primary)',
-        border: '1px solid var(--border)', borderRadius: 8,
+        border: '1px solid var(--border)', borderRadius: 'var(--radius)',
         boxShadow: 'var(--shadow-sm)', padding: '10px 12px',
         fontFamily: 'system-ui, -apple-system, sans-serif', whiteSpace: 'normal',
         cursor: 'default',
@@ -188,7 +188,7 @@ function MitrePill({ id, compact }: { id: string; compact?: boolean }) {
         onClick={(e) => e.stopPropagation()}
         style={{ display: 'inline-flex', alignItems: 'center', textDecoration: 'none',
           background: 'var(--tint-purple)', color: 'var(--tint-purple-fg)',
-          border: '1px solid var(--tint-purple)', borderRadius: 4,
+          border: '1px solid var(--tint-purple)', borderRadius: 'var(--radius-sm)',
           padding: compact ? '0 5px' : '1px 6px', fontSize: 'var(--text-xs)', fontWeight: 700,
           fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
         {info.id}

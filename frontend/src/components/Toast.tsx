@@ -39,7 +39,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           const c = COLORS[t.type];
           return (
             <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10,
-              background: c.bg, border: `1px solid ${c.border}`, borderRadius: 8,
+              background: c.bg, border: `1px solid ${c.border}`, borderRadius: 'var(--radius)',
               padding: '10px 16px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
               animation: 'fadeIn 0.2s ease', fontSize: 'var(--text-base)', color: c.color,
               minWidth: 260, maxWidth: 380 }}>

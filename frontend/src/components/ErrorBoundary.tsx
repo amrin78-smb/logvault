@@ -54,7 +54,7 @@ export default class ErrorBoundary extends Component<Props, State> {
       const chunk = this.state.isChunkError;
       return (
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)',
-          borderRadius: 8, padding: '20px 16px', textAlign: 'center' }}>
+          borderRadius: 'var(--radius)', padding: '20px 16px', textAlign: 'center' }}>
           <div style={{ fontSize: 'var(--text-xl)', marginBottom: 6 }}>{chunk ? '🔄' : '⚠️'}</div>
           <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
             {chunk ? 'A newer version of LogVault was deployed' : `${this.props.name || 'Widget'} failed to load`}
@@ -68,7 +68,7 @@ export default class ErrorBoundary extends Component<Props, State> {
             onClick={() => (chunk
               ? window.location.reload()
               : this.setState({ hasError: false, isChunkError: false }))}
-            style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)',
+            style={{ padding: '4px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
               cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
             {chunk ? 'Reload page' : 'Retry'}
           </button>

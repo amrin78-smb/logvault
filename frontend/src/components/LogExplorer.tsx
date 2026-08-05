@@ -197,7 +197,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
   return (
     <>
     <PageHeader title="Log Explorer" subtitle="Search and filter syslog entries with smart presets" />
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
       padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
       <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Log Explorer</div>
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 16 }}>
@@ -210,7 +210,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
           <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 500, marginRight: 2 }}>Quick:</span>
           {PRESETS.map((p, i) => (
             <button key={i} onClick={() => applyPreset(p)}
-              style={{ padding: '4px 10px', borderRadius: 16, border: '1px solid var(--border)',
+              style={{ padding: '4px 10px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)',
                 cursor: 'pointer', fontSize: 'var(--text-xs)', fontWeight: 500,
                 background: 'var(--bg-primary)', color: 'var(--text-secondary)',
                 transition: 'all 0.15s', whiteSpace: 'nowrap' }}
@@ -227,13 +227,13 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
         {/* Message search */}
         <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && search()}
           placeholder="Search message text..." 
-          style={{ flex: 1, minWidth: 200, padding: '9px 12px', borderRadius: 6,
+          style={{ flex: 1, minWidth: 200, padding: '9px 12px', borderRadius: 'var(--radius-sm)',
             border: '1px solid var(--border)', background: 'var(--bg-input)',
             color: 'var(--text-primary)', fontSize: 'var(--text-base)', outline: 'none' }} />
 
         {/* Time range */}
         <select value={hours} onChange={e => setHours(e.target.value)}
-          style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid var(--border)',
+          style={{ padding: '9px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
             background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)', cursor: 'pointer', outline: 'none' }}>
           {[['0.25','15 min'],['1','1h'],['6','6h'],['24','24h'],['48','48h'],['168','7d'],['720','30d']].map(([v,l]) => (
             <option key={v} value={v}>{l}</option>
@@ -242,7 +242,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
 
         {/* Search button */}
         <button onClick={search} disabled={loading}
-          style={{ padding: '9px 22px', borderRadius: 6, border: 'none', cursor: 'pointer',
+          style={{ padding: '9px 22px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
             fontSize: 'var(--text-base)', fontWeight: 600, background: 'var(--primary)', color: '#fff', opacity: loading ? 0.7 : 1 }}>
           {loading ? 'Searching...' : 'Search'}
         </button>
@@ -252,7 +252,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
           const params = new URLSearchParams({ hours, ...(q && { q }), ...(vendor && { vendor }), ...(severity && { severity }), ...(category && { category }), ...(threat && { threat }), ...(host && { host }) });
           window.open(`/api/logs/export?${params}`, '_blank');
         }} title="Export to CSV"
-          style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid var(--border)',
+          style={{ padding: '9px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
             cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--bg-input)', color: 'var(--text-secondary)',
             display: 'flex', alignItems: 'center', gap: 5 }}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -268,7 +268,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
         {/* Vendor chips */}
         {VENDORS.map(v => (
           <button key={v} onClick={() => { setVendor(vendor === v ? '' : v); setTimeout(() => triggerSearch(), 50); }}
-            style={{ padding: '4px 10px', borderRadius: 16, border: `1px solid ${vendor === v ? VENDOR_COLORS[v] : 'var(--border)'}`,
+            style={{ padding: '4px 10px', borderRadius: 'var(--radius-pill)', border: `1px solid ${vendor === v ? VENDOR_COLORS[v] : 'var(--border)'}`,
               cursor: 'pointer', fontSize: 'var(--text-xs)', fontWeight: vendor === v ? 600 : 400,
               background: vendor === v ? `${VENDOR_COLORS[v]}18` : 'transparent',
               color: vendor === v ? VENDOR_COLORS[v] : 'var(--text-muted)', transition: 'all 0.15s' }}>
@@ -281,7 +281,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
         {/* Severity chips */}
         {SEVERITIES.map(s => (
           <button key={s.value} onClick={() => { setSev(severity === s.value ? '' : s.value); setTimeout(() => triggerSearch(), 50); }}
-            style={{ padding: '4px 10px', borderRadius: 16,
+            style={{ padding: '4px 10px', borderRadius: 'var(--radius-pill)',
               border: `1px solid ${severity === s.value ? s.border : 'var(--border)'}`,
               cursor: 'pointer', fontSize: 'var(--text-xs)', fontWeight: severity === s.value ? 600 : 400,
               background: severity === s.value ? s.bg : 'transparent',
@@ -297,12 +297,12 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
           <input value={hostInput} onChange={e => setHostInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && addHostFilter()}
             placeholder="Filter by host/IP..."
-            style={{ padding: '4px 10px', borderRadius: 16, border: '1px solid var(--border)',
+            style={{ padding: '4px 10px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)',
               background: 'transparent', color: 'var(--text-primary)', fontSize: 'var(--text-xs)',
               outline: 'none', width: 140 }} />
           {hostInput && (
             <button onClick={addHostFilter}
-              style={{ padding: '4px 8px', borderRadius: 16, border: '1px solid #C8102E',
+              style={{ padding: '4px 8px', borderRadius: 'var(--radius-pill)', border: '1px solid #C8102E',
                 cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--primary)', color: '#fff' }}>
               Add
             </button>
@@ -315,7 +315,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
         <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 500, marginRight: 2 }}>Category:</span>
         {CATEGORIES.map(c => (
           <button key={c.value} onClick={() => { const next = category === c.value ? '' : c.value; setCategory(next); setTimeout(() => triggerSearch({ category: next }), 50); }}
-            style={{ padding: '4px 10px', borderRadius: 16,
+            style={{ padding: '4px 10px', borderRadius: 'var(--radius-pill)',
               border: `1px solid ${category === c.value ? c.color : 'var(--border)'}`,
               cursor: 'pointer', fontSize: 'var(--text-xs)', fontWeight: category === c.value ? 600 : 400,
               background: category === c.value ? `${c.color}18` : 'transparent',
@@ -331,7 +331,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
           <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Active:</span>
           {activeFilters.map(f => (
             <span key={f.type} style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
-              padding: '3px 8px 3px 10px', borderRadius: 16, fontSize: 'var(--text-xs)', fontWeight: 500,
+              padding: '3px 8px 3px 10px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)', fontWeight: 500,
               background: '#1a2744', color: '#fff', border: '1px solid #253352' }}>
               {f.label}
               <button onClick={() => removeFilter(f.type)}
@@ -342,7 +342,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
             </span>
           ))}
           <button onClick={clearAll}
-            style={{ padding: '3px 10px', borderRadius: 16, border: '1px solid var(--border)',
+            style={{ padding: '3px 10px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)',
               cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'transparent', color: 'var(--text-muted)' }}>
             Clear all
           </button>
@@ -352,7 +352,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
       {/* ── Results summary ── */}
       {searched && !loading && !error && (
         <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 12, padding: '6px 12px',
-          background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 6 }}>
+          background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
           {total === 0
             ? 'No logs found — try a wider time range or different filters'
             : `Showing ${logs.length} of ${total.toLocaleString()}${totalCapped ? '+' : ''} logs`}
@@ -367,7 +367,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
         <EmptyState title="No logs found" message="Try adjusting your filters or time range." />
       ) : (
       <div style={{ overflowX: 'auto', maxHeight: '60vh', overflowY: 'auto',
-        border: '1px solid var(--border)', borderRadius: 8 }}>
+        border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
           <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-card)', zIndex: 5, boxShadow: '0 1px 0 var(--border)' }}>
             <tr style={{ borderBottom: '2px solid var(--border)' }}>
@@ -405,7 +405,7 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
                   })()}
                 </td>
                 <td style={{ padding: '9px 12px' }}>
-                  <span style={{ fontSize: 'var(--text-xs)', padding: '2px 8px', borderRadius: 10, textTransform: 'capitalize',
+                  <span style={{ fontSize: 'var(--text-xs)', padding: '2px 8px', borderRadius: 'var(--radius-pill)', textTransform: 'capitalize',
                     background: `${VENDOR_COLORS[row.vendor] || '#6b7280'}18`,
                     color: VENDOR_COLORS[row.vendor] || '#6b7280', fontWeight: 500 }}>
                     {row.vendor}

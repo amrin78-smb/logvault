@@ -64,7 +64,7 @@ export function sevStyle(label: string): SevStyle {
 export function SevBadge({ label }: { label: string }) {
   const st = sevStyle(label);
   return (
-    <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 'var(--text-xs)', fontWeight: 700,
+    <span style={{ padding: '2px 7px', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)', fontWeight: 700,
       background: st.bg, color: st.color, border: `1px solid ${st.border}`,
       textTransform: 'uppercase', letterSpacing: '0.4px', whiteSpace: 'nowrap' }}>
       {label}

@@ -27,7 +27,7 @@ interface SummaryShape {
   by_severity?: any[];
 }
 
-const CARD = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 20, marginBottom: 16 };
+const CARD = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 20, marginBottom: 16 };
 const TH   = { padding: '8px 12px', textAlign: 'left' as const, color: 'var(--text-muted)', fontWeight: 600, fontSize: 'var(--text-xs)' };
 const TD   = { padding: '9px 12px', fontSize: 'var(--text-sm)' };
 const MONO = { fontFamily: 'var(--font-mono)' };
@@ -62,7 +62,7 @@ function entityDrillFilter(entityType?: string, entityValue?: string): DrillFilt
 function AnomalySevBadge({ severity }: { severity?: string }) {
   const st = anomalySevStyle(severity);
   return (
-    <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 'var(--text-xs)', fontWeight: 700,
+    <span style={{ padding: '2px 7px', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)', fontWeight: 700,
       background: st.bg, color: st.color, textTransform: 'uppercase', letterSpacing: '0.4px', whiteSpace: 'nowrap' }}>
       {severity || '—'}
     </span>
@@ -78,7 +78,7 @@ function RiskScoreBadge({ score }: { score?: number | null }) {
   else if (n >= 31) { bg = 'var(--tint-info)';    color = 'var(--tint-info-fg)';    label = 'Medium'; }
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-      <span style={{ padding: '2px 9px', borderRadius: 10, fontSize: 'var(--text-xs)', fontWeight: 700, background: bg, color }}>
+      <span style={{ padding: '2px 9px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)', fontWeight: 700, background: bg, color }}>
         {Math.round(n)}
       </span>
       <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{label}</span>
@@ -93,7 +93,7 @@ function StatCard({ value, label, danger = false }: { value: number; label: stri
   const border = on ? 'var(--tint-danger)' : 'var(--border)';
   const color  = on ? 'var(--tint-danger-fg)' : 'var(--text-primary)';
   return (
-    <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 8, padding: '16px 18px',
+    <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 'var(--radius)', padding: '16px 18px',
       position: 'relative', overflow: 'hidden' }}>
       {on && <div style={{ position: 'absolute', top: 8, right: 10, fontSize: 'var(--text-lg)' }}>⚠️</div>}
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 6, fontWeight: 600,
@@ -166,8 +166,8 @@ function BaselineStatus() {
             {daysWhole} of {target} days
           </span>
         </div>
-        <div style={{ height: 8, background: 'var(--border-light)', borderRadius: 4, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 4, transition: 'width 0.3s ease' }} />
+        <div style={{ height: 8, background: 'var(--border-light)', borderRadius: 'var(--radius-pill)', overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 'var(--radius-pill)', transition: 'width 0.3s ease' }} />
         </div>
       </div>
 
@@ -187,7 +187,7 @@ function BaselineStatus() {
 // Small labeled stat tile for the baseline panel.
 function BaselineStat({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+    <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '10px 12px' }}>
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 4, fontWeight: 600,
         textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</div>
       <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--text-primary)',
@@ -280,7 +280,7 @@ function EntityPanel({ entity, openExplorer, onClose }: {
           background: '#1a2744', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 'var(--text-xs)', padding: '1px 6px', borderRadius: 4,
+              <span style={{ fontSize: 'var(--text-xs)', padding: '1px 6px', borderRadius: 'var(--radius-sm)',
                 background: 'rgba(255,255,255,0.12)', color: '#cbd5e1', fontWeight: 600, textTransform: 'uppercase' }}>
                 {entity.type}
               </span>
@@ -294,7 +294,7 @@ function EntityPanel({ entity, openExplorer, onClose }: {
           </div>
           <button onClick={onClose}
             style={{ background: 'rgba(255,255,255,0.1)', border: 'none', cursor: 'pointer',
-              color: '#94a3b8', fontSize: 'var(--text-lg)', width: 28, height: 28, borderRadius: 6,
+              color: '#94a3b8', fontSize: 'var(--text-lg)', width: 28, height: 28, borderRadius: 'var(--radius-sm)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             ×
           </button>
@@ -314,7 +314,7 @@ function EntityPanel({ entity, openExplorer, onClose }: {
                   textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Risk Factors</div>
                 {factors.length === 0 ? (
                   <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', padding: 12,
-                    background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 8 }}>
+                    background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
                     No scored factors yet.
                   </div>
                 ) : (
@@ -330,8 +330,8 @@ function EntityPanel({ entity, openExplorer, onClose }: {
                               {contribution.toLocaleString()}
                             </span>
                           </div>
-                          <div style={{ height: 8, background: 'var(--border-light)', borderRadius: 3, overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${pct}%`, background: 'var(--primary)', borderRadius: 3 }} />
+                          <div style={{ height: 8, background: 'var(--border-light)', borderRadius: 'var(--radius-pill)', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${pct}%`, background: 'var(--primary)', borderRadius: 'var(--radius-pill)' }} />
                           </div>
                         </div>
                       );
@@ -346,11 +346,11 @@ function EntityPanel({ entity, openExplorer, onClose }: {
                   textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Events Summary</div>
                 {!events ? (
                   <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', padding: 12,
-                    background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 8 }}>
+                    background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
                     No event activity recorded.
                   </div>
                 ) : (
-                  <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+                  <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 12 }}>
                     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: byCategory.length ? 12 : 0 }}>
                       <div>
                         <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Total events</div>
@@ -374,7 +374,7 @@ function EntityPanel({ entity, openExplorer, onClose }: {
                     {byCategory.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                         {byCategory.map((c: any, i: number) => (
-                          <span key={i} style={{ fontSize: 'var(--text-xs)', padding: '2px 8px', borderRadius: 10,
+                          <span key={i} style={{ fontSize: 'var(--text-xs)', padding: '2px 8px', borderRadius: 'var(--radius-pill)',
                             background: 'var(--surface-subtle)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
                             {c?.category || '—'}: {(Number(c?.count) || 0).toLocaleString()}
                           </span>
@@ -393,14 +393,14 @@ function EntityPanel({ entity, openExplorer, onClose }: {
                 </div>
                 {recent.length === 0 ? (
                   <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', padding: 12,
-                    background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 8 }}>
+                    background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
                     No anomalies recorded for this entity.
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {recent.map((a: any, i: number) => (
                       <div key={a?.id ?? i} style={{ padding: '8px 12px', background: 'var(--bg-primary)',
-                        border: '1px solid var(--border)', borderRadius: 8 }}>
+                        border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3, flexWrap: 'wrap' }}>
                           <AnomalySevBadge severity={a?.severity} />
                           <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{a?.anomaly_type || '—'}</span>
@@ -426,7 +426,7 @@ function EntityPanel({ entity, openExplorer, onClose }: {
           display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
           {openExplorer && drill ? (
             <button onClick={() => openExplorer(drill)}
-              style={{ padding: '8px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+              style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
                 background: 'var(--primary)', color: '#fff', fontSize: 'var(--text-sm)', fontWeight: 600 }}>
               View all events in Log Explorer →
             </button>
@@ -562,7 +562,7 @@ export default function IntelligenceConsole({ openExplorer, hours }: {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
         <StatCard value={openCount} label="Open Anomalies" danger />
         <StatCard value={total24h} label="Anomalies (24h)" />
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px 18px' }}>
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '16px 18px' }}>
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 8, fontWeight: 600,
             textTransform: 'uppercase', letterSpacing: '0.8px' }}>By Severity</div>
           {bySeverity.length === 0 ? (
@@ -573,7 +573,7 @@ export default function IntelligenceConsole({ openExplorer, hours }: {
                 const st = anomalySevStyle(s?.severity);
                 return (
                   <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px',
-                    borderRadius: 10, background: st.bg, color: st.color, fontSize: 'var(--text-xs)', fontWeight: 700 }}>
+                    borderRadius: 'var(--radius-pill)', background: st.bg, color: st.color, fontSize: 'var(--text-xs)', fontWeight: 700 }}>
                     <span style={{ textTransform: 'uppercase', letterSpacing: '0.4px' }}>{s?.severity || '—'}</span>
                     <span>{(Number(s?.count) || 0).toLocaleString()}</span>
                   </span>
@@ -586,10 +586,10 @@ export default function IntelligenceConsole({ openExplorer, hours }: {
 
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--bg-card)',
-        border: '1px solid var(--border)', borderRadius: 8, padding: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id as 'anomalies' | 'entities')}
-            style={{ padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+            style={{ padding: '6px 16px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
               fontSize: 'var(--text-sm)', fontWeight: activeTab === t.id ? 600 : 400,
               background: activeTab === t.id ? '#1a202c' : 'transparent',
               color: activeTab === t.id ? '#fff' : 'var(--text-muted)', transition: 'all 0.15s' }}>
@@ -604,7 +604,7 @@ export default function IntelligenceConsole({ openExplorer, hours }: {
           {/* Filter controls */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
             <select value={fType} onChange={e => setFType(e.target.value)}
-              style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)',
+              style={{ padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                 background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)', cursor: 'pointer' }}>
               <option value="">All types</option>
               {byType.map((t: any, i: number) => (
@@ -615,7 +615,7 @@ export default function IntelligenceConsole({ openExplorer, hours }: {
             </select>
 
             <select value={fSeverity} onChange={e => setFSeverity(e.target.value)}
-              style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)',
+              style={{ padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                 background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)', cursor: 'pointer' }}>
               <option value="">All severities</option>
               <option value="info">Info</option>
@@ -633,7 +633,7 @@ export default function IntelligenceConsole({ openExplorer, hours }: {
 
             {openAnomalies > 0 && (
               <button onClick={acknowledgeAll} disabled={anomLoading}
-                style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--tint-danger)', cursor: 'pointer',
+                style={{ padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--tint-danger)', cursor: 'pointer',
                   fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--tint-danger)', color: 'var(--tint-danger-fg)' }}>
                 Acknowledge All ({openAnomalies})
               </button>
@@ -688,7 +688,7 @@ export default function IntelligenceConsole({ openExplorer, hours }: {
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                           {canDrill && (
                             <button onClick={() => drillAnomaly(a)} title="Open in Log Explorer"
-                              style={{ padding: '3px 10px', borderRadius: 5, border: '1px solid var(--border)', cursor: 'pointer',
+                              style={{ padding: '3px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', cursor: 'pointer',
                                 fontSize: 'var(--text-xs)', background: 'var(--surface-subtle)', color: 'var(--text-secondary)', fontWeight: 500 }}>
                               View in Explorer →
                             </button>
@@ -697,7 +697,7 @@ export default function IntelligenceConsole({ openExplorer, hours }: {
                             <span style={{ color: '#16a34a', fontSize: 'var(--text-xs)', fontWeight: 600 }}>✓ Acked</span>
                           ) : (
                             <button onClick={() => acknowledge(a.id)}
-                              style={{ padding: '3px 10px', borderRadius: 5, border: '1px solid var(--border)', cursor: 'pointer',
+                              style={{ padding: '3px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', cursor: 'pointer',
                                 fontSize: 'var(--text-xs)', background: 'var(--surface-subtle)', color: 'var(--text-secondary)', fontWeight: 500 }}>
                               Acknowledge
                             </button>
@@ -757,7 +757,7 @@ export default function IntelligenceConsole({ openExplorer, hours }: {
                       </td>
                       <td style={{ ...TD, color: 'var(--text-secondary)' }}>{(Number(r?.event_count) || 0).toLocaleString()}</td>
                       <td style={TD}>
-                        <span style={{ fontWeight: 700, padding: '2px 8px', borderRadius: 10,
+                        <span style={{ fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--radius-pill)',
                           background: (Number(r?.anomaly_count) || 0) > 0 ? 'var(--tint-danger)' : 'var(--surface-subtle)',
                           color: (Number(r?.anomaly_count) || 0) > 0 ? 'var(--tint-danger-fg)' : 'var(--text-muted)' }}>
                           {(Number(r?.anomaly_count) || 0).toLocaleString()}

@@ -21,7 +21,7 @@ import { RiskBadge, riskBand } from './palette';
 
 // ── Shared style consts ──────────────────────────────────────────────
 const CARD: React.CSSProperties = {
-  background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: 20, marginBottom: 16,
+  background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 20, marginBottom: 16,
 };
 const SECTION_LABEL: React.CSSProperties = {
   fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-muted)',
@@ -30,7 +30,7 @@ const SECTION_LABEL: React.CSSProperties = {
 const MONO: React.CSSProperties = { fontFamily: 'var(--font-mono)' };
 const NOTE_BOX: React.CSSProperties = {
   fontSize: 'var(--text-sm)', color: 'var(--text-muted)', padding: 12,
-  background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 8,
+  background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
 };
 
 // ── Types (loose — the backend may add fields / jsonb shapes vary) ────
@@ -143,7 +143,7 @@ function toNum(v: any): number { const n = Number(v); return isNaN(n) ? 0 : n; }
 function TypeChip({ type }: { type?: string }) {
   const st = typeChipStyle(type);
   return (
-    <span style={{ fontSize: 'var(--text-xs)', padding: '1px 7px', borderRadius: 4, fontWeight: 600,
+    <span style={{ fontSize: 'var(--text-xs)', padding: '1px 7px', borderRadius: 'var(--radius-sm)', fontWeight: 600,
       background: st.bg, color: st.color, whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
       {typeLabel(type)}
     </span>
@@ -181,7 +181,7 @@ function EntityListItem({ row, active, onSelect }: {
           {toNum(row.event_count).toLocaleString()} events
         </span>
         {anomalies > 0 && (
-          <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, padding: '0 6px', borderRadius: 8,
+          <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, padding: '0 6px', borderRadius: 'var(--radius-pill)',
             background: 'var(--tint-danger)', color: 'var(--tint-danger-fg)' }}>
             {anomalies.toLocaleString()} anomal{anomalies === 1 ? 'y' : 'ies'}
           </span>
@@ -210,8 +210,8 @@ function RiskFactors({ factors }: { factors: RiskFactor[] }) {
                 +{contribution.toLocaleString()}
               </span>
             </div>
-            <div style={{ height: 8, background: 'var(--border-light)', borderRadius: 4, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${pct}%`, background: 'var(--primary)', borderRadius: 4,
+            <div style={{ height: 8, background: 'var(--border-light)', borderRadius: 'var(--radius-pill)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${pct}%`, background: 'var(--primary)', borderRadius: 'var(--radius-pill)',
                 transition: 'width 0.3s ease' }} />
             </div>
           </div>
@@ -265,7 +265,7 @@ function ActivityTrend({ trend, loading }: { trend: Trend | null; loading: boole
               axisLine={{ stroke: 'var(--border)' }} tickLine={false} interval="preserveStartEnd" />
             <YAxis tick={{ fontSize: 'var(--text-xs)', fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
             <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)',
-              borderRadius: 6, fontSize: 'var(--text-xs)', color: 'var(--text-primary)' }} />
+              borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)', color: 'var(--text-primary)' }} />
             {markerDays.map((d, i) => (
               <ReferenceLine key={i} x={d} stroke="var(--tint-danger-fg)" strokeDasharray="2 2" strokeOpacity={0.7} />
             ))}
@@ -291,6 +291,7 @@ function ActivityTrend({ trend, loading }: { trend: Trend | null; loading: boole
 function LegendDot({ color, label, dashed }: { color: string; label: string; dashed?: boolean }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      {/* intentional: 2px on an 8x8 legend swatch — var(--radius-sm) (6px) would round it into a circle */}
       <span style={{ width: dashed ? 12 : 8, height: dashed ? 0 : 8, borderRadius: dashed ? 0 : 2,
         background: dashed ? 'transparent' : color,
         borderTop: dashed ? `2px dashed ${color}` : undefined, display: 'inline-block' }} />
@@ -308,7 +309,7 @@ function RecentAnomalies({ anomalies }: { anomalies: RecentAnomaly[] }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {anomalies.map((a, i) => (
         <div key={a.id ?? i} style={{ padding: '10px 12px', background: 'var(--bg-primary)',
-          border: '1px solid var(--border)', borderRadius: 8 }}>
+          border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
             <SevBadge label={sevLabel(a.severity ?? '')} />
             <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 600 }}>
@@ -316,7 +317,7 @@ function RecentAnomalies({ anomalies }: { anomalies: RecentAnomaly[] }) {
             </span>
             <span style={{ flex: 1 }} />
             {a.acknowledged && (
-              <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, padding: '1px 7px', borderRadius: 8,
+              <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, padding: '1px 7px', borderRadius: 'var(--radius-pill)',
                 background: 'var(--tint-success)', color: 'var(--tint-success-fg)' }}>
                 ✓ Acknowledged
               </span>
@@ -366,8 +367,8 @@ function EventsSummaryPane({ summary }: { summary: EventsSummary | null }) {
                     {count.toLocaleString()}
                   </span>
                 </div>
-                <div style={{ height: 6, background: 'var(--border-light)', borderRadius: 3, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: 'var(--text-muted)', borderRadius: 3 }} />
+                <div style={{ height: 6, background: 'var(--border-light)', borderRadius: 'var(--radius-pill)', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: 'var(--text-muted)', borderRadius: 'var(--radius-pill)' }} />
                 </div>
               </div>
             );
@@ -380,7 +381,7 @@ function EventsSummaryPane({ summary }: { summary: EventsSummary | null }) {
 
 function SummaryStat({ label, value, danger, mono }: { label: string; value: string; danger?: boolean; mono?: boolean }) {
   return (
-    <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+    <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '10px 12px' }}>
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 4, fontWeight: 600,
         textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</div>
       <div style={{ fontSize: mono ? 'var(--text-sm)' : 'var(--text-lg)', fontWeight: 700,
@@ -448,7 +449,7 @@ function ProfilePane({ entity, profile, trend, loading, trendLoading, error, ope
           display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-              <span style={{ fontSize: 'var(--text-xs)', padding: '1px 7px', borderRadius: 4, fontWeight: 600,
+              <span style={{ fontSize: 'var(--text-xs)', padding: '1px 7px', borderRadius: 'var(--radius-sm)', fontWeight: 600,
                 background: 'rgba(255,255,255,0.12)', color: '#cbd5e1', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
                 {typeLabel(entity.type)}
               </span>
@@ -473,7 +474,7 @@ function ProfilePane({ entity, profile, trend, loading, trendLoading, error, ope
             </div>
             {filter && (
               <button onClick={() => openExplorer(filter)}
-                style={{ padding: '8px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
                   background: 'var(--primary)', color: '#fff', fontSize: 'var(--text-sm)', fontWeight: 600, whiteSpace: 'nowrap' }}>
                 View logs →
               </button>
@@ -601,15 +602,15 @@ export default function EntityProfile({ hours, openExplorer }: {
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
         {/* ── Master list (left) ── */}
         <div style={{ width: 320, flexShrink: 0, background: 'var(--bg-card)', border: '1px solid var(--border)',
-          borderRadius: 10, overflow: 'hidden', alignSelf: 'stretch' }}>
+          borderRadius: 'var(--radius)', overflow: 'hidden', alignSelf: 'stretch' }}>
           {/* Sticky opaque header */}
           <div style={{ position: 'sticky', top: 72, zIndex: 5, background: 'var(--bg-card)',
             borderBottom: '1px solid var(--border)', padding: 12 }}>
             <div style={{ display: 'flex', gap: 3, marginBottom: 10, background: 'var(--bg-primary)',
-              border: '1px solid var(--border)', borderRadius: 8, padding: 3, flexWrap: 'wrap' }}>
+              border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 3, flexWrap: 'wrap' }}>
               {TYPE_TABS.map(t => (
                 <button key={t.id} onClick={() => setTypeFilter(t.id)}
-                  style={{ flex: 1, minWidth: 60, padding: '5px 8px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                  style={{ flex: 1, minWidth: 60, padding: '5px 8px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
                     fontSize: 'var(--text-xs)', fontWeight: typeFilter === t.id ? 700 : 500,
                     background: typeFilter === t.id ? 'var(--primary)' : 'transparent',
                     color: typeFilter === t.id ? '#fff' : 'var(--text-muted)', transition: 'all 0.12s' }}>
@@ -621,7 +622,7 @@ export default function EntityProfile({ hours, openExplorer }: {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search entities…"
-              style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', borderRadius: 6,
+              style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', borderRadius: 'var(--radius-sm)',
                 border: '1px solid var(--border)', background: 'var(--bg-primary)', color: 'var(--text-primary)',
                 fontSize: 'var(--text-sm)' }} />
           </div>

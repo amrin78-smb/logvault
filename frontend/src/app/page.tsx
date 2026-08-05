@@ -279,7 +279,7 @@ export default function Home() {
             return (
               <button key={t.id} onClick={() => setTab(t.id)} title={collapsed ? t.label : undefined}
                 style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12,
-                  padding: collapsed ? '11px 0' : '11px 20px', margin: '1px 10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                  padding: collapsed ? '11px 0' : '11px 20px', margin: '1px 10px', borderRadius: 'var(--radius)', border: 'none', cursor: 'pointer',
                   justifyContent: collapsed ? 'center' : 'flex-start',
                   background: active ? 'rgba(200,16,46,0.15)' : 'transparent',
                   fontSize: 'var(--text-md)', fontWeight: active ? 600 : 500,
@@ -287,8 +287,9 @@ export default function Home() {
                   textAlign: 'left', transition: 'all 0.15s' }}
                 onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; }}
                 onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
+                {/* intentional: 2px on a 3x20 decorative accent sliver — a token radius would swallow it */}
                 {active && <span style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 3, height: 20, borderRadius: '0 2px 2px 0', background: 'var(--primary)' }} />}
-                <span style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s', background: active ? chip.bg : 'rgba(255,255,255,0.07)', color: active ? chip.color : 'rgba(255,255,255,0.45)' }}>{Icons[t.id]}</span>
+                <span style={{ width: 28, height: 28, borderRadius: 'var(--radius)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s', background: active ? chip.bg : 'rgba(255,255,255,0.07)', color: active ? chip.color : 'rgba(255,255,255,0.45)' }}>{Icons[t.id]}</span>
                 {!collapsed && t.label}
               </button>
             );
@@ -297,9 +298,10 @@ export default function Home() {
           {!collapsed && <div style={{ margin: '14px 16px 10px', borderTop: '1px solid rgba(255,255,255,0.08)' }} />}
 
           {health && !collapsed && (
-            <div style={{ margin: '12px 14px', padding: '8px 12px', background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 10 }}>
+            <div style={{ margin: '12px 14px', padding: '8px 12px', background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 'var(--radius)' }}>
               <div style={{ fontSize: 'var(--text-xs)', color: 'rgba(255,255,255,0.35)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700 }}>Ingestion</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                {/* intentional: 50% keeps the ingestion status dot circular */}
                 <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 5px #22c55e' }} />
                 <span style={{ fontSize: 'var(--text-sm)', color: '#22c55e', fontWeight: 600 }}>{health.logs_last_hour.toLocaleString()}</span>
                 <span style={{ fontSize: 'var(--text-xs)', color: '#4ade80' }}>logs/hr</span>
@@ -314,7 +316,7 @@ export default function Home() {
             style={{ display: 'flex', alignItems: 'center', gap: 10,
               justifyContent: collapsed ? 'center' : 'flex-start',
               margin: '4px 10px', padding: collapsed ? '10px 0' : '10px 12px',
-              background: 'transparent', border: 'none', borderRadius: 10, cursor: 'pointer',
+              background: 'transparent', border: 'none', borderRadius: 'var(--radius)', cursor: 'pointer',
               color: 'rgba(255,255,255,0.4)', fontSize: 'var(--text-sm)', transition: 'all 0.15s' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; (e.currentTarget as HTMLElement).style.color = '#ffffff'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)'; }}>
@@ -374,7 +376,7 @@ export default function Home() {
                       animation: kpiFlash ? 'kpiFlash 0.6s ease' : 'none' }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
                       <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 800, letterSpacing: '-0.5px', lineHeight: 1.1, color: kpi.valueColor }}>{kpi.value}</div>
-                      <div style={{ width: 32, height: 32, borderRadius: 9, flexShrink: 0, color: kpi.accent,
+                      <div style={{ width: 32, height: 32, borderRadius: 'var(--radius)', flexShrink: 0, color: kpi.accent,
                         background: `color-mix(in srgb, ${kpi.accent} 13%, transparent)`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{kpi.icon}</div>
                     </div>

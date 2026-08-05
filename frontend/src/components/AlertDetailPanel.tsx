@@ -167,11 +167,11 @@ export default function AlertDetailPanel({ alert, onClose, onAcknowledge }: Prop
                 {ruleName || 'Alert'}
               </span>
               {isCorrelation && (
-                <span style={{ fontSize: 'var(--text-xs)', padding: '1px 5px', borderRadius: 4,
+                <span style={{ fontSize: 'var(--text-xs)', padding: '1px 5px', borderRadius: 'var(--radius-sm)',
                   background: 'var(--tint-info)', color: 'var(--tint-info-fg)',
                   border: '1px solid var(--tint-info)', fontWeight: 600 }}>CORR</span>
               )}
-              <span style={{ padding: '2px 9px', borderRadius: 16, fontSize: 'var(--text-xs)', fontWeight: 700,
+              <span style={{ padding: '2px 9px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)', fontWeight: 700,
                 background: headerTint.bg, color: headerTint.color }}>
                 {acked ? 'Acknowledged' : 'Active'}
               </span>
@@ -193,7 +193,7 @@ export default function AlertDetailPanel({ alert, onClose, onAcknowledge }: Prop
           </div>
           <button onClick={onClose}
             style={{ background: 'rgba(255,255,255,0.1)', border: 'none', cursor: 'pointer',
-              color: '#94a3b8', fontSize: 'var(--text-lg)', width: 28, height: 28, borderRadius: 6,
+              color: '#94a3b8', fontSize: 'var(--text-lg)', width: 28, height: 28, borderRadius: 'var(--radius-sm)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             ×
           </button>
@@ -207,7 +207,7 @@ export default function AlertDetailPanel({ alert, onClose, onAcknowledge }: Prop
             <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-muted)',
               textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Summary</div>
             <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)',
-              borderRadius: 8, padding: '0 12px' }}>
+              borderRadius: 'var(--radius)', padding: '0 12px' }}>
               <Field label="Fired at"   value={firedAt ? new Date(firedAt).toLocaleString() : ''} />
               <Field label="Source"     value={sourceDisplay} mono />
               {showReportingDevice && <Field label="Reporting device" value={sourceHost} mono />}
@@ -226,7 +226,7 @@ export default function AlertDetailPanel({ alert, onClose, onAcknowledge }: Prop
               <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-muted)',
                 textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Sample Message</div>
               <div style={{ padding: 12, background: 'var(--bg-primary)', border: '1px solid var(--border)',
-                borderRadius: 8, fontSize: 'var(--text-sm)', color: 'var(--text-primary)', lineHeight: 1.6,
+                borderRadius: 'var(--radius)', fontSize: 'var(--text-sm)', color: 'var(--text-primary)', lineHeight: 1.6,
                 wordBreak: 'break-all', fontFamily: 'var(--font-mono)' }}>
                 {sampleMsg}
               </div>
@@ -243,7 +243,7 @@ export default function AlertDetailPanel({ alert, onClose, onAcknowledge }: Prop
               <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', padding: 12 }}>Loading...</div>
             ) : logs.length === 0 ? (
               <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', padding: 12,
-                background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 8 }}>
+                background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
                 No matching logs found in the window
               </div>
             ) : (
@@ -254,13 +254,13 @@ export default function AlertDetailPanel({ alert, onClose, onAcknowledge }: Prop
                     <div key={lg?.id ?? i} onClick={() => setSelectedLog(lg)}
                       title="Open log detail"
                       style={{ padding: '8px 12px', background: 'var(--bg-primary)', cursor: 'pointer',
-                        border: '1px solid var(--border)', borderRadius: 8, transition: 'background 0.12s' }}
+                        border: '1px solid var(--border)', borderRadius: 'var(--radius)', transition: 'background 0.12s' }}
                       onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'var(--surface-subtle)'; }}
                       onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-primary)'; }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3, flexWrap: 'wrap' }}>
                         {lg?.severity_label && (
                           <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, textTransform: 'uppercase',
-                            padding: '0 6px', borderRadius: 4, color: sev.color, background: sev.bg }}>
+                            padding: '0 6px', borderRadius: 'var(--radius-sm)', color: sev.color, background: sev.bg }}>
                             {lg.severity_label}
                           </span>
                         )}
@@ -294,7 +294,7 @@ export default function AlertDetailPanel({ alert, onClose, onAcknowledge }: Prop
           ) : (
             <>
               <button onClick={() => { onAcknowledge(alert.id); setAcked(true); }}
-                style={{ padding: '8px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
                   background: 'var(--primary)', color: '#fff', fontSize: 'var(--text-sm)', fontWeight: 600 }}>
                 Acknowledge
               </button>

@@ -5,7 +5,7 @@ import {PageHeader, TableSkeleton, CardSkeleton, EmptyState, PagedTableBody } fr
 import TimeRangePicker from './TimeRangePicker';
 
 // ── Shared styles ─────────────────────────────────────────────
-const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 };
+const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16 };
 const TH    = { padding: '8px 12px', textAlign: 'left' as const, color: 'var(--text-muted)', fontWeight: 600, fontSize: 'var(--text-xs)' };
 const TD    = { padding: '9px 12px', fontSize: 'var(--text-sm)' };
 const MONO  = { fontFamily: 'var(--font-mono)' };
@@ -23,7 +23,7 @@ function SevBadge({ label }: { label: string }) {
   };
   const style = s[label] || s.info;
   return (
-    <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 'var(--text-xs)', fontWeight: 700,
+    <span style={{ padding: '2px 7px', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)', fontWeight: 700,
       background: style.bg, color: style.color, border: `1px solid ${style.border}`,
       textTransform: 'uppercase', letterSpacing: '0.4px' }}>
       {label}
@@ -41,7 +41,7 @@ function StatusPill({ value, label, warn = 1, danger = 5, inverse = false }: {
     else if (value >= warn) { bg = 'var(--tint-warn)'; color = 'var(--tint-warn-fg)'; border = 'var(--tint-warn)'; }
   }
   return (
-    <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 8,
+    <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 'var(--radius)',
       padding: '14px 16px', textAlign: 'center' as const }}>
       <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 4, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</div>
@@ -74,7 +74,7 @@ function SubcatBadge({ sub }: { sub: string }) {
   };
   const s = map[sub] || { color: 'var(--text-muted)', bg: 'var(--surface-subtle)', label: sub };
   return (
-    <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)', fontWeight: 600,
+    <span style={{ padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)', fontWeight: 600,
       color: s.color, background: s.bg, border: `1px solid ${s.bg}` }}>
       {s.label}
     </span>
@@ -156,22 +156,22 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
 
       {/* Section nav */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--bg-card)',
-        border: '1px solid var(--border)', borderRadius: 8, padding: 6, flexWrap: 'wrap' }}>
+        border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 6, flexWrap: 'wrap' }}>
         {SECTIONS.map(s => (
           <button key={s.id} onClick={() => setActiveSection(s.id)}
-            style={{ padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
+            style={{ padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
               fontSize: 'var(--text-sm)', fontWeight: activeSection === s.id ? 600 : 400,
               background: activeSection === s.id ? '#1a202c' : 'transparent',
               color: activeSection === s.id ? '#fff' : 'var(--text-muted)',
               display: 'flex', alignItems: 'center', gap: 5, transition: 'all 0.15s' }}>
             {s.alert && activeSection !== s.id && (
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#dc2626',
+              <span style={{ width: 7, height: 7, borderRadius: '50%', /* intentional: circular alert dot, never squares */ background: '#dc2626',
                 display: 'inline-block', boxShadow: '0 0 4px #dc2626' }} />
             )}
             {s.label}
           </button>
         ))}
-        <button onClick={fetchAll} style={{ marginLeft: 'auto', padding: '6px 12px', borderRadius: 6,
+        <button onClick={fetchAll} style={{ marginLeft: 'auto', padding: '6px 12px', borderRadius: 'var(--radius-sm)',
           border: '1px solid var(--border)', cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--surface-subtle)', color: 'var(--text-muted)' }}>
           ↻ Refresh
         </button>
@@ -201,7 +201,7 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
 
               {/* Loop/STP warning banner */}
               {(summary.mac_flap_events > 0 || summary.stp_loop_events > 0) && (
-                <div style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 8,
+                <div style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 'var(--radius)',
                   padding: '14px 20px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontSize: 'var(--text-xl)' }}>⚠️</span>
                   <div>
@@ -215,7 +215,7 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                     </div>
                   </div>
                   <button onClick={() => setActiveSection('stp')}
-                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 6, border: '1px solid var(--tint-danger)',
+                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--tint-danger)',
                       cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--bg-card)', color: 'var(--tint-danger-fg)' }}>
                     Investigate →
                   </button>
@@ -224,7 +224,7 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
 
               {/* Config changes warning */}
               {summary.config_changes > 0 && (
-                <div style={{ background: 'var(--tint-warn)', border: '1px solid var(--tint-warn)', borderRadius: 8,
+                <div style={{ background: 'var(--tint-warn)', border: '1px solid var(--tint-warn)', borderRadius: 'var(--radius)',
                   padding: '14px 20px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontSize: 'var(--text-xl)' }}>🔧</span>
                   <div>
@@ -236,7 +236,7 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                     </div>
                   </div>
                   <button onClick={() => setActiveSection('config')}
-                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 6, border: '1px solid var(--tint-warn)',
+                    style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--tint-warn)',
                       cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--bg-card)', color: 'var(--tint-warn-fg)' }}>
                     Review →
                   </button>
@@ -257,9 +257,9 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                     const dot     = silent ? '#dc2626'  : warning ? '#ca8a04'  : '#16a34a';
                     return (
                       <div key={i} style={{ background: bg, border: `1px solid ${border}`,
-                        borderRadius: 8, padding: '10px 14px' }}>
+                        borderRadius: 'var(--radius)', padding: '10px 14px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
-                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: dot,
+                          <div style={{ width: 8, height: 8, borderRadius: '50%', /* intentional: circular status dot, never squares */ background: dot,
                             boxShadow: silent ? 'none' : `0 0 5px ${dot}`, flexShrink: 0 }} />
                           <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)',
                             ...MONO, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -273,12 +273,12 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                         {(parseInt(d.critical_24h) > 0 || parseInt(d.error_24h) > 0) && (
                           <div style={{ marginTop: 6, display: 'flex', gap: 4 }}>
                             {parseInt(d.critical_24h) > 0 && (
-                              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '1px 5px', borderRadius: 8 }}>
+                              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)', padding: '1px 5px', borderRadius: 'var(--radius)' }}>
                                 {d.critical_24h} crit
                               </span>
                             )}
                             {parseInt(d.error_24h) > 0 && (
-                              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--tint-warn-fg)', background: 'var(--tint-warn)', padding: '1px 5px', borderRadius: 8 }}>
+                              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--tint-warn-fg)', background: 'var(--tint-warn)', padding: '1px 5px', borderRadius: 'var(--radius)' }}>
                                 {d.error_24h} err
                               </span>
                             )}
@@ -320,7 +320,7 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                       <tr key={i} style={{ borderBottom: '1px solid var(--border-light)',
                         background: silent ? 'var(--tint-danger)' : warn ? 'var(--tint-warn)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
                         <td style={TD}>
-                          <div style={{ width: 10, height: 10, borderRadius: '50%', background: dot,
+                          <div style={{ width: 10, height: 10, borderRadius: '50%', /* intentional: circular status dot, never squares */ background: dot,
                             boxShadow: silent ? 'none' : `0 0 5px ${dot}` }} />
                         </td>
                         <td style={{ ...TD, ...MONO, fontWeight: 500, color: 'var(--text-primary)' }}>{d.host}</td>
@@ -366,7 +366,7 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                           <td style={{ ...TD }}>
                             <span style={{ fontWeight: 700, color: parseInt(f.event_count) >= 6 ? 'var(--tint-danger-fg)' : 'var(--text-secondary)',
                               background: parseInt(f.event_count) >= 6 ? 'var(--tint-danger)' : 'var(--border-light)',
-                              padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)' }}>
+                              padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)' }}>
                               {f.event_count}
                             </span>
                           </td>
@@ -425,7 +425,7 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                 </div>
               ) : (
                 <>
-                  <div style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 8,
+                  <div style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 'var(--radius)',
                     padding: '12px 16px', marginBottom: 16, fontSize: 'var(--text-sm)', color: 'var(--tint-danger-fg)' }}>
                     <strong>⚠️ {stpEvents.length} STP/loop event(s) detected.</strong> Topology changes can cause temporary network outages.
                     MAC flapping (if present) indicates an active loop. Isolate the affected switch port immediately.
@@ -470,7 +470,7 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                 </div>
               ) : (
                 <>
-                  <div style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 8,
+                  <div style={{ background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)', borderRadius: 'var(--radius)',
                     padding: '12px 16px', marginBottom: 16, fontSize: 'var(--text-sm)', color: 'var(--tint-danger-fg)' }}>
                     <strong>🔴 Active loop suspected.</strong> MAC flapping means the same MAC address is being seen on multiple switch ports simultaneously.
                     This happens when frames are looping through the network. Identify the affected switch and ports, then disable the offending port.
@@ -488,7 +488,7 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                           <td style={{ ...TD, ...MONO, color: '#dc2626', fontWeight: 700 }}>{r.mac_address || '—'}</td>
                           <td style={TD}>
                             <span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)', background: 'var(--tint-danger)',
-                              padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-sm)' }}>
+                              padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-sm)' }}>
                               {r.flap_count}
                             </span>
                           </td>

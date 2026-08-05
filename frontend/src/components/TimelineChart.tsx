@@ -34,7 +34,7 @@ export default function TimelineChart({ hours, compact }: { hours: number; compa
   const hasData = data.some(d => Object.keys(d).some(k => k !== 'time' && k !== '_ts' && (d[k] || 0) > 0));
 
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
       padding: '12px 14px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 1, flexShrink: 0 }}>Log Volume Over Time</div>
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 6, flexShrink: 0 }}>Ingestion rate — last {hours}h</div>
@@ -49,7 +49,7 @@ export default function TimelineChart({ hours, compact }: { hours: number; compa
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
               <XAxis dataKey="time" tick={{ fontSize: 'var(--text-xs)', fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border)' }} tickLine={false} interval="preserveStartEnd" />
               <YAxis tick={{ fontSize: 'var(--text-xs)', fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
-              <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 'var(--text-xs)' }}
+              <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)' }}
                 formatter={(v: any, n: any) => [v + ' logs', n]} />
               {Object.entries(SEV_COLORS).map(([sev, color]) => (
                 <Area key={sev} type="monotone" dataKey={sev} stackId="1"
@@ -62,6 +62,7 @@ export default function TimelineChart({ hours, compact }: { hours: number; compa
       <div style={{ display: 'flex', gap: 8, marginTop: 5, justifyContent: 'center', flexShrink: 0 }}>
         {Object.entries(SEV_COLORS).map(([sev, color]) => (
           <div key={sev} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            {/* intentional: 1px on a 6x6 severity legend swatch — a 6px token radius would render it as a circle */}
             <div style={{ width: 6, height: 6, borderRadius: 1, background: color }} />
             <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{sev}</span>
           </div>

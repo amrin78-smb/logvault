@@ -25,20 +25,20 @@ interface Settings {
   abuseipdb_api_key:         string;
 }
 
-const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 20, boxShadow: 'var(--shadow-sm)' };
+const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 20, boxShadow: 'var(--shadow-sm)' };
 // A handful of fields shouldn't sit inside a panel stretched to the full page
 // width — it reads as a mostly-empty container. Caps a panel to a sane form
 // width; matches SETTINGS_ROW's own cap below so every panel in this file
 // shares one left-aligned column instead of some being capped and others not.
 const PANEL_NARROW = { ...CARD, maxWidth: 860 };
 const LABEL = { fontSize: 'var(--text-base)', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6, display: 'block' as const };
-const INPUT = { width: '100%', padding: '9px 12px', borderRadius: 6, border: '1px solid var(--border)',
+const INPUT = { width: '100%', padding: '9px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
   background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-md)', outline: 'none',
   boxSizing: 'border-box' as const };
 // Short/medium fixed-width variants of INPUT for fields whose values are inherently short
 // (port numbers, IPs, hour-of-day, masked passwords) -- prevents them from stretching to
 // fill an ad hoc grid cell (e.g. the SMTP Port field, previously unbounded, filling a 1fr column).
-const INPUT_SM = { padding: '9px 12px', borderRadius: 6, border: '1px solid var(--border)',
+const INPUT_SM = { padding: '9px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
   background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-md)', outline: 'none',
   boxSizing: 'border-box' as const, maxWidth: 140 };
 const INPUT_MD = { ...INPUT_SM, maxWidth: 220 };
@@ -54,7 +54,7 @@ const ROW_COMPACT = { display: 'flex', flexWrap: 'wrap' as const, gap: '16px 32p
 // alone. The aside sticks just below the fixed 72px header while its (often
 // taller) neighboring panel scrolls.
 const SETTINGS_ROW = { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 20, alignItems: 'start' as const, maxWidth: 1180 };
-const INFO_CARD = { background: 'var(--tint-info)', border: '1px solid var(--border)', borderRadius: 8,
+const INFO_CARD = { background: 'var(--tint-info)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
   padding: '16px 18px', position: 'sticky' as const, top: 72 };
 const INFO_CARD_TITLE = { margin: '0 0 12px', fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--tint-info-fg)' };
 const INFO_CARD_DT = { fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--text-primary)', marginTop: 12 };
@@ -343,7 +343,7 @@ function UpdateOverlay() {
     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.5)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <style>{'@keyframes lv-spin { to { transform: rotate(360deg); } }'}</style>
-      <div style={{ background: 'var(--bg-card)', borderRadius: 8, boxShadow: 'var(--shadow-md)',
+      <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-md)',
         padding: 40, maxWidth: 480, width: '100%', textAlign: 'center' }}>
         {spinning && (
           <div style={{ fontSize: 44, lineHeight: 1, display: 'inline-block',
@@ -374,7 +374,7 @@ function UpdateOverlay() {
           <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>(This usually takes 1-3 minutes)</p>
         )}
         <button onClick={showCountdownNumber ? () => { window.location.href = '/?updated=true'; } : () => window.location.reload()}
-          style={{ marginTop: 10, padding: '9px 22px', borderRadius: 6, border: 'none',
+          style={{ marginTop: 10, padding: '9px 22px', borderRadius: 'var(--radius-sm)', border: 'none',
             background: phase === 'rollback_failed' ? '#dc2626' : 'var(--primary)', color: '#fff',
             fontSize: 'var(--text-base)', fontWeight: 600, cursor: 'pointer' }}>
           {phase === 'rollback_failed' ? 'Reload Anyway' : 'Reload Now'}
@@ -640,7 +640,9 @@ export default function Settings() {
             {t.label}
             {t.id === 'updates' && updateAvail && (
               <span title="Update available"
-                style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
+                style={{ display: 'inline-block', width: 7, height: 7,
+                  // intentional: 50% keeps the 7x7 update-available status dot a circle
+                  borderRadius: '50%',
                   background: '#dc2626', marginLeft: 6, verticalAlign: 'middle' }} />
             )}
           </button>
@@ -704,7 +706,7 @@ export default function Settings() {
             {/* Enrichment stats */}
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 16,
               background: knownBadCount && knownBadCount > 0 ? 'var(--tint-danger)' : 'var(--surface-subtle)',
-              border: '1px solid var(--border)', borderRadius: 8, padding: '8px 14px' }}>
+              border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '8px 14px' }}>
               <span style={{ fontSize: 'var(--text-lg)', fontWeight: 700,
                 color: knownBadCount && knownBadCount > 0 ? 'var(--tint-danger-fg)' : 'var(--text-primary)' }}>
                 {knownBadCount === null ? '—' : knownBadCount.toLocaleString()}
@@ -717,7 +719,7 @@ export default function Settings() {
 
           {/* Save */}
           <button onClick={save} disabled={saving}
-            style={{ padding: '10px 28px', borderRadius: 6, border: 'none', cursor: 'pointer',
+            style={{ padding: '10px 28px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
               fontSize: 'var(--text-base)', fontWeight: 600, background: 'var(--primary)', color: '#fff',
               opacity: saving ? 0.7 : 1, transition: 'all 0.15s' }}>
             {saving ? 'Saving...' : 'Save Settings'}
@@ -805,7 +807,7 @@ export default function Settings() {
               {parseEmails(settings.email_notify_recipients).map(email => (
                 <span key={email}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--bg-hover)',
-                    border: '1px solid var(--border)', borderRadius: 14, padding: '4px 10px',
+                    border: '1px solid var(--border)', borderRadius: 'var(--radius-pill)', padding: '4px 10px',
                     fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
                   {email}
                   <button onClick={() => removeRecipient(email)}
@@ -850,6 +852,7 @@ export default function Settings() {
                       checked={parseArr(settings.email_notify_severities).includes(o.value)}
                       onChange={() => toggleInArr('email_notify_severities', o.value)}
                       style={{ cursor: 'pointer', width: 15, height: 15 }} />
+                    {/* intentional: 50% keeps the 8x8 severity swatch a circle */}
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: o.color, display: 'inline-block' }} />
                     <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{o.label}</span>
                   </label>
@@ -911,7 +914,7 @@ export default function Settings() {
                       onChange={e => setSettings(s => ({ ...s, email_notify_min_risk: String(e.target.value) }))}
                       style={{ flex: 1, maxWidth: 320, cursor: 'pointer' }} />
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px',
-                      borderRadius: 14, background: b.bg, color: b.fg, fontSize: 'var(--text-sm)', fontWeight: 600 }}>
+                      borderRadius: 'var(--radius-pill)', background: b.bg, color: b.fg, fontSize: 'var(--text-sm)', fontWeight: 600 }}>
                       {v} · {b.label}
                     </span>
                   </div>
@@ -987,7 +990,7 @@ export default function Settings() {
 
           {/* Shared Save (SMTP + recipients + filters + delivery) */}
           <button onClick={save} disabled={saving}
-            style={{ padding: '10px 28px', borderRadius: 6, border: 'none', cursor: 'pointer',
+            style={{ padding: '10px 28px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
               fontSize: 'var(--text-base)', fontWeight: 600, background: 'var(--primary)', color: '#fff',
               opacity: saving ? 0.7 : 1, transition: 'all 0.15s', marginBottom: 16 }}>
             {saving ? 'Saving...' : 'Save Settings'}
@@ -1023,7 +1026,7 @@ export default function Settings() {
                         )}
                       </div>
                       <button onClick={() => saveRuleEmail(rule.id)} disabled={savingRule === rule.id}
-                        style={{ padding: '9px 18px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer',
+                        style={{ padding: '9px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', cursor: 'pointer',
                           fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--bg-input)', color: 'var(--text-primary)',
                           opacity: savingRule === rule.id ? 0.7 : 1, whiteSpace: 'nowrap' }}>
                         {savingRule === rule.id ? 'Saving...' : 'Save'}
@@ -1049,7 +1052,7 @@ export default function Settings() {
                   placeholder="you@example.com" />
               </div>
               <button onClick={sendTest} disabled={testing}
-                style={{ padding: '9px 20px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer',
+                style={{ padding: '9px 20px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', cursor: 'pointer',
                   fontSize: 'var(--text-sm)', fontWeight: 600, background: 'var(--bg-input)', color: 'var(--text-primary)',
                   opacity: testing ? 0.7 : 1, whiteSpace: 'nowrap' }}>
                 {testing ? 'Sending...' : 'Send Test'}
@@ -1061,7 +1064,7 @@ export default function Settings() {
               </div>
             ) : (
               <div style={{ background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.3)',
-                borderRadius: 8, padding: '10px 14px', marginTop: 12, fontSize: 'var(--text-sm)', color: '#b45309' }}>
+                borderRadius: 'var(--radius)', padding: '10px 14px', marginTop: 12, fontSize: 'var(--text-sm)', color: '#b45309' }}>
                 No global recipients configured — alerts will only go to per-rule recipients.
               </div>
             )}
@@ -1081,7 +1084,7 @@ export default function Settings() {
                 {updateStatus?.error}
               </div>
               <button onClick={checkUpdate}
-                style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)',
+                style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                   background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)',
                   fontWeight: 600, cursor: 'pointer' }}>
                 Re-check
@@ -1098,7 +1101,7 @@ export default function Settings() {
                 </div>
               )}
               <button onClick={checkUpdate}
-                style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)',
+                style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                   background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)',
                   fontWeight: 600, cursor: 'pointer' }}>
                 Re-check
@@ -1143,19 +1146,19 @@ export default function Settings() {
               )}
 
               <div style={{ background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.3)',
-                borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 'var(--text-sm)', color: '#b45309' }}>
+                borderRadius: 'var(--radius)', padding: '10px 14px', marginBottom: 16, fontSize: 'var(--text-sm)', color: '#b45309' }}>
                 ⚠ Services will restart during the update — you may lose connection for 30–60 seconds.
               </div>
 
               <div style={{ display: 'flex', gap: 10 }}>
                 <button onClick={() => setShowConfirmModal(true)} disabled={updating}
-                  style={{ padding: '9px 22px', borderRadius: 6, border: 'none',
+                  style={{ padding: '9px 22px', borderRadius: 'var(--radius-sm)', border: 'none',
                     cursor: updating ? 'default' : 'pointer', opacity: updating ? 0.6 : 1,
                     fontSize: 'var(--text-base)', fontWeight: 600, background: 'var(--primary)', color: '#fff' }}>
                   Update Now
                 </button>
                 <button onClick={checkUpdate}
-                  style={{ padding: '9px 18px', borderRadius: 6, border: '1px solid var(--border)',
+                  style={{ padding: '9px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                     background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-base)',
                     fontWeight: 600, cursor: 'pointer' }}>
                   Re-check
@@ -1181,7 +1184,7 @@ export default function Settings() {
             </div>
           ) : (
             <button onClick={checkUpdate}
-              style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)',
+              style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                 background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)',
                 fontWeight: 600, cursor: 'pointer' }}>
               Check for Updates
@@ -1196,7 +1199,7 @@ export default function Settings() {
           style={{ position: 'fixed', inset: 0, zIndex: 9998, background: 'rgba(0,0,0,0.5)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div onMouseDown={e => e.stopPropagation()}
-            style={{ background: 'var(--bg-card)', borderRadius: 8, width: '100%', maxWidth: 460,
+            style={{ background: 'var(--bg-card)', borderRadius: 'var(--radius)', width: '100%', maxWidth: 460,
               overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.12)' }}>
             <div style={{ background: '#1a2744', color: '#fff', padding: '14px 20px', fontSize: 'var(--text-md)', fontWeight: 700 }}>
               Start Update?
@@ -1207,13 +1210,13 @@ export default function Settings() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button onClick={() => setShowConfirmModal(false)}
-                  style={{ padding: '9px 18px', borderRadius: 6, border: '1px solid var(--border)',
+                  style={{ padding: '9px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                     background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-base)',
                     fontWeight: 600, cursor: 'pointer' }}>
                   Cancel
                 </button>
                 <button onClick={startUpdate}
-                  style={{ padding: '9px 22px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                  style={{ padding: '9px 22px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
                     fontSize: 'var(--text-base)', fontWeight: 600, background: 'var(--primary)', color: '#fff' }}>
                   Start Update
                 </button>

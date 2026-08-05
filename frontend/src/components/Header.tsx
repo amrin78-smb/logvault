@@ -3,6 +3,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTheme } from './ThemeContext';
 import { useSession } from 'next-auth/react';
 import { getHubUrl } from '@/lib/publicUrl';
+import CornersToggle from './CornersToggle';
 
 // Manual CSRF sign-out — clears the NextAuth session then returns to the hub
 // login. Do NOT use the next-auth signOut helper (breaks the SSO cookie flow).
@@ -87,6 +88,7 @@ function SearchRow({ dot, primary, secondary, meta, onClick }: {
       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--surface-subtle)'; }}
       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
     >
+      {/* intentional: a true circle (result-type dot), deliberately not squared. */}
       <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot, flexShrink: 0 }} aria-hidden />
       <span style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{primary}</span>
       {secondary ? (
@@ -273,7 +275,7 @@ export default function Header() {
               if (e.key === 'Enter' && term.length >= 2) goExplorer({ q: term });
             }}
             placeholder="Search logs, hosts, alerts... (/)"
-            style={{ width: '100%', height: 38, padding: '0 34px 0 34px', borderRadius: 6,
+            style={{ width: '100%', height: 38, padding: '0 34px 0 34px', borderRadius: 'var(--radius-sm)',
               border: '1px solid #2d3a52', background: 'rgba(255,255,255,0.04)', color: '#f1f5f9',
               fontSize: 'var(--text-base)', outline: 'none' }}
           />
@@ -291,7 +293,7 @@ export default function Header() {
               page behind it can't bleed through — suite dark-mode rule. */}
           {searchOpen && term.length >= 2 && (
             <div style={{ position: 'absolute', top: 44, left: 0, right: 0, zIndex: 300,
-              background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
+              background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
               boxShadow: '0 12px 32px rgba(0,0,0,0.28)', maxHeight: '70vh', overflowY: 'auto',
               paddingBottom: 4 }}>
 
@@ -377,7 +379,7 @@ export default function Header() {
           aria-label="View alerts"
           onClick={() => window.dispatchEvent(new CustomEvent('nocvault:navigate', { detail: { tab: 'alerts' } }))}
           style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: 38, height: 38, borderRadius: 8, background: 'transparent', border: 'none',
+            width: 38, height: 38, borderRadius: 'var(--radius)', background: 'transparent', border: 'none',
             cursor: 'pointer', transition: 'background 0.15s, transform 0.1s' }}
           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.1)'; }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
@@ -388,8 +390,10 @@ export default function Header() {
             <path d="M8 15a2 2 0 0 0 4 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
           </svg>
           {unacked > 0 && (
+            // pill: the old 8px was exactly half of this 16px-tall count badge (a capsule
+            // when it grows to "99+"), so it belongs to --radius-pill, not --radius.
             <span style={{ position: 'absolute', top: 0, right: 0, minWidth: 16, height: 16, padding: '0 4px',
-              borderRadius: 8, background: 'var(--primary)', color: '#fff', fontSize: 'var(--text-xs)', fontWeight: 700,
+              borderRadius: 'var(--radius-pill)', background: 'var(--primary)', color: '#fff', fontSize: 'var(--text-xs)', fontWeight: 700,
               display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>
               {unacked > 99 ? '99+' : unacked}
             </span>
@@ -399,7 +403,7 @@ export default function Header() {
         {/* Dark mode toggle */}
         <button onClick={toggle} aria-label="Toggle dark mode"
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 38, height: 38,
-            borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid #2d3a52',
+            borderRadius: 'var(--radius)', background: 'rgba(255,255,255,0.04)', border: '1px solid #2d3a52',
             cursor: 'pointer', color: '#94a3b8' }}>
           {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
         </button>
@@ -408,7 +412,9 @@ export default function Header() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6,
           background: collectorOnline ? 'rgba(34,197,94,0.12)' : 'rgba(148,163,184,0.12)',
           border: `1px solid ${collectorOnline ? 'rgba(34,197,94,0.25)' : 'rgba(148,163,184,0.25)'}`,
-          borderRadius: 20, padding: '5px 12px' }}>
+          borderRadius: 'var(--radius-pill)', padding: '5px 12px' }}>
+          {/* intentional: a true circle, not a corner radius — the status dot stays
+              round in both corner styles. */}
           <div style={{ width: 7, height: 7, borderRadius: '50%',
             background: collectorOnline ? '#22c55e' : '#94a3b8',
             boxShadow: collectorOnline ? '0 0 6px #22c55e' : 'none',
@@ -423,11 +429,12 @@ export default function Header() {
           <button
             onClick={() => setDropdownOpen(o => !o)}
             style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none',
-              border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 6,
+              border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 'var(--radius-sm)',
               transition: 'background 0.15s' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)'; }}
             onMouseLeave={e => { if (!dropdownOpen) (e.currentTarget as HTMLElement).style.background = 'none'; }}>
 
+            {/* intentional: a true circle (avatar), deliberately not squared. */}
             <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--primary)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 'var(--text-sm)', fontWeight: 700, color: '#fff', flexShrink: 0 }}>
@@ -438,7 +445,7 @@ export default function Header() {
                 {user?.name || user?.email?.split('@')[0] || 'User'}
               </div>
               <span style={{ display: 'inline-block', fontSize: 'var(--text-xs)', fontWeight: 700,
-                padding: '1px 7px', borderRadius: 6, background: roleBadge.bg, color: roleBadge.fg,
+                padding: '1px 7px', borderRadius: 'var(--radius-sm)', background: roleBadge.bg, color: roleBadge.fg,
                 textTransform: 'uppercase', letterSpacing: '0.4px', marginTop: 2 }}>
                 {roleBadge.label}
               </span>
@@ -451,7 +458,7 @@ export default function Header() {
 
           {dropdownOpen && (
             <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 1000,
-              background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
+              background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
               boxShadow: '0 1px 3px rgba(0,0,0,0.06)', minWidth: 230, overflow: 'hidden',
               animation: 'fadeIn 0.15s ease' }}>
 
@@ -489,6 +496,15 @@ export default function Header() {
                   {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
                   {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
                 </button>
+
+                {/* Corner style (rounded/square) — lives in this avatar dropdown
+                    alongside the other per-user display prefs, NOT in Settings, on
+                    purpose: the Settings tab is admin-only (role-gated in page.tsx),
+                    but this is a per-browser display preference with no server state,
+                    so every role must be able to reach it. It sits here rather than in
+                    the navy top bar because a segmented control doesn't belong in the
+                    bar, and the dropdown is where per-user preferences already live. */}
+                <CornersToggle />
 
                 <div style={{ height: 1, background: 'var(--border-light)', margin: '4px 0' }} />
 

@@ -118,7 +118,7 @@ function EventLine({ ev }: { ev: KillChainEvent }) {
   const source = (ev.srcip || '').replace('/32', '') || ev.source_host || '—';
   return (
     <div style={{ display: 'flex', gap: 10, padding: '8px 10px', background: 'var(--bg-primary)',
-      border: '1px solid var(--border)', borderRadius: 8 }}>
+      border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
       <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)',
         whiteSpace: 'nowrap', flexShrink: 0, paddingTop: 1, minWidth: 66 }}>
         {ev.ts ? new Date(ev.ts).toLocaleTimeString() : '—'}
@@ -149,6 +149,7 @@ function PhaseBlock({ phase, index, isLast }: { phase: Phase; index: number; isL
     <div style={{ display: 'flex', gap: 14 }}>
       {/* Rail: numbered node + connector line */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+        {/* intentional: 50% keeps the numbered phase node a circle */}
         <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--tint-purple)',
           color: 'var(--tint-purple-fg)', border: '1px solid var(--tint-purple-fg)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -222,7 +223,7 @@ export function KillChainTimeline({ alertId, onClose }: { alertId: number; onClo
       <div role="dialog" aria-modal="true"
         style={{ position: 'fixed', top: '4vh', left: '50%', transform: 'translateX(-50%)',
           width: 'min(860px, 94vw)', maxHeight: '92vh', background: 'var(--bg-card)',
-          border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 40px rgba(0,0,0,0.28)',
+          border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 12px 40px rgba(0,0,0,0.28)',
           zIndex: 301, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
         {/* Header */}
@@ -236,7 +237,7 @@ export function KillChainTimeline({ alertId, onClose }: { alertId: number; onClo
                 {alert?.rule_name || (loading ? 'Loading incident…' : 'Incident')}
               </span>
               {alert && (
-                <span style={{ padding: '2px 9px', borderRadius: 16, fontSize: 'var(--text-xs)', fontWeight: 700,
+                <span style={{ padding: '2px 9px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)', fontWeight: 700,
                   background: alert.acknowledged ? 'var(--tint-success)' : 'var(--tint-danger)',
                   color: alert.acknowledged ? 'var(--tint-success-fg)' : 'var(--tint-danger-fg)' }}>
                   {alert.acknowledged ? 'Acknowledged' : 'Active'}
@@ -267,7 +268,7 @@ export function KillChainTimeline({ alertId, onClose }: { alertId: number; onClo
           </div>
           <button onClick={onClose} aria-label="Close"
             style={{ background: 'rgba(255,255,255,0.1)', border: 'none', cursor: 'pointer',
-              color: '#94a3b8', fontSize: 'var(--text-lg)', width: 28, height: 28, borderRadius: 6,
+              color: '#94a3b8', fontSize: 'var(--text-lg)', width: 28, height: 28, borderRadius: 'var(--radius-sm)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             ×
           </button>
@@ -280,7 +281,7 @@ export function KillChainTimeline({ alertId, onClose }: { alertId: number; onClo
           ) : error ? (
             <div style={{ fontSize: 'var(--text-sm)', color: 'var(--tint-danger-fg)',
               background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)',
-              borderRadius: 8, padding: 12 }}>
+              borderRadius: 'var(--radius)', padding: 12 }}>
               Could not load this incident&apos;s kill chain.
             </div>
           ) : (
@@ -291,7 +292,7 @@ export function KillChainTimeline({ alertId, onClose }: { alertId: number; onClo
                   <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-muted)',
                     textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Sample Message</div>
                   <div style={{ padding: 12, background: 'var(--bg-primary)', border: '1px solid var(--border)',
-                    borderRadius: 8, fontSize: 'var(--text-sm)', color: 'var(--text-primary)', lineHeight: 1.6,
+                    borderRadius: 'var(--radius)', fontSize: 'var(--text-sm)', color: 'var(--text-primary)', lineHeight: 1.6,
                     wordBreak: 'break-all', fontFamily: 'var(--font-mono)' }}>
                     {alert.sample_message}
                   </div>
@@ -313,7 +314,7 @@ export function KillChainTimeline({ alertId, onClose }: { alertId: number; onClo
 
               {phases.length === 0 ? (
                 <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', padding: 14,
-                  background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 8, textAlign: 'center' }}>
+                  background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', textAlign: 'center' }}>
                   No underlying events retained for this incident&apos;s window.
                   {alert?.techniques?.length ? (
                     <div style={{ marginTop: 10, display: 'flex', justifyContent: 'center' }}>

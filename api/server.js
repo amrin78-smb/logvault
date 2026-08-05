@@ -2657,6 +2657,12 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.29.0': [
+    'You can now switch the whole interface between rounded and square corners. The control is in the avatar menu at the top right, under "Corners" — it applies instantly across every page and switches back just as easily. Neither look is temporary or "the real one".',
+    'The choice is remembered per browser and is yours alone: it changes nothing for other users, needs no administrator rights, and is applied before the page draws so there is no flicker on load.',
+    'Elements meant to be round stay round — status dots, avatars, heatmap cells and the small colour swatches in chart legends are deliberately unaffected, since squaring those reads as a fault rather than a style.',
+    'This was the largest of the four applications to convert: LogVault styles everything inline, so nearly 350 individual corner values across 36 screens had to be moved onto the shared setting before the switch could reach them.',
+  ],
   '2.28.1': [
     'Fixed a dead end that appeared when an update was deployed while you had LogVault open. Each section of the app downloads separately the first time you open it, and a new release replaces those files — so a tab left open from before the update would ask for a file that no longer existed and show "failed to load", with a Retry button that could never work because it kept requesting the same missing file. The app now recognises this exact situation, says a newer version was deployed, and reloads itself once to pick it up. Genuine errors still show the normal message and a working Retry.',
     'This could affect any section opened for the first time after an update — Security, Network Health, Intelligence, Reports and the rest. Nothing was ever wrong on the server; the page simply needed reloading.',

@@ -9,6 +9,7 @@ import IdleTimeout         from '@/components/IdleTimeout';
 import { LicenseProvider, LicenseGate } from '@/components/LicenseGuard';
 import UpdateNotifier      from '@/components/UpdateNotifier';
 import UpdateFailureBanner from '@/components/UpdateFailureBanner';
+import { CORNERS_INIT_SCRIPT } from '@/lib/corners';
 
 export const metadata: Metadata = {
   title: 'LogVault — Syslog Analyzer',
@@ -21,6 +22,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const session = await getServerSession(authOptions);
   return (
     <html lang="en">
+      <head>
+        {/* Corner-style no-flash: stamps data-corners on <html> synchronously,
+            before first paint, so a square-corners user never sees a frame of
+            rounded UI. Must stay a blocking inline script — a next/script or a
+            useEffect runs after paint, which is the flash we're avoiding.
+            NOTE: the light/dark theme has no equivalent yet (ThemeContext applies
+            it in a useEffect, so the theme still flashes). Giving it the same
+            treatment is a separate change — deliberately not bundled here. */}
+        <script dangerouslySetInnerHTML={{ __html: CORNERS_INIT_SCRIPT }} />
+      </head>
       <body>
         <AuthProvider session={session}>
           <LicenseProvider>

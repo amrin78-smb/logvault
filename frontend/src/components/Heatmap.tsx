@@ -84,6 +84,7 @@ export function Heatmap({ data, title, cellHeight = 18 }: { data: HeatmapCell[];
             {row.map((count, h) => (
               <div key={h}
                 title={`${DAY_LABELS[d]} ${pad2(h)}:00 — ${count} event${count === 1 ? '' : 's'}`}
+                /* intentional: 2px on an ~18px heatmap cell — a 6px token radius would round it into a blob */
                 style={{ height: cellHeight, minWidth: 0, borderRadius: 2,
                   background: cellBg(count), border: '1px solid var(--border-light)' }} />
             ))}

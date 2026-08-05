@@ -24,7 +24,7 @@ interface Site { id: number; name: string; label: string; }
 
 const EMPTY = { ip_address: '', hostname: '', vendor: 'generic', description: '', site_id: '' };
 
-const INPUT = { padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)',
+const INPUT = { padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
   background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-base)',
   width: '100%', outline: 'none', boxSizing: 'border-box' as const };
 
@@ -111,7 +111,7 @@ export default function KnownHosts() {
       <PageHeader title="Known Hosts" subtitle="IP-to-hostname mapping with NetVault asset sync" />
 
       {/* Add / Edit form */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
         <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
           {editIp ? 'Edit Host' : 'Add Known Host'}
         </div>
@@ -120,7 +120,7 @@ export default function KnownHosts() {
         </div>
         {error && (
           <div style={{ padding: '8px 12px', background: 'var(--tint-danger)', border: '1px solid var(--tint-danger)',
-            borderRadius: 6, color: 'var(--tint-danger-fg)', fontSize: 'var(--text-sm)', marginBottom: 12 }}>{error}</div>
+            borderRadius: 'var(--radius-sm)', color: 'var(--tint-danger-fg)', fontSize: 'var(--text-sm)', marginBottom: 12 }}>{error}</div>
         )}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 12 }}>
           <div>
@@ -161,13 +161,13 @@ export default function KnownHosts() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={save} disabled={loading}
-            style={{ padding: '8px 20px', borderRadius: 6, border: 'none', cursor: 'pointer',
+            style={{ padding: '8px 20px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
               fontSize: 'var(--text-base)', fontWeight: 600, background: 'var(--primary)', color: '#fff', opacity: loading ? 0.7 : 1 }}>
             {loading ? 'Saving...' : editIp ? 'Update Host' : 'Add Host'}
           </button>
           {editIp && (
             <button onClick={() => { setForm(EMPTY); setEditIp(null); setError(null); }}
-              style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)',
+              style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                 cursor: 'pointer', fontSize: 'var(--text-base)', background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
               Cancel
             </button>
@@ -176,7 +176,7 @@ export default function KnownHosts() {
       </div>
 
       {/* Host list */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div>
             <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)' }}>
@@ -194,7 +194,7 @@ export default function KnownHosts() {
           <div style={{ display: 'flex', gap: 8 }}>
             {/* Sync from NetVault button */}
             <button onClick={triggerSync} disabled={syncing}
-              style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--tint-info)',
+              style={{ padding: '7px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--tint-info)',
                 cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 600,
                 background: 'var(--tint-info)', color: 'var(--tint-info-fg)',
                 display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -240,7 +240,7 @@ export default function KnownHosts() {
                       {h.hostname || '—'}
                     </td>
                     <td style={{ padding: '10px 12px' }}>
-                      <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 'var(--text-xs)', fontWeight: 600,
+                      <span style={{ padding: '2px 8px', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)', fontWeight: 600,
                         background: `${VENDOR_COLORS[h.vendor] || '#6b7280'}18`,
                         color: VENDOR_COLORS[h.vendor] || '#6b7280', textTransform: 'capitalize' }}>
                         {h.vendor || 'generic'}
@@ -256,7 +256,7 @@ export default function KnownHosts() {
                     </td>
                     <td style={{ padding: '10px 12px' }}>
                       {h.device_status ? (
-                        <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)', fontWeight: 500,
+                        <span style={{ padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)', fontWeight: 500,
                           background: statusStyle.bg, color: statusStyle.color }}>
                           {h.device_status}
                         </span>
@@ -264,12 +264,12 @@ export default function KnownHosts() {
                     </td>
                     <td style={{ padding: '10px 12px' }}>
                       {h.synced_from_nv ? (
-                        <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)',
+                        <span style={{ padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)',
                           background: 'var(--tint-info)', color: 'var(--tint-info-fg)', fontWeight: 500 }}>
                           NetVault
                         </span>
                       ) : (
-                        <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 'var(--text-xs)',
+                        <span style={{ padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--text-xs)',
                           background: 'var(--surface-subtle)', color: 'var(--text-muted)' }}>
                           Manual
                         </span>
@@ -286,7 +286,7 @@ export default function KnownHosts() {
                             site_id: h.site_id != null ? String(h.site_id) : '' });
                           setEditIp(h.ip_address); setError(null);
                         }}
-                          style={{ padding: '4px 10px', borderRadius: 5, border: '1px solid var(--border)',
+                          style={{ padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                             cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
                           Edit
                         </button>

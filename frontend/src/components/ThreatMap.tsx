@@ -260,7 +260,7 @@ function BubbleTooltip({ row, name }: { row: GeoRow; name: string }) {
   const flag = countryFlag(row.country_code) || GLOBE;
   return (
     <div style={{
-      background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
+      background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
       boxShadow: 'var(--shadow-sm)', padding: '8px 11px', minWidth: 150, pointerEvents: 'none',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--text-base)',
@@ -294,7 +294,7 @@ function RankRow({ row, rank, onClick }: { row: GeoRow; rank: number; onClick: (
       onClick={onClick}
       title={`Open failed-auth activity from ${name} in Log Explorer`}
       style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
-        borderRadius: 8, background: 'var(--surface-subtle)', border: '1px solid var(--border-light)',
+        borderRadius: 'var(--radius)', background: 'var(--surface-subtle)', border: '1px solid var(--border-light)',
         cursor: 'pointer' }}
       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover, var(--tint-danger))'; }}
       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'var(--surface-subtle)'; }}
@@ -330,13 +330,13 @@ const RANGE_PRESETS = [
 function RangeSelector({ value, onChange }: { value: number; onChange: (h: number) => void }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 3,
-      background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 6px' }}>
+      background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '4px 6px' }}>
       <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginRight: 2 }}>Range</span>
       {RANGE_PRESETS.map(p => {
         const active = value === p.value;
         return (
           <button key={p.value} onClick={() => onChange(p.value)}
-            style={{ padding: '3px 9px', borderRadius: 4, border: 'none', fontSize: 'var(--text-xs)',
+            style={{ padding: '3px 9px', borderRadius: 'var(--radius-sm)', border: 'none', fontSize: 'var(--text-xs)',
               cursor: 'pointer', fontWeight: active ? 700 : 400,
               background: active ? 'var(--primary)' : 'transparent',
               color: active ? '#fff' : 'var(--text-muted)' }}>
@@ -455,13 +455,13 @@ export default function ThreatMap({ hours, openExplorer }: {
       </PageHeader>
 
       {error && (
-        <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8,
+        <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 'var(--radius)',
           background: 'var(--tint-danger)', color: 'var(--tint-danger-fg)',
           border: '1px solid var(--border)', fontSize: 'var(--text-base)', fontWeight: 500,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <span>⚠ {error}</span>
           <button onClick={fetchGeo}
-            style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)',
+            style={{ padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
               background: 'var(--bg-card)', color: 'var(--text-secondary)', cursor: 'pointer',
               fontSize: 'var(--text-xs)', fontWeight: 600 }}>
             Retry
@@ -472,7 +472,7 @@ export default function ThreatMap({ hours, openExplorer }: {
       {loading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)',
-            borderRadius: 10, padding: 16, boxShadow: 'var(--shadow-sm)' }}>
+            borderRadius: 'var(--radius)', padding: 16, boxShadow: 'var(--shadow-sm)' }}>
             <Skeleton height={16} width={180} />
             <div style={{ height: 12 }} />
             <div style={{ position: 'relative', width: '100%', paddingTop: '50%' }}>
@@ -494,7 +494,7 @@ export default function ThreatMap({ hours, openExplorer }: {
           gap: 16, alignItems: 'start' }}>
           {/* ── Map panel ── */}
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)',
-            borderRadius: 10, padding: 16, boxShadow: 'var(--shadow-sm)', minWidth: 0 }}>
+            borderRadius: 'var(--radius)', padding: 16, boxShadow: 'var(--shadow-sm)', minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
               gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
               <div style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)' }}>
@@ -507,7 +507,7 @@ export default function ThreatMap({ hours, openExplorer }: {
 
             <div style={{ position: 'relative', width: '100%' }}>
               <svg viewBox={`0 0 ${MAP_W} ${MAP_H}`} width="100%"
-                style={{ display: 'block', borderRadius: 8 }}
+                style={{ display: 'block', borderRadius: 'var(--radius)' }}
                 preserveAspectRatio="xMidYMid meet"
                 role="img" aria-label="World map of attack activity by source country">
                 <defs>
@@ -564,7 +564,7 @@ export default function ThreatMap({ hours, openExplorer }: {
 
           {/* ── Ranked list panel ── */}
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)',
-            borderRadius: 10, padding: 16, boxShadow: 'var(--shadow-sm)', minWidth: 0 }}>
+            borderRadius: 'var(--radius)', padding: 16, boxShadow: 'var(--shadow-sm)', minWidth: 0 }}>
             <div style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)',
               marginBottom: 2 }}>
               Top source countries

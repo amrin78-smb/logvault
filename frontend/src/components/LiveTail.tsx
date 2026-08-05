@@ -84,13 +84,14 @@ export default function LiveTail() {
   return (
     <>
     <PageHeader title="Live Tail" subtitle="Real-time streaming syslog feed" />
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)' }}>Live Tail</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6,
           background: connected ? 'var(--tint-success)' : 'var(--tint-danger)',
           border: `1px solid ${connected ? 'var(--tint-success)' : 'var(--tint-danger)'}`,
-          borderRadius: 20, padding: '3px 10px' }}>
+          borderRadius: 'var(--radius-pill)', padding: '3px 10px' }}>
+          {/* intentional: 50% keeps the live/disconnected status dot circular */}
           <div style={{ width: 7, height: 7, borderRadius: '50%',
             background: connected ? '#22c55e' : '#ef4444',
             boxShadow: connected && !paused ? '0 0 5px #22c55e' : 'none' }} />
@@ -101,15 +102,15 @@ export default function LiveTail() {
         <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{count.toLocaleString()} total · {filtered.length.toLocaleString()} shown</span>
         {!autoScroll && (
           <button onClick={() => { setAutoScroll(true); if (containerRef.current) containerRef.current.scrollTop = containerRef.current.scrollHeight; }}
-            style={{ padding: '3px 10px', borderRadius: 4, border: '1px solid var(--tint-info)', cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--tint-info)', color: 'var(--tint-info-fg)', fontWeight: 600 }}>
+            style={{ padding: '3px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--tint-info)', cursor: 'pointer', fontSize: 'var(--text-xs)', background: 'var(--tint-info)', color: 'var(--tint-info-fg)', fontWeight: 600 }}>
             ↓ Jump to latest
           </button>
         )}
         <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Filter by host, vendor, message..."
-          style={{ marginLeft: 'auto', background: 'var(--surface-subtle)', border: '1px solid var(--border)', borderRadius: 6,
+          style={{ marginLeft: 'auto', background: 'var(--surface-subtle)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
             padding: '6px 12px', color: 'var(--text-primary)', fontSize: 'var(--text-sm)', outline: 'none', width: 240 }} />
         <button onClick={() => setPaused(p => !p)}
-          style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid',
+          style={{ padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid',
             cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 500,
             background: paused ? 'var(--tint-info)' : 'var(--surface-subtle)',
             borderColor: paused ? 'var(--tint-info)' : 'var(--border)',
@@ -117,13 +118,13 @@ export default function LiveTail() {
           {paused ? '▶ Resume' : '⏸ Pause'}
         </button>
         <button onClick={clearLogs}
-          style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--surface-subtle)', color: 'var(--text-muted)' }}>
+          style={{ padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--surface-subtle)', color: 'var(--text-muted)' }}>
           Clear
         </button>
       </div>
 
       <div ref={containerRef} onScroll={handleScroll}
-        style={{ background: '#0d1117', borderRadius: 8, padding: '10px 14px', height: '60vh',
+        style={{ background: '#0d1117', borderRadius: 'var(--radius)', padding: '10px 14px', height: '60vh',
           overflowY: 'auto', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)' }}>
         {filtered.length === 0 && (
           <EmptyState title="Waiting for logs" message="Live entries will appear here as they arrive." />

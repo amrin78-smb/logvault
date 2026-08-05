@@ -49,3 +49,5 @@ auth.ts
 ## Version source of truth
 
 next.config.js reads root package.json's version directly (`require('../package.json').version`) and injects it as NEXT_PUBLIC_APP_VERSION — this is the ONLY correct source for the displayed app version. Do NOT import version from frontend/package.json (a separate, unrelated file nothing in the release process bumps — see gotchas.md).
+
+(lib) frontend/src/lib/corners.ts — rounded/square corner switch. getCorners/applyCorners/toggleCorners/CORNERS_KEY/CORNERS_EVENT/CORNERS_INIT_SCRIPT. Key logvault-corners, event logvault:corners, attribute data-corners="square" on <html>; rounded = ABSENCE of the attribute (no [data-corners="rounded"] rule exists). Overrides --radius/--radius-sm/--radius-pill ONLY, so ANY hardcoded numeric borderRadius opts that component out SILENTLY — always use the token. LogVault styles inline, so this is easy to reintroduce.
