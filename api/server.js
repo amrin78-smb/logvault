@@ -1142,6 +1142,88 @@ app.get('/api/logs/export', asyncHandler(async (req, res) => {
   res.send(csv);
 }));
 
+// ── GLOBAL SEARCH ────────────────────────────────────────────
+// Backs the header search box, which until now was a decorative input wired to
+// nothing at all. Returns a small grouped preview across hosts, alerts and logs;
+// the UI links out to Log Explorer for the full, filterable result set.
+//
+// ⛔ PERFORMANCE — this runs on every (debounced) keystroke against a 10.5M-row,
+// 43GB partitioned syslog_entries, so the log branch is deliberately bounded on
+// BOTH axes: a 24h window and LIMIT 5. Measured live (EXPLAIN ANALYZE):
+//   term '10.248' 2.1ms · common term 0.6ms · NO-MATCH term 19.9ms (worst case,
+//   since a miss must scan the window to prove it). Removing either bound puts
+//   this back in the territory of the 94.5s/30d scan documented on /api/logs.
+// Keep the same 5-branch predicate /api/logs uses so a preview hit and the
+// Explorer's full search agree — including the tsvector branch, which catches
+// English stemming that ILIKE alone misses (see the long note on /api/logs).
+app.get('/api/search', asyncHandler(async (req, res) => {
+  const term = String(req.query.q || '').trim();
+  // 1 character matches almost everything; make the client's debounce cheap to
+  // get wrong by refusing to scan at all below 2.
+  if (term.length < 2) return res.json({ hosts: [], alerts: [], logs: [], truncated: false });
+
+  const rbac = req.rbac;
+  const LOG_HOURS = 24;
+
+  // known_hosts carries site_id directly — same shape as GET /api/hosts.
+  let hostWhere = '';
+  const hostParams = [term];
+  if (rbac && rbac.allowedSiteIds !== null && rbac.allowedSiteIds !== undefined) {
+    if (rbac.allowedSiteIds.length === 0) hostWhere = 'AND 1=0';
+    else { hostParams.push(rbac.allowedSiteIds); hostWhere = `AND site_id = ANY($${hostParams.length}::int[])`; }
+  }
+
+  const alertSf = getAlertSiteFilter(rbac, 2, 'ae');
+  const logSf   = getSiteFilter(rbac, 3, 'se');
+
+  const [hosts, alerts, logs] = await Promise.all([
+    pool.query(`
+      SELECT ip_address::TEXT AS ip_address, hostname, vendor, site_name,
+             country_name, is_known_bad
+        FROM known_hosts
+       WHERE (hostname ILIKE '%'||$1||'%' OR host(ip_address) ILIKE '%'||$1||'%'
+              OR description ILIKE '%'||$1||'%')
+         ${hostWhere}
+       ORDER BY is_known_bad DESC NULLS LAST, last_seen DESC NULLS LAST
+       LIMIT 8`, hostParams),
+
+    pool.query(`
+      SELECT ae.id, ae.fired_at, ae.source_host, ae.sample_message,
+             ae.acknowledged, r.name AS rule_name
+        FROM alert_events ae
+        LEFT JOIN alert_rules r ON r.id = ae.rule_id
+       WHERE (ae.sample_message ILIKE '%'||$1||'%' OR ae.source_host ILIKE '%'||$1||'%'
+              OR r.name ILIKE '%'||$1||'%')
+         ${alertSf.clause}
+       ORDER BY ae.fired_at DESC
+       LIMIT 8`, [term, ...alertSf.params]),
+
+    pool.query(`
+      SELECT se.id, se.received_at, se.source_host, se.vendor, se.severity,
+             left(se.message, 160) AS message
+        FROM syslog_entries se
+       WHERE se.received_at > NOW() - make_interval(hours => $2)
+         AND (to_tsvector('english', se.message) @@ plainto_tsquery('english', $1)
+              OR se.message ILIKE '%'||$1||'%'
+              OR se.structured_data->>'user' ILIKE '%'||$1||'%'
+              OR se.structured_data->>'srccountry' ILIKE '%'||$1||'%'
+              OR se.structured_data->>'service' ILIKE '%'||$1||'%')
+         ${logSf.clause}
+       ORDER BY se.received_at DESC
+       LIMIT 5`, [term, LOG_HOURS, ...logSf.params]),
+  ]);
+
+  res.json({
+    hosts: hosts.rows,
+    alerts: alerts.rows,
+    logs: logs.rows,
+    log_window_hours: LOG_HOURS,
+    // The log preview is capped at 5 of a 24h window; the UI uses this to offer
+    // "see all in Log Explorer" rather than implying these are all the matches.
+    truncated: logs.rows.length === 5,
+  });
+}));
+
 // ── KNOWN HOSTS ──────────────────────────────────────────────
 
 app.get('/api/hosts', asyncHandler(async (req, res) => {
@@ -2575,6 +2657,12 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.27.0': [
+    'The search box at the top of the screen now works. It was previously connected to nothing at all — typing into it filled the box and did nothing else, with no results and no error, which is exactly how it appeared to anyone who tried it.',
+    'Typing at least two characters now shows matching hosts, alerts and recent log entries grouped together, and clicking any result opens it in the right place: a host opens its traffic in Log Explorer, an alert opens the Alerts page, a log entry opens the full search. Pressing Enter goes straight to Log Explorer with your term applied.',
+    'The log results shown in the box are a preview of the last 24 hours only, and are labelled as such. This is deliberate: the log store holds over ten million entries, and searching all of it on every keystroke would be slow for everyone. The "Search all logs" link at the bottom of the results runs the full, unrestricted search in Log Explorer where you can widen the time range and refine filters.',
+    'Results respect your site access — you only see hosts, alerts and logs from sites assigned to you.',
+  ],
   '2.26.6': [
     'The disk-space panel no longer stalls the rest of the application while it refreshes. Reading the drive figures runs a short Windows command, and LogVault was waiting for it in a way that stopped the server from doing anything else at the same time — roughly 0.85 seconds, measured, on every refresh. During that pause every other request from every other user simply waited, and background database work could be reported as timing out even though the database was healthy. The reading is now taken without holding everything else up; the figures shown are unchanged.',
   ],

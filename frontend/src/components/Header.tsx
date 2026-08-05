@@ -42,6 +42,64 @@ function MoonIcon() {
   );
 }
 
+// ── Global search ────────────────────────────────────────────
+// Backed by GET /api/search. Types mirror that endpoint's response.
+type HostHit  = { ip_address: string; hostname: string | null; vendor: string | null; site_name: string | null; is_known_bad: boolean | null };
+type AlertHit = { id: number; fired_at: string; source_host: string | null; sample_message: string | null; rule_name: string | null; acknowledged: boolean };
+type LogHit   = { id: string; received_at: string; source_host: string | null; vendor: string | null; severity: number | null; message: string };
+type SearchResults = { hosts: HostHit[]; alerts: AlertHit[]; logs: LogHit[]; log_window_hours?: number; truncated?: boolean };
+
+const EMPTY_RESULTS: SearchResults = { hosts: [], alerts: [], logs: [] };
+
+// Jump to a tab, optionally carrying a Log Explorer filter. page.tsx's
+// 'nocvault:navigate' listener applies the filter before switching tabs.
+function navigateTo(tab: string, filter?: Record<string, string>) {
+  window.dispatchEvent(new CustomEvent('nocvault:navigate', { detail: { tab, filter } }));
+}
+
+// Top-level, NOT nested inside Header — a component defined inside another is
+// re-created every render, which remounts the input and drops focus on each
+// keystroke (suite-wide rule; see CLAUDE.md "Never define components inside
+// other components").
+function SearchGroup({ label, count, children }: { label: string; count: number; children: React.ReactNode }) {
+  if (!count) return null;
+  return (
+    <div style={{ padding: '4px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px 4px',
+        fontSize: 'var(--text-xs)', fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase',
+        color: 'var(--text-muted)' }}>
+        {label}<span style={{ opacity: 0.7, fontWeight: 600 }}>({count})</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function SearchRow({ dot, primary, secondary, meta, onClick }: {
+  dot: string; primary: string; secondary?: string | null; meta?: string | null; onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 12px',
+        background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
+        fontSize: 'var(--text-base)', color: 'var(--text-primary)' }}
+      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--surface-subtle)'; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+    >
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot, flexShrink: 0 }} aria-hidden />
+      <span style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{primary}</span>
+      {secondary ? (
+        <span style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>{secondary}</span>
+      ) : <span style={{ flex: 1 }} />}
+      {meta ? (
+        <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-xs)', flexShrink: 0 }}>{meta}</span>
+      ) : null}
+    </button>
+  );
+}
+
 export default function Header() {
   const { theme, toggle } = useTheme();
   // Computed per-render (cheap) so it reflects the current window.location
@@ -61,6 +119,56 @@ export default function Header() {
   const [unacked, setUnacked] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const [results, setResults] = useState<SearchResults>(EMPTY_RESULTS);
+  const [searching, setSearching] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchBoxRef = useRef<HTMLDivElement>(null);
+  // Monotonic request id: a slow early response must never overwrite a newer one.
+  const reqId = useRef(0);
+
+  const term = search.trim();
+  const totalHits = results.hosts.length + results.alerts.length + results.logs.length;
+
+  // Debounced global search. 250ms keeps keystrokes off a 10.5M-row table; the
+  // server also refuses terms shorter than 2 characters.
+  useEffect(() => {
+    if (term.length < 2) { setResults(EMPTY_RESULTS); setSearching(false); return; }
+    setSearching(true);
+    const myId = ++reqId.current;
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/search?q=${encodeURIComponent(term)}`);
+        const d = r.ok ? await r.json() : EMPTY_RESULTS;
+        if (myId === reqId.current) {
+          setResults({ hosts: d.hosts ?? [], alerts: d.alerts ?? [], logs: d.logs ?? [],
+            log_window_hours: d.log_window_hours, truncated: d.truncated });
+        }
+      } catch {
+        if (myId === reqId.current) setResults(EMPTY_RESULTS);
+      } finally {
+        if (myId === reqId.current) setSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [term]);
+
+  // Close the results panel on outside click or Escape.
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) setSearchOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSearchOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey); };
+  }, []);
+
+  // Land on Log Explorer with the term applied, and close/clear the panel.
+  const goExplorer = useCallback((filter: Record<string, string>) => {
+    setSearchOpen(false);
+    searchRef.current?.blur();
+    navigateTo('explorer', filter);
+  }, []);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -148,7 +256,7 @@ export default function Header() {
 
       {/* Center — global search */}
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center', minWidth: 0 }}>
-        <div style={{ position: 'relative', width: '100%', maxWidth: 520 }}>
+        <div ref={searchBoxRef} style={{ position: 'relative', width: '100%', maxWidth: 520 }}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none"
             style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#64748b', pointerEvents: 'none' }}>
             <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.5" />
@@ -157,7 +265,13 @@ export default function Header() {
           <input
             ref={searchRef}
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setSearchOpen(true); }}
+            onFocus={() => setSearchOpen(true)}
+            onKeyDown={e => {
+              // Enter always works, even before results land — it hands the term
+              // to Log Explorer, which runs the same query unbounded.
+              if (e.key === 'Enter' && term.length >= 2) goExplorer({ q: term });
+            }}
             placeholder="Search logs, hosts, alerts... (/)"
             style={{ width: '100%', height: 38, padding: '0 34px 0 34px', borderRadius: 6,
               border: '1px solid #2d3a52', background: 'rgba(255,255,255,0.04)', color: '#f1f5f9',
@@ -171,6 +285,86 @@ export default function Header() {
                 lineHeight: 1, padding: 4 }}>
               ×
             </button>
+          )}
+
+          {/* Results panel. Opaque --bg-card (never a translucent tint) so the
+              page behind it can't bleed through — suite dark-mode rule. */}
+          {searchOpen && term.length >= 2 && (
+            <div style={{ position: 'absolute', top: 44, left: 0, right: 0, zIndex: 300,
+              background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
+              boxShadow: '0 12px 32px rgba(0,0,0,0.28)', maxHeight: '70vh', overflowY: 'auto',
+              paddingBottom: 4 }}>
+
+              {searching && totalHits === 0 && (
+                <div style={{ padding: '14px 12px', color: 'var(--text-muted)', fontSize: 'var(--text-base)' }}>
+                  Searching…
+                </div>
+              )}
+
+              {!searching && totalHits === 0 && (
+                <div style={{ padding: '14px 12px', color: 'var(--text-muted)', fontSize: 'var(--text-base)' }}>
+                  No matches for “{term}”.
+                  <div style={{ marginTop: 4, fontSize: 'var(--text-sm)' }}>
+                    Logs are previewed over the last {results.log_window_hours ?? 24}h — try Log Explorer for a wider range.
+                  </div>
+                </div>
+              )}
+
+              <SearchGroup label="Hosts" count={results.hosts.length}>
+                {results.hosts.map(h => (
+                  <SearchRow
+                    key={h.ip_address}
+                    dot={h.is_known_bad ? 'var(--red)' : 'var(--blue)'}
+                    primary={h.ip_address}
+                    secondary={h.hostname || h.vendor || ''}
+                    meta={h.site_name || 'Unassigned'}
+                    // Explorer's `host` filter matches the syslog sender AND the
+                    // parsed src/dst IPs, so this finds the host's traffic too.
+                    onClick={() => goExplorer({ host: h.ip_address })}
+                  />
+                ))}
+              </SearchGroup>
+
+              <SearchGroup label="Alerts" count={results.alerts.length}>
+                {results.alerts.map(a => (
+                  <SearchRow
+                    key={a.id}
+                    dot={a.acknowledged ? 'var(--text-muted)' : 'var(--red)'}
+                    primary={a.rule_name || 'Alert'}
+                    secondary={a.sample_message || ''}
+                    meta={new Date(a.fired_at).toLocaleString()}
+                    onClick={() => { setSearchOpen(false); navigateTo('alerts'); }}
+                  />
+                ))}
+              </SearchGroup>
+
+              <SearchGroup label={`Logs (last ${results.log_window_hours ?? 24}h)`} count={results.logs.length}>
+                {results.logs.map(l => (
+                  <SearchRow
+                    key={l.id}
+                    dot={(l.severity ?? 7) <= 3 ? 'var(--red)' : (l.severity ?? 7) <= 4 ? 'var(--yellow)' : 'var(--text-muted)'}
+                    primary={l.source_host || l.vendor || 'log'}
+                    secondary={l.message}
+                    meta={new Date(l.received_at).toLocaleTimeString()}
+                    onClick={() => goExplorer({ q: term })}
+                  />
+                ))}
+              </SearchGroup>
+
+              {/* Always offered: the panel only previews a bounded slice, so this
+                  is the route to the complete, filterable result set. */}
+              <button
+                onClick={() => goExplorer({ q: term })}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px',
+                  marginTop: 2, borderTop: '1px solid var(--border)', background: 'none', border: 'none',
+                  borderTopStyle: 'solid', cursor: 'pointer', color: 'var(--primary)',
+                  fontSize: 'var(--text-base)', fontWeight: 600 }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--surface-subtle)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+              >
+                Search all logs for “{term}” in Log Explorer →
+              </button>
+            </div>
           )}
         </div>
       </div>

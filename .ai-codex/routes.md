@@ -50,6 +50,7 @@ GET /api/alerts/events/recent-unacked [auth] [db] — top 5 unacked, for AlertBa
 GET /api/alerts/events/:id/logs [auth] [db] — underlying syslog rows behind a fired alert (correlation-rule lookback window)
 
 ## Express — Known hosts / sites
+GET /api/search [auth] [db] — global header search: grouped preview across known_hosts, alert_events and syslog_entries. Site-scoped per group (known_hosts.site_id / getAlertSiteFilter / getSiteFilter). Min 2 chars. Log branch is HARD-BOUNDED to 24h + LIMIT 5 because it runs per keystroke against 10.5M rows/43GB — do not widen either bound.
 GET /api/hosts [auth] [db] — known_hosts list
 PUT /api/hosts [admin] [db] — upsert a manual host entry
 GET /api/sites [admin] [db] [external] — sites from NetVault CMDB, for manual site-assignment dropdown

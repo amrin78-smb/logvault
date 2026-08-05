@@ -192,15 +192,23 @@ export default function Home() {
     return () => window.removeEventListener('keydown', onKey);
   }, [fetchSummary, fetchHealth]);
 
-  // Cross-component navigation — e.g. notifications bell jumps to Alerts tab
+  // Cross-component navigation — e.g. notifications bell jumps to Alerts tab, and
+  // the header's global search jumps to Log Explorer carrying its search term.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
+      // Apply the filter BEFORE switching tabs: LogExplorer reads initialFilter on
+      // mount, so setting it after would land the user on an unfiltered view.
+      // Mirrors openExplorer's range handling — honour a range the caller passed,
+      // otherwise inherit the global one.
+      if (detail?.filter) {
+        setExplorerFilter({ ...detail.filter, hours: detail.filter.hours ?? String(hours) });
+      }
       if (detail?.tab) setTab(detail.tab as Tab);
     };
     window.addEventListener('nocvault:navigate', handler);
     return () => window.removeEventListener('nocvault:navigate', handler);
-  }, []);
+  }, [hours]);
 
   const openExplorer = (filter: ExplorerFilter) => {
     // Respect a range the caller explicitly passed (e.g. the Threat Map / SOC
