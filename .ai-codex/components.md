@@ -63,6 +63,7 @@ Every file has `'use client'` at the top — this app has no server components b
 (c) vendorColor(vendor)/riskBand(score)  — helper fns, from palette.tsx (vendor identity + entity risk-band colors, companion to severity.tsx)
 (c) RiskBadge  score, suffix? — from palette.tsx
 (c) pctColor/Skeleton/TableSkeleton/CardSkeleton/EmptyState  — generic UI primitives, from ui.tsx
+(c) usePaged/Pagination/PagedTableBody — client-side paging (ui.tsx, PAGE_SIZE 25). Use <PagedTableBody items={x} unit="rows"> as a drop-in for a <tbody> holding a long list; it owns its own page state and renders the pager in a <tfoot>, so it works inside components that have early returns. Applied to 19 tables + KnownHosts. Safe because every list endpoint is already capped server-side (15-500 rows) — EXCEPT /api/hosts, which is unbounded and still ships all 38k rows.
 
 ## Violations
 None found — no component is defined inside another component's function body (checked both `function X(` and `const X = (` nested-indentation patterns across all 37 files).

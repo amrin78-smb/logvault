@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import { useToast } from '@/components/Toast';
-import { PageHeader, TableSkeleton, EmptyState } from './ui';
+import {PageHeader, TableSkeleton, EmptyState, PagedTableBody } from './ui';
 import { MitreBadges } from './mitre';
 import AlertDetailPanel from './AlertDetailPanel';
 
@@ -309,8 +309,8 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
                       {['Time','Host','Matches','Message',''].map(h => <th key={h} style={TH}>{h}</th>)}
                     </tr>
                   </thead>
-                  <tbody>
-                    {displayEvents.map((evt, i) => (
+                  <PagedTableBody items={displayEvents || []} unit="alerts">
+                    {rows => rows.map((evt, i) => (
                       <tr key={evt.id} onClick={() => setDetailAlert(evt)}
                         title="View alert details and triggering logs"
                         style={{ borderBottom: '1px solid var(--border-light)', cursor: 'pointer',
@@ -345,7 +345,7 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
                         </td>
                       </tr>
                     ))}
-                  </tbody>
+                  </PagedTableBody>
                 </table>
               </div>
             )}

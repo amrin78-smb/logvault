@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { PageHeader, EmptyState, TableSkeleton } from '@/components/ui';
+import { PageHeader, EmptyState, TableSkeleton, PagedTableBody } from '@/components/ui';
 import TimeRangePicker from '@/components/TimeRangePicker';
 
 // ════════════════════════════════════════════════════════════
@@ -306,8 +306,8 @@ export default function ReportsTab() {
                             ))}
                           </tr>
                         </thead>
-                        <tbody>
-                          {preview.rows.map((row, ri) => (
+                        <PagedTableBody items={preview.rows || []} unit="rows">
+                          {rows => rows.map((row, ri) => (
                             <tr key={ri}>
                               {preview.columns.map(c => (
                                 <td key={c.key} style={{ textAlign: c.align || 'left' }}>
@@ -316,7 +316,7 @@ export default function ReportsTab() {
                               ))}
                             </tr>
                           ))}
-                        </tbody>
+                        </PagedTableBody>
                       </table>
                     </div>
                   )}

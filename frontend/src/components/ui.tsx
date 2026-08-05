@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 
 // ════════════════════════════════════════════════════════════
 // Shared UI primitives — NocVault suite (DDIVault reference).
@@ -187,4 +187,127 @@ export function useEscape(cb: () => void) {
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, []);
+}
+
+// ── Pagination ────────────────────────────────────────────────
+// Client-side paging for lists that are ALREADY bounded server-side. Every
+// LogVault list endpoint caps its result set (15–500 rows), so slicing in the
+// browser is enough and costs no extra round trip — the problem being solved
+// here is a page that renders hundreds of rows at once and has to be scrolled,
+// not an oversized payload.
+//
+// ⚠ The one endpoint this reasoning does NOT cover is GET /api/hosts, which has
+// no LIMIT and returns every known_hosts row (38k+ live). Paging its output in
+// the browser fixes the scrolling but the whole set is still transferred; that
+// endpoint wants real server-side paging, tracked separately.
+export const PAGE_SIZE = 25;
+
+/**
+ * Slice `items` into pages. Returns the current page's rows plus everything the
+ * <Pagination> control needs.
+ *
+ * Resets to page 1 whenever the list identity changes (a filter/search/refresh
+ * produces a new array), so you can never be stranded on a page that no longer
+ * exists — e.g. sitting on page 7 and then filtering down to 12 rows.
+ */
+export function usePaged<T>(items: T[], pageSize: number = PAGE_SIZE) {
+  const [page, setPage] = useState(1);
+  const total = items.length;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+
+  // Keyed on LENGTH, not on `items` itself. Callers almost always build their
+  // list inline (`const filtered = rows.filter(...)`), so the array identity is
+  // new on every render — depending on it would fire this reset continuously and
+  // pin the user to page 1, i.e. break paging entirely. Length changes on the
+  // events that should reset (search, filter, refresh with different data); a
+  // same-length content change safely keeps your place.
+  useEffect(() => { setPage(1); }, [items.length, pageSize]);
+
+  const safePage = Math.min(page, pageCount);
+  const start = (safePage - 1) * pageSize;
+  const rows = useMemo(() => items.slice(start, start + pageSize), [items, start, pageSize]);
+
+  return { rows, page: safePage, setPage, pageCount, total, start, pageSize };
+}
+
+/**
+ * Pager bar. Renders nothing when everything already fits on one page, so it can
+ * be dropped under any table unconditionally without adding clutter to short lists.
+ */
+export function Pagination({ page, pageCount, total, start, shown, unit = 'rows', onPage }: {
+  page: number; pageCount: number; total: number; start: number; shown: number;
+  unit?: string; onPage: (p: number) => void;
+}) {
+  if (pageCount <= 1) return null;
+  const btn = (disabled: boolean): React.CSSProperties => ({
+    padding: '4px 10px',
+    borderRadius: 6,
+    border: '1px solid var(--border)',
+    background: 'var(--bg-card)',
+    color: disabled ? 'var(--text-muted)' : 'var(--text-primary)',
+    cursor: disabled ? 'default' : 'pointer',
+    fontSize: 'var(--text-base)',
+    opacity: disabled ? 0.5 : 1,
+  });
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      gap: 12, padding: '10px 4px 2px', flexWrap: 'wrap' }}>
+      <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+        Showing {(start + 1).toLocaleString()}–{(start + shown).toLocaleString()} of {total.toLocaleString()} {unit}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <button style={btn(page <= 1)} disabled={page <= 1} onClick={() => onPage(1)} aria-label="First page">«</button>
+        <button style={btn(page <= 1)} disabled={page <= 1} onClick={() => onPage(page - 1)}>Prev</button>
+        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', padding: '0 4px' }}>
+          Page {page} of {pageCount}
+        </span>
+        <button style={btn(page >= pageCount)} disabled={page >= pageCount} onClick={() => onPage(page + 1)}>Next</button>
+        <button style={btn(page >= pageCount)} disabled={page >= pageCount} onClick={() => onPage(pageCount)} aria-label="Last page">»</button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Drop-in replacement for a <tbody> that holds a long list.
+ *
+ *   <tbody>{rows.map(r => <tr .../>)}</tbody>
+ *   →
+ *   <PagedTableBody items={rows} unit="devices">{page => page.map(r => <tr .../>)}</PagedTableBody>
+ *
+ * Owning the page state INSIDE this component is deliberate: most of these
+ * tables live in components with early returns (loading/empty states), so a
+ * usePaged() call hoisted to the caller's top level would sit above a
+ * conditional return and risk breaking the rules of hooks. Here the hook is
+ * unconditionally at the top of its own component.
+ *
+ * The pager renders in a <tfoot> so it stays inside the <table> element (a bare
+ * <div> between <tbody> and </table> is invalid HTML and browsers hoist it out,
+ * which breaks the layout). It disappears entirely when everything fits on one page.
+ */
+export function PagedTableBody<T>({ items, unit = 'rows', pageSize = PAGE_SIZE, colSpan = 99, children }: {
+  items: T[];
+  unit?: string;
+  pageSize?: number;
+  colSpan?: number;
+  children: (rows: T[]) => React.ReactNode;
+}) {
+  const { rows, page, setPage, pageCount, total, start } = usePaged(items, pageSize);
+  return (
+    <>
+      <tbody>{children(rows)}</tbody>
+      {pageCount > 1 && (
+        <tfoot>
+          <tr>
+            <td colSpan={colSpan} style={{ padding: 0, borderTop: '1px solid var(--border)' }}>
+              <Pagination
+                page={page} pageCount={pageCount} total={total}
+                start={start} shown={rows.length} unit={unit} onPage={setPage}
+              />
+            </td>
+          </tr>
+        </tfoot>
+      )}
+    </>
+  );
 }

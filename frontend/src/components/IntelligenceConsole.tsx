@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import { useToast } from '@/components/Toast';
-import { PageHeader, TableSkeleton, EmptyState } from './ui';
+import {PageHeader, TableSkeleton, EmptyState, PagedTableBody } from './ui';
 import { SEV_COLORS, SEV_FALLBACK } from './severity';
 
 // ════════════════════════════════════════════════════════════════════
@@ -653,8 +653,8 @@ export default function IntelligenceConsole({ openExplorer, hours }: {
                   {['Time','Type','Severity','Entity','Score','Title',''].map(h => <th key={h} style={TH}>{h}</th>)}
                 </tr>
               </thead>
-              <tbody>
-                {anomalies.map((a: any, i: number) => {
+              <PagedTableBody items={anomalies || []} unit="anomalies">
+                {rows => rows.map((a: any, i: number) => {
                   const rowBg = a.acknowledged ? 'var(--bg-primary)' : i % 2 === 0 ? 'var(--bg-card)' : 'var(--surface-subtle)';
                   const summaryText = detailSummary(a?.detail);
                   const canDrill = !!(openExplorer && entityDrillFilter(a?.entity_type, a?.entity_value));
@@ -707,7 +707,7 @@ export default function IntelligenceConsole({ openExplorer, hours }: {
                     </tr>
                   );
                 })}
-              </tbody>
+              </PagedTableBody>
             </table>
           )}
         </div>
@@ -736,8 +736,8 @@ export default function IntelligenceConsole({ openExplorer, hours }: {
                   {['Entity','Risk','Top Factors','Events','Anomalies','Last Activity'].map(h => <th key={h} style={TH}>{h}</th>)}
                 </tr>
               </thead>
-              <tbody>
-                {entities.map((r: any, i: number) => {
+              <PagedTableBody items={entities || []} unit="entities">
+                {rows => rows.map((r: any, i: number) => {
                   const rowBg = i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)';
                   return (
                     <tr key={i}
@@ -769,7 +769,7 @@ export default function IntelligenceConsole({ openExplorer, hours }: {
                     </tr>
                   );
                 })}
-              </tbody>
+              </PagedTableBody>
             </table>
           )}
         </div>

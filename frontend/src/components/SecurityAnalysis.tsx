@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { PageHeader, TableSkeleton, CardSkeleton, EmptyState } from './ui';
+import {PageHeader, TableSkeleton, CardSkeleton, EmptyState, PagedTableBody } from './ui';
 import { MITRE_TECHNIQUES, MITRE_TACTIC_ORDER } from './mitre';
 import TimeRangePicker from './TimeRangePicker';
 import { Trend } from './Trend';
@@ -429,8 +429,8 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                   <thead><tr style={{ borderBottom: '2px solid var(--border-light)' }}>
                     {['Attacker IP','Country','Targeted User(s)','Failures','First Attempt','Last Attempt','Risk','Vendor'].map(h => <th key={h} style={TH}>{h}</th>)}
                   </tr></thead>
-                  <tbody>
-                    {authFails.map((r, i) => {
+                  <PagedTableBody items={authFails || []} unit="failures">
+                    {rows => rows.map((r, i) => {
                       const users: string[] = Array.isArray(r.sample_users) ? r.sample_users : [];
                       const distinct = parseInt(r.distinct_users) || 0;
                       const isThreat = r.is_known_bad || (typeof r.abuse_score === 'number' && r.abuse_score >= 50);
@@ -455,7 +455,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                         </tr>
                       );
                     })}
-                  </tbody>
+                  </PagedTableBody>
                 </table>
               )}
             </div>
@@ -473,8 +473,8 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                   <thead><tr style={{ borderBottom: '2px solid var(--border-light)' }}>
                     {['Username','Failures','Distinct Sources','Last Attempt','Risk'].map(h => <th key={h} style={TH}>{h}</th>)}
                   </tr></thead>
-                  <tbody>
-                    {targetedUsers.map((r, i) => {
+                  <PagedTableBody items={targetedUsers || []} unit="users">
+                    {rows => rows.map((r, i) => {
                       const fails = parseInt(r.failure_count) || 0;
                       const hot = fails >= 20;
                       const rowBg = hot ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)';
@@ -489,7 +489,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                         </tr>
                       );
                     })}
-                  </tbody>
+                  </PagedTableBody>
                 </table>
               )}
             </div>
@@ -553,8 +553,8 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                   <thead><tr style={{ borderBottom: '2px solid var(--border-light)' }}>
                     {['Source IP','Host','Failures','First Fail','Last Fail','Success After?','Success Time'].map(h => <th key={h} style={TH}>{h}</th>)}
                   </tr></thead>
-                  <tbody>
-                    {bruteForce.map((r, i) => {
+                  <PagedTableBody items={bruteForce || []} unit="sources">
+                    {rows => rows.map((r, i) => {
                       const rowBg = r.success_after_failure ? 'var(--tint-purple)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)';
                       const d = drillRow({ host: r.source_ip }, rowBg);
                       return (
@@ -574,7 +574,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                         </td>
                       </tr>
                     ); })}
-                  </tbody>
+                  </PagedTableBody>
                 </table>
               )}
             </div>
@@ -678,8 +678,8 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                   <thead><tr style={{ borderBottom: '2px solid var(--border-light)' }}>
                     {['Time','Firewall','VPN Source IP','User','Country','Type','Severity','Message'].map(h => <th key={h} style={TH}>{h}</th>)}
                   </tr></thead>
-                  <tbody>
-                    {vpnEvents.map((r, i) => {
+                  <PagedTableBody items={vpnEvents || []} unit="events">
+                    {rows => rows.map((r, i) => {
                       const rowBg = r.event_type === 'failure' ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)';
                       const d = drillRow({ host: r.vpn_src_ip || r.source_ip }, rowBg);
                       return (
@@ -702,7 +702,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                         </td>
                       </tr>
                     ); })}
-                  </tbody>
+                  </PagedTableBody>
                 </table>
               )}
             </div>
@@ -746,8 +746,8 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                     <thead><tr style={{ borderBottom: '2px solid var(--border-light)' }}>
                       {['Time','Firewall','Src IP','Dst IP','Target / URL','Type','Severity','Threat'].map(h => <th key={h} style={TH}>{h}</th>)}
                     </tr></thead>
-                    <tbody>
-                      {ipsEvents.events?.map((r: any, i: number) => {
+                    <PagedTableBody items={ipsEvents.events || []} unit="events">
+                      {rows => rows.map((r: any, i: number) => {
                         const rowBg = i % 2 === 0 ? 'var(--tint-danger)' : 'var(--bg-card)';
                         const ipsFilter = (r.src_ip || r.source_ip) ? { host: r.src_ip || r.source_ip } : { q: r.threat_name };
                         const d = drillRow(ipsFilter, rowBg);
@@ -780,7 +780,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                           </td>
                         </tr>
                       ); })}
-                    </tbody>
+                    </PagedTableBody>
                   </table>
                 )}
               </div>
@@ -801,8 +801,8 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                   <thead><tr style={{ borderBottom: '2px solid var(--border-light)' }}>
                     {['Time','Hour','Device','Vendor','Event Type','Severity','Message'].map(h => <th key={h} style={TH}>{h}</th>)}
                   </tr></thead>
-                  <tbody>
-                    {afterHours.map((r, i) => {
+                  <PagedTableBody items={afterHours || []} unit="events">
+                    {rows => rows.map((r, i) => {
                       const rowBg = i % 2 === 0 ? 'var(--tint-warn)' : 'var(--bg-card)';
                       const d = drillRow({ host: r.source_ip }, rowBg);
                       return (
@@ -821,7 +821,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                         <td style={{ ...TD, color: 'var(--text-secondary)', maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.message}</td>
                       </tr>
                     ); })}
-                  </tbody>
+                  </PagedTableBody>
                 </table>
               )}
             </div>
@@ -847,8 +847,8 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                     <thead><tr style={{ borderBottom: '2px solid var(--border-light)' }}>
                       {['Time','Controller','Severity','Message'].map(h => <th key={h} style={TH}>{h}</th>)}
                     </tr></thead>
-                    <tbody>
-                      {wirelessAuth.failures?.map((r: any, i: number) => {
+                    <PagedTableBody items={wirelessAuth.failures || []} unit="failures">
+                      {rows => rows.map((r: any, i: number) => {
                         const rowBg = i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)';
                         const d = drillRow({ host: r.source_ip }, rowBg);
                         return (
@@ -859,7 +859,7 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
                           <td style={{ ...TD, color: 'var(--text-secondary)', maxWidth: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.message}</td>
                         </tr>
                       ); })}
-                    </tbody>
+                    </PagedTableBody>
                   </table>
                 )}
               </div>

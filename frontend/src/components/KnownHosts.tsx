@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useToast } from '@/components/Toast';
-import { PageHeader, TableSkeleton, EmptyState } from './ui';
+import { PageHeader, TableSkeleton, EmptyState, usePaged, Pagination } from './ui';
 import { VENDOR_COLORS } from './palette';
 
 interface Host {
@@ -89,8 +89,6 @@ export default function KnownHosts() {
     setSyncing(false);
   };
 
-  const [showAll, setShowAll] = useState(false);
-  const LIMIT = 10;
   const filtered = search
     ? hosts.filter(h =>
         h.ip_address?.includes(search) ||
@@ -99,7 +97,11 @@ export default function KnownHosts() {
         h.site_name?.toLowerCase().includes(search.toLowerCase()) ||
         h.brand?.toLowerCase().includes(search.toLowerCase()))
     : hosts;
-  const displayed = showAll ? filtered : filtered.slice(0, LIMIT);
+  // Paged rather than the old 10-rows-then-'show all' toggle: /api/hosts is
+  // UNBOUNDED and returns every known_hosts row (38k+ live), so 'show all' meant
+  // rendering tens of thousands of <tr> at once.
+  const paged = usePaged(filtered);
+  const displayed = paged.rows;
 
   const nvSynced  = hosts.filter(h => h.synced_from_nv).length;
   const manualCount = hosts.filter(h => !h.synced_from_nv).length;
@@ -297,19 +299,11 @@ export default function KnownHosts() {
           </table>
         )}
 
-        {/* Show more / less */}
-        {filtered.length > LIMIT && (
-          <div style={{ textAlign: 'center', marginTop: 12 }}>
-            <button onClick={() => setShowAll(s => !s)}
-              style={{ padding: '7px 20px', borderRadius: 6, border: '1px solid var(--border)',
-                cursor: 'pointer', fontSize: 'var(--text-sm)', fontWeight: 500,
-                background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
-              {showAll
-                ? `▲ Show less`
-                : `▼ Show ${filtered.length - LIMIT} more (${filtered.length} total)`}
-            </button>
-          </div>
-        )}
+        <Pagination
+          page={paged.page} pageCount={paged.pageCount} total={paged.total}
+          start={paged.start} shown={displayed.length} unit="hosts"
+          onPage={paged.setPage}
+        />
       </div>
     </div>
   );

@@ -2657,6 +2657,12 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.28.0': [
+    'Long tables are now paged instead of rendering everything at once. Twenty lists across Security, Network Health, Intelligence, Alerts, Log Explorer, Reports and Known Hosts now show 25 rows at a time with First/Prev/Next/Last controls and a "showing X to Y of Z" count, so pages no longer scroll for screen after screen.',
+    'The pager only appears when a list actually needs one — anything that already fits on a single page looks exactly as it did before.',
+    'Known Hosts changed the most: it previously showed 10 entries behind a "show more" button that then rendered every host at once. With tens of thousands of hosts that was the worst offender on the site; it is now paged like everything else.',
+    'Paging happens in your browser using data already loaded, so moving between pages is instant and does not re-query the server.',
+  ],
   '2.27.0': [
     'The search box at the top of the screen now works. It was previously connected to nothing at all — typing into it filled the box and did nothing else, with no results and no error, which is exactly how it appeared to anyone who tried it.',
     'Typing at least two characters now shows matching hosts, alerts and recent log entries grouped together, and clicking any result opens it in the right place: a host opens its traffic in Log Explorer, an alert opens the Alerts page, a log entry opens the full search. Pressing Enter goes straight to Log Explorer with your term applied.',

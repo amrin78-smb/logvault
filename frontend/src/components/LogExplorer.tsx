@@ -6,7 +6,7 @@ import LogDetailPanel from '@/components/LogDetailPanel';
 // ExplorerFilter (defined in app/page.tsx) doesn't carry the deep-link `threat`
 // filter, so widen it locally for the spots that thread `threat` through.
 type ExplorerFilterX = ExplorerFilter & { threat?: string };
-import { PageHeader, TableSkeleton, EmptyState } from './ui';
+import {PageHeader, TableSkeleton, EmptyState, PagedTableBody } from './ui';
 import { sevStyle } from './severity';
 import { VENDOR_COLORS } from './palette';
 
@@ -378,8 +378,9 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
               ))}
             </tr>
           </thead>
-          <tbody>
-            {logs.map((row, i) => (
+          <PagedTableBody items={logs || []} unit="logs">
+            {rows => (<>
+            {rows.map((row, i) => (
               <tr key={i} onClick={() => setSelectedLog(row)}
                 style={{ borderBottom: '1px solid var(--border-light)', cursor: 'pointer',
                   background: selectedLog?.id === row.id ? 'var(--tint-info)' : i % 2 === 0 ? 'transparent' : 'var(--bg-primary)' }}
@@ -425,17 +426,20 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
                 </td>
               </tr>
             ))}
-            {logs.length === 0 && !loading && searched && (
+            {/* Empty states live INSIDE the render callback: PagedTableBody takes a
+                single function child, and these rows must still sit within <tbody>. */}
+            {rows.length === 0 && logs.length === 0 && !loading && searched && (
               <tr><td colSpan={6} style={{ padding: 48, textAlign: 'center', color: 'var(--text-muted)' }}>
                 No logs found. Try adjusting your filters or widening the time range.
               </td></tr>
             )}
-            {!searched && (
+            {rows.length === 0 && !searched && (
               <tr><td colSpan={6} style={{ padding: 48, textAlign: 'center', color: 'var(--text-muted)' }}>
                 Click a preset above or hit Search to load logs
               </td></tr>
             )}
-          </tbody>
+          </>)}
+          </PagedTableBody>
         </table>
       </div>
       )}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { PageHeader, TableSkeleton, CardSkeleton, EmptyState } from './ui';
+import {PageHeader, TableSkeleton, CardSkeleton, EmptyState, PagedTableBody } from './ui';
 import TimeRangePicker from './TimeRangePicker';
 
 // ── Shared styles ─────────────────────────────────────────────
@@ -310,8 +310,8 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                     ))}
                   </tr>
                 </thead>
-                <tbody>
-                  {deviceStatus.map((d, i) => {
+                <PagedTableBody items={deviceStatus || []} unit="devices">
+                  {rows => rows.map((d, i) => {
                     const mins   = parseFloat(d.minutes_since_last_log);
                     const silent = mins > 60;
                     const warn   = mins > 15 && !silent;
@@ -335,7 +335,7 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                       </tr>
                     );
                   })}
-                </tbody>
+                </PagedTableBody>
               </table>
               )}
             </div>
@@ -357,8 +357,8 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                         {['Device','Interface','Total Events','↓ Down','↑ Up','First Seen','Last Seen'].map(h => <th key={h} style={TH}>{h}</th>)}
                       </tr>
                     </thead>
-                    <tbody>
-                      {flaps.map((f, i) => (
+                    <PagedTableBody items={flaps || []} unit="flaps">
+                      {rows => rows.map((f, i) => (
                         <tr key={i} style={{ borderBottom: '1px solid var(--border-light)',
                           background: parseInt(f.event_count) >= 6 ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
                           <td style={{ ...TD, ...MONO, fontWeight: 500, color: 'var(--text-primary)' }}>{f.host}</td>
@@ -376,7 +376,7 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                           <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(f.last_seen).toLocaleTimeString()}</td>
                         </tr>
                       ))}
-                    </tbody>
+                    </PagedTableBody>
                   </table>
                 </div>
               )}
@@ -394,8 +394,8 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                       {['Time','Device','Interface','State','Message'].map(h => <th key={h} style={TH}>{h}</th>)}
                     </tr>
                   </thead>
-                  <tbody>
-                    {interfaces.map((r, i) => (
+                  <PagedTableBody items={interfaces || []} unit="events">
+                    {rows => rows.map((r, i) => (
                       <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(r.received_at).toLocaleTimeString()}</td>
                         <td style={{ ...TD, ...MONO, fontWeight: 500, color: 'var(--text-primary)' }}>{r.source_host || r.source_ip}</td>
@@ -404,7 +404,7 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                         <td style={{ ...TD, color: 'var(--text-secondary)', maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.message}</td>
                       </tr>
                     ))}
-                  </tbody>
+                  </PagedTableBody>
                 </table>
                 )}
               </div>
@@ -436,8 +436,8 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                         {['Time','Device','Severity','Event Type','Interface','MAC','Message'].map(h => <th key={h} style={TH}>{h}</th>)}
                       </tr>
                     </thead>
-                    <tbody>
-                      {stpEvents.map((r, i) => (
+                    <PagedTableBody items={stpEvents || []} unit="events">
+                      {rows => rows.map((r, i) => (
                         <tr key={i} style={{ borderBottom: '1px solid var(--border-light)',
                           background: ['mac_flap','storm_control','loop_detected'].includes(r.subcategory) ? 'var(--tint-danger)' : i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
                           <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(r.received_at).toLocaleTimeString()}</td>
@@ -449,7 +449,7 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                           <td style={{ ...TD, color: 'var(--text-secondary)', maxWidth: 350, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.message}</td>
                         </tr>
                       ))}
-                    </tbody>
+                    </PagedTableBody>
                   </table>
                 </>
               )}
@@ -481,8 +481,8 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                         {['Switch','MAC Address','Flap Count','Affected Ports','First Seen','Last Seen'].map(h => <th key={h} style={TH}>{h}</th>)}
                       </tr>
                     </thead>
-                    <tbody>
-                      {macFlaps.map((r, i) => (
+                    <PagedTableBody items={macFlaps || []} unit="events">
+                      {rows => rows.map((r, i) => (
                         <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: 'var(--tint-danger)' }}>
                           <td style={{ ...TD, ...MONO, fontWeight: 500, color: 'var(--text-primary)' }}>{r.host}</td>
                           <td style={{ ...TD, ...MONO, color: '#dc2626', fontWeight: 700 }}>{r.mac_address || '—'}</td>
@@ -497,7 +497,7 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                           <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{new Date(r.last_seen).toLocaleTimeString()}</td>
                         </tr>
                       ))}
-                    </tbody>
+                    </PagedTableBody>
                   </table>
                 </>
               )}
@@ -520,8 +520,8 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                       {['Time','Device','Protocol','Severity','Message'].map(h => <th key={h} style={TH}>{h}</th>)}
                     </tr>
                   </thead>
-                  <tbody>
-                    {routing.map((r, i) => (
+                  <PagedTableBody items={routing || []} unit="events">
+                    {rows => rows.map((r, i) => (
                       <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-card)' }}>
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(r.received_at).toLocaleTimeString()}</td>
                         <td style={{ ...TD, ...MONO, fontWeight: 500, color: 'var(--text-primary)' }}>{r.source_host || r.source_ip}</td>
@@ -530,7 +530,7 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                         <td style={{ ...TD, color: 'var(--text-secondary)', maxWidth: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.message}</td>
                       </tr>
                     ))}
-                  </tbody>
+                  </PagedTableBody>
                 </table>
               )}
             </div>
@@ -554,8 +554,8 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                       {['Time','Device','Vendor','Message'].map(h => <th key={h} style={TH}>{h}</th>)}
                     </tr>
                   </thead>
-                  <tbody>
-                    {configChanges.map((r, i) => (
+                  <PagedTableBody items={configChanges || []} unit="changes">
+                    {rows => rows.map((r, i) => (
                       <tr key={i} style={{ borderBottom: '1px solid var(--border-light)',
                         background: i % 2 === 0 ? 'var(--tint-warn)' : 'var(--bg-card)' }}>
                         <td style={{ ...TD, ...MONO, fontSize: 'var(--text-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(r.received_at).toLocaleString()}</td>
@@ -564,7 +564,7 @@ export default function NetworkHealth({ hours, onHoursChange, refreshInterval, o
                         <td style={{ ...TD, color: 'var(--text-secondary)' }}>{r.message}</td>
                       </tr>
                     ))}
-                  </tbody>
+                  </PagedTableBody>
                 </table>
               )}
             </div>
