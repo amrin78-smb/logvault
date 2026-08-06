@@ -1694,6 +1694,9 @@ app.get('/api/security/summary', asyncHandler(async (req, res) => {
 
 app.get('/api/security/auth-failures', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
+  // Explicit cutoff, not NOW() - make_interval — see the note in
+  // api/securityKpis.js: 56 daily partitions, ~566ms of planning time saved.
+  const since = new Date(Date.now() - hours * 3600 * 1000);
   const sf = getSiteFilter(req.rbac, 2, 'se');
   // Group by the REAL attacker source (normalized srcip, falling back to the syslog
   // sender), vendor-agnostically. Detection uses ONLY the normalized subcategory — the
@@ -1721,14 +1724,14 @@ app.get('/api/security/auth-failures', asyncHandler(async (req, res) => {
     LEFT JOIN known_hosts kh
       ON COALESCE(se.structured_data->>'srcip', se.source_ip::text) ~ '^[0-9.]+$'
      AND host(kh.ip_address) = COALESCE(se.structured_data->>'srcip', se.source_ip::text)
-    WHERE se.received_at > NOW() - make_interval(hours => $1)
+    WHERE se.received_at > $1
       AND se.structured_data->>'subcategory' IN ('login_failed','auth_failed','brute_force')
     ${sf.clause}
     GROUP BY COALESCE(se.structured_data->>'srcip', se.source_ip::text),
       COALESCE(kh.hostname, se.structured_data->>'srcip', se.source_host), se.vendor,
       COALESCE(se.structured_data->>'srccountry', kh.country_name), kh.country_code
     ORDER BY failure_count DESC LIMIT 50
-  `, [hours, ...sf.params]);
+  `, [since, ...sf.params]);
   res.json({ data: rows });
 }));
 
@@ -2644,6 +2647,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.31.3': [
+    'The "Top Auth Failure Sources" panel now returns in a fraction of a second. It was the last remaining slow query on the Security Overview — 1.5 seconds, of which nearly all was the database planning the query rather than running it. Same figures, measured identical before and after.',
+  ],
   '2.31.2': [
     'Fixed the auto-refresh on pages with a time-range selector. The countdown was refreshing whichever section had been open when the page first loaded, rather than the one you are actually looking at — so sitting on IPS / Threats quietly re-fetched the Overview data every 30 seconds and never updated what was on screen.',
     'This had no visible effect until the previous release made each section load its own data, at which point it started refreshing the wrong thing. Refresh now always updates the section in front of you.',
