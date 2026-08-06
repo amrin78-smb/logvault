@@ -1869,8 +1869,12 @@ internal/proxied — so verify via the frontend port for consistency:
   dead at once, which is the tell.
 - Deploy by running this app's own `installer/Update-LogVault.ps1` over WinRM
   `Invoke-Command`, never by hand-editing the server. Pass
-  `-InstallDir C:\Apps\LogVault\app` — the install root is the `app` **subfolder**
-  (`C:\Apps\LogVault` itself holds only `app`/`logs`/`nssm`). Run it backgrounded:
+  `-InstallDir C:\Apps\logvault` — **lowercase, and NO `app` subfolder**: the repo
+  root IS the install root here (matching the update command documented earlier in
+  this file). The suite is NOT uniform on this — NetVault and SpanVault live at
+  `C:\Apps\<App>\app`, while logvault and ddivault do not. Verified on the server
+  2026-08-06 after assuming otherwise cost a failed deploy; it fails fast with
+  CommandNotFoundException before touching anything. Run it backgrounded:
   an npm install + build outlasts a foreground tool timeout, and timing out
   mid-deploy tears down the WinRM session. The updater applies `scripts/schema.sql`
   as `postgres` and will not restart services if the build fails, so the old
