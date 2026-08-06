@@ -2644,6 +2644,10 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.31.1': [
+    'The Overview page under Security > Detections now loads in a fraction of the time. It was fetching the data for all nine sections — Auth Failures, Brute Force, Firewall Denies, VPN, IPS, After-Hours, Wireless and ATT&CK Coverage — before drawing its three panels. That is why Overview felt slow while the other sections felt instant: their data had already been loaded behind it.',
+    'Each section now loads only what it shows, so Overview makes four requests instead of thirteen, and the others load when you open them. Every panel, figure and warning dot on the section tabs behaves exactly as before.',
+  ],
   '2.31.0': [
     'Live Tail is now a mode inside Log Explorer rather than a menu item of its own. Open Log Explorer and switch between Search and Live Tail at the top. It is the same question — what is in the logs — asked about now instead of about the past, so it belongs beside the search rather than in a separate place.',
     'Nothing about tailing itself has changed: pause, clear, auto-scroll and the quick filter all behave exactly as before, and the stream still starts only when you open it. The controls that mean nothing while tailing — time range, paging and export — are simply not shown in that mode.',

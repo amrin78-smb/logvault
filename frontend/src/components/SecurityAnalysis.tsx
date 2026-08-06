@@ -140,50 +140,85 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
   const [loading,      setLoading]      = useState(true);
   const [activeSection, setActiveSection] = useState('overview');
 
+  // ── Section-aware loading ───────────────────────────────────────────────────
+  // This used to be one fetchAll() firing ALL 13 endpoints on mount, no matter
+  // which section you were looking at. Since Overview is what renders first,
+  // opening this tab paid for all nine sections' data to show three panels —
+  // which is exactly why Overview felt slow while the other sections felt
+  // instant (their data had already been fetched behind it).
+  //
+  // Now: `core` (always) + only the active section's endpoints. Overview goes
+  // from 13 requests to 4.
+  const j = (url: string) => fetch(url).then(r => r.json()).catch(() => null);
+
+  // Always needed regardless of section: `summary` drives the eight KPI cards
+  // AND five of the tab-bar alert dots; `wireless-auth` drives the Wireless dot,
+  // which has no equivalent field in summary. The VPN dot no longer needs the
+  // full vpn-events payload — see SECTIONS below.
+  const fetchCore = useCallback(async () => {
+    const [s, wa] = await Promise.all([
+      j(`/api/security/summary?hours=${hours}`),
+      j(`/api/security/wireless-auth?hours=${hours}`),
+    ]);
+    setSummary(s ? {
+      ...s,
+      auth_failures:       parseInt(s.auth_failures       || 0),
+      brute_force_success: parseInt(s.brute_force_success || 0),
+      firewall_denies:     parseInt(s.firewall_denies     || 0),
+      vpn_events:          parseInt(s.vpn_events          || 0),
+      ips_events:          parseInt(s.ips_events          || 0),
+      after_hours_events:  parseInt(s.after_hours_events  || 0),
+      vpn_login_failures:  parseInt(s.vpn_login_failures  || 0),
+      known_bad_failures:  parseInt(s.known_bad_failures  || 0),
+    } : null);
+    if (wa) setWirelessAuth(wa);
+  }, [hours]);
+
+  // Exactly what each section renders — verified against the JSX, not guessed.
+  // Getting this wrong shows an empty panel, so if you add a panel, add its
+  // endpoint here too.
+  const fetchSection = useCallback(async (section: string) => {
+    switch (section) {
+      case 'overview': {
+        const [af, hmAll] = await Promise.all([
+          j(`/api/security/auth-failures?hours=${hours}`),
+          j(`/api/stats/heatmap?metric=all&hours=${hours}`),
+        ]);
+        if (af) setAuthFails(af.data || []);
+        setHeatmapAll(Array.isArray(hmAll?.data) ? hmAll.data : []);
+        break;
+      }
+      case 'authfail': {
+        const [af, tu, fc, hmAuth] = await Promise.all([
+          j(`/api/security/auth-failures?hours=${hours}`),
+          j(`/api/security/top-targeted-users?hours=${hours}`),
+          j(`/api/stats/geo?hours=${hours}`),
+          j(`/api/stats/heatmap?metric=auth_failed&hours=${hours}`),
+        ]);
+        if (af) setAuthFails(af.data || []);
+        if (tu) setTargetedUsers(tu.data || []);
+        if (fc) setFailsByCountry(fc.data || []);
+        setHeatmapAuth(Array.isArray(hmAuth?.data) ? hmAuth.data : []);
+        break;
+      }
+      case 'brute':      { const r = await j(`/api/security/brute-force?hours=${hours}`);   if (r) setBruteForce(r.data || []); break; }
+      case 'firewall':   { const r = await j(`/api/security/firewall-denies?hours=${hours}`); if (r) setFwDenies(r); break; }
+      case 'vpn':        { const r = await j(`/api/security/vpn-events?hours=${hours}`);    if (r) setVpnEvents(r.data || []); break; }
+      case 'ips':        { const r = await j(`/api/security/ips-events?hours=${hours}`);    if (r) setIpsEvents(r); break; }
+      case 'afterhours': { const r = await j(`/api/security/after-hours?hours=${hours}`);   if (r) setAfterHours(r.data || []); break; }
+      case 'wireless':   break; // wireless-auth is already part of core
+      case 'attack':     { const r = await j(`/api/stats/mitre-coverage?hours=${hours}`);   if (r) setMitreCov(r.data || []); break; }
+      default: break;
+    }
+  }, [hours]);
+
+  // Manual refresh / auto-refresh: reload what is actually on screen.
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    try {
-      const [s, af, bf, fw, vpn, ips, ah, wa, mc, tu, fc, hmAll, hmAuth] = await Promise.all([
-        fetch(`/api/security/summary?hours=${hours}`).then(r => r.json()),
-        fetch(`/api/security/auth-failures?hours=${hours}`).then(r => r.json()),
-        fetch(`/api/security/brute-force?hours=${hours}`).then(r => r.json()),
-        fetch(`/api/security/firewall-denies?hours=${hours}`).then(r => r.json()),
-        fetch(`/api/security/vpn-events?hours=${hours}`).then(r => r.json()),
-        fetch(`/api/security/ips-events?hours=${hours}`).then(r => r.json()),
-        fetch(`/api/security/after-hours?hours=${hours}`).then(r => r.json()),
-        fetch(`/api/security/wireless-auth?hours=${hours}`).then(r => r.json()),
-        fetch(`/api/stats/mitre-coverage?hours=${hours}`).then(r => r.json()),
-        fetch(`/api/security/top-targeted-users?hours=${hours}`).then(r => r.json()),
-        fetch(`/api/stats/geo?hours=${hours}`).then(r => r.json()),
-        fetch(`/api/stats/heatmap?metric=all&hours=${hours}`).then(r => r.json()),
-        fetch(`/api/stats/heatmap?metric=auth_failed&hours=${hours}`).then(r => r.json()),
-      ]);
-      setSummary(s ? {
-        ...s,
-        auth_failures:       parseInt(s.auth_failures       || 0),
-        brute_force_success: parseInt(s.brute_force_success || 0),
-        firewall_denies:     parseInt(s.firewall_denies     || 0),
-        vpn_events:          parseInt(s.vpn_events          || 0),
-        ips_events:          parseInt(s.ips_events          || 0),
-        after_hours_events:  parseInt(s.after_hours_events  || 0),
-        vpn_login_failures:  parseInt(s.vpn_login_failures  || 0),
-        known_bad_failures:  parseInt(s.known_bad_failures  || 0),
-      } : null);
-      setAuthFails(af.data || []);
-      setBruteForce(bf.data || []);
-      setFwDenies(fw);
-      setVpnEvents(vpn.data || []);
-      setIpsEvents(ips);
-      setAfterHours(ah.data || []);
-      setWirelessAuth(wa);
-      setMitreCov(mc.data || []);
-      setTargetedUsers(tu.data || []);
-      setFailsByCountry(fc.data || []);
-      setHeatmapAll(Array.isArray(hmAll?.data) ? hmAll.data : []);
-      setHeatmapAuth(Array.isArray(hmAuth?.data) ? hmAuth.data : []);
-    } catch (e) { console.error(e); }
+    try { await Promise.all([fetchCore(), fetchSection(activeSection)]); }
+    catch (e) { console.error(e); }
     setLoading(false);
-  }, [hours]);
+  }, [fetchCore, fetchSection, activeSection]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -211,7 +246,11 @@ export default function SecurityAnalysis({ hours, onHoursChange, refreshInterval
     { id: 'authfail',   label: 'Auth Failures',     alert: (summary?.auth_failures    || 0) > 0 },
     { id: 'brute',      label: 'Brute Force',        alert: (summary?.brute_force_success || 0) > 0 },
     { id: 'firewall',   label: 'Firewall Denies',    alert: (summary?.firewall_denies  || 0) > 10 },
-    { id: 'vpn',        label: 'VPN Events',         alert: vpnEvents.some(v => v.event_type === 'failure') },
+    // Was `vpnEvents.some(v => v.event_type === 'failure')`, which forced the
+    // whole vpn-events payload to load on every section just to decide one dot.
+    // summary.vpn_login_failures is the same signal (VPN auth failures in the
+    // window) and is already loaded for the KPI cards.
+    { id: 'vpn',        label: 'VPN Events',         alert: (summary?.vpn_login_failures || 0) > 0 },
     { id: 'ips',        label: 'IPS / Threats',      alert: (summary?.ips_events       || 0) > 0 },
     { id: 'afterhours', label: 'After-Hours',        alert: (summary?.after_hours_events || 0) > 0 },
     { id: 'wireless',   label: 'Wireless Auth',      alert: (wirelessAuth?.summary?.failures || 0) > 5 },
