@@ -39,11 +39,27 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
     ];
   }, [showCustom]); // Only recalculate when dropdown opens
 
+  // The auto-refresh tick must call the CURRENT onRefreshNow, not the one that
+  // happened to exist when the interval was created. This effect deliberately
+  // depends only on `refreshInterval` (adding onRefreshNow would restart the
+  // countdown every time the parent re-created its callback), so without this
+  // ref the interval closes over a stale callback for its whole life.
+  //
+  // That was harmless while callers passed a fetch-everything function whose
+  // identity only changed with `hours`. It stopped being harmless in 2.31.1,
+  // when SecurityAnalysis's refresh became section-aware: the stale closure
+  // then refreshed whichever section was open when the timer started, so
+  // sitting on IPS/Threats quietly re-fetched Overview's data every 30s.
+  const refreshRef = useRef(onRefreshNow);
+  refreshRef.current = onRefreshNow;
+
   useEffect(() => {
     setCountdown(refreshInterval);
     const t = setInterval(() => {
       setCountdown(c => {
-        if (c <= 1) { onRefreshNow(); return refreshInterval; }
+        // queueMicrotask keeps the fetch out of the state updater — an updater
+        // must stay pure, and React may invoke it more than once.
+        if (c <= 1) { queueMicrotask(() => refreshRef.current()); return refreshInterval; }
         return c - 1;
       });
     }, 1000);

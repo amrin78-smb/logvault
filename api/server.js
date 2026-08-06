@@ -2644,6 +2644,10 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.31.2': [
+    'Fixed the auto-refresh on pages with a time-range selector. The countdown was refreshing whichever section had been open when the page first loaded, rather than the one you are actually looking at — so sitting on IPS / Threats quietly re-fetched the Overview data every 30 seconds and never updated what was on screen.',
+    'This had no visible effect until the previous release made each section load its own data, at which point it started refreshing the wrong thing. Refresh now always updates the section in front of you.',
+  ],
   '2.31.1': [
     'The Overview page under Security > Detections now loads in a fraction of the time. It was fetching the data for all nine sections — Auth Failures, Brute Force, Firewall Denies, VPN, IPS, After-Hours, Wireless and ATT&CK Coverage — before drawing its three panels. That is why Overview felt slow while the other sections felt instant: their data had already been loaded behind it.',
     'Each section now loads only what it shows, so Overview makes four requests instead of thirteen, and the others load when you open them. Every panel, figure and warning dot on the section tabs behaves exactly as before.',
