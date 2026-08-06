@@ -83,11 +83,40 @@ const asyncHandler = fn => (req, res, next) => Promise.resolve(fn(req, res, next
 // Dashboard stat endpoints scan ~1.9M rows on every dashboard load. Cache their
 // results for a short TTL so repeated loads don't re-run the same heavy query.
 const statCache = new Map();
+
+// Bounded, because nothing here ever expires on its own: an entry past its TTL
+// is simply not USED, it still occupies the Map forever. That was harmless when
+// only a few endpoints cached small fixed-key results, but the response cache
+// added in 2.30.0 stores a whole response body per
+// (path × ?hours= × rbac scope) — and `hours` is not a small fixed set, because
+// the time-range picker offers a Custom range, so a user exploring ranges can
+// mint unlimited keys on a process that runs for weeks.
+//
+// Insertion-ordered Map: the first keys returned by an iterator are the
+// oldest-inserted, so dropping from the front is a reasonable approximation of
+// LRU without tracking access times.
+const STAT_CACHE_MAX = 400;
+function cacheSet(key, data) {
+  statCache.set(key, { data, at: Date.now() });
+  if (statCache.size <= STAT_CACHE_MAX) return;
+  // First drop anything older than the longest TTL in use (10 min), then, if
+  // still over, evict oldest-first until back under the cap.
+  const cutoff = Date.now() - 10 * 60 * 1000;
+  for (const [k, v] of statCache) {
+    if (statCache.size <= STAT_CACHE_MAX) break;
+    if (v.at < cutoff) statCache.delete(k);
+  }
+  for (const k of statCache.keys()) {
+    if (statCache.size <= STAT_CACHE_MAX) break;
+    statCache.delete(k);
+  }
+}
+
 async function getCached(key, ttlMs, fn) {
   const cached = statCache.get(key);
   if (cached && Date.now() - cached.at < ttlMs) return cached.data;
   const data = await fn();
-  statCache.set(key, { data, at: Date.now() });
+  cacheSet(key, data);
   return data;
 }
 
@@ -192,7 +221,7 @@ app.use((req, res, next) => {
   if (hit && Date.now() - hit.at < RESP_CACHE_TTL_MS) return res.json(hit.data);
   const sendJson = res.json.bind(res);
   res.json = (body) => {
-    if (res.statusCode === 200) statCache.set(key, { data: body, at: Date.now() });
+    if (res.statusCode === 200) cacheSet(key, body);
     return sendJson(body);
   };
   next();
@@ -2647,6 +2676,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.31.4': [
+    'Internal: the short-term result caches are now size-limited. Cached results were never discarded once they went stale — they were simply no longer used — so on a server running for weeks the memory held by them could only grow, particularly for anyone using Custom time ranges. They are now capped and the oldest are dropped. No change to what you see.',
+  ],
   '2.31.3': [
     'The "Top Auth Failure Sources" panel now returns in a fraction of a second. It was the last remaining slow query on the Security Overview — 1.5 seconds, of which nearly all was the database planning the query rather than running it. Same figures, measured identical before and after.',
   ],

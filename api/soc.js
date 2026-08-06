@@ -33,11 +33,17 @@ const asyncHandler = fn => (req, res, next) => Promise.resolve(fn(req, res, next
 //    module-private there). Keyed incl. the RBAC scope so site-restricted
 //    results never leak across users. ──────────────────────────────────────
 const socCache = new Map();
+// Bounded for the same reason as server.js's statCache: an entry past its TTL is
+// merely unused, never freed, and the key carries ?hours= — which the Custom
+// range picker makes an open-ended set on a process that runs for weeks.
+const SOC_CACHE_MAX = 200;
 async function getCached(key, ttlMs, fn) {
   const cached = socCache.get(key);
   if (cached && Date.now() - cached.at < ttlMs) return cached.data;
   const data = await fn();
   socCache.set(key, { data, at: Date.now() });
+  // Map iterates in insertion order, so the front is the oldest.
+  while (socCache.size > SOC_CACHE_MAX) socCache.delete(socCache.keys().next().value);
   return data;
 }
 function rbacCacheKey(rbac) {
