@@ -27,7 +27,7 @@ Every file has `'use client'` at the top — this app has no server components b
 (c) LicenseGate  children — from LicenseGuard.tsx
 (c) LicenseBanner  (no props) — from LicenseGuard.tsx
 (c) LicenseDisabledScreen  mode? — from LicenseGuard.tsx
-(c) LiveTail  (no props — WebSocket-driven, browser-only)
+(c) LiveTail  (no props — WebSocket-driven, browser-only). NOT a tab since 2.31.0: rendered by LogExplorer as its "Live Tail" mode via next/dynamic ssr:false. page.tsx no longer imports it.
 (c) LogDetailPanel  log, onClose, onFilterIP, onFilterVendor, onFilterSeverity
 (c) LogExplorer  initialFilter?, onFilterUsed?
 (c) NetworkHealth  hours, onHoursChange, refreshInterval, onRefreshChange

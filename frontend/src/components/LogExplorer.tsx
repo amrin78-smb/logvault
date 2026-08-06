@@ -1,12 +1,13 @@
 'use client';
 import { useState, useCallback, useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import type { ExplorerFilter } from '@/app/page';
 import LogDetailPanel from '@/components/LogDetailPanel';
 
 // ExplorerFilter (defined in app/page.tsx) doesn't carry the deep-link `threat`
 // filter, so widen it locally for the spots that thread `threat` through.
 type ExplorerFilterX = ExplorerFilter & { threat?: string };
-import {PageHeader, TableSkeleton, EmptyState, PagedTableBody } from './ui';
+import {PageHeader, TableSkeleton, EmptyState, PagedTableBody, Spinner } from './ui';
 import { sevStyle } from './severity';
 import { VENDOR_COLORS } from './palette';
 
@@ -65,10 +66,55 @@ function remoteClientIP(row: any): string | null {
   return remote;
 }
 
-export default function LogExplorer({ initialFilter, onFilterUsed }: {
+// Live Tail is a MODE of the Log Explorer, not a tab of its own — it is the same
+// question ("what is in the logs?") asked about now instead of about the past.
+// Loaded on demand so the WebSocket code never ships to someone who only
+// searches. ssr:false is inherited anyway (page.tsx loads LogExplorer with
+// ssr:false), but it is stated here too because LiveTail genuinely cannot
+// server-render: it touches WebSocket at module scope.
+const LiveTail = dynamic(() => import('./LiveTail'), {
+  ssr: false,
+  loading: () => (
+    <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
+      <Spinner size={20} />
+    </div>
+  ),
+});
+
+type ExplorerMode = 'search' | 'live';
+
+// Module level, never nested inside LogExplorer — a component declared inside
+// another is re-created every render, which would remount the search input and
+// drop focus on every keystroke (suite-wide rule).
+function ExplorerModeTabs({ mode, onChange }: { mode: ExplorerMode; onChange: (m: ExplorerMode) => void }) {
+  return (
+    <div role="tablist" aria-label="Log Explorer mode"
+      style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+      {([['search', 'Search'], ['live', 'Live Tail']] as [ExplorerMode, string][]).map(([id, label]) => {
+        const active = id === mode;
+        return (
+          <button key={id} role="tab" aria-selected={active} onClick={() => onChange(id)}
+            style={{
+              padding: '8px 16px', border: 'none', background: 'none', cursor: 'pointer',
+              fontSize: 'var(--text-md)', fontWeight: active ? 700 : 500,
+              color: active ? 'var(--primary)' : 'var(--text-secondary)',
+              borderBottom: `2px solid ${active ? 'var(--primary)' : 'transparent'}`,
+              marginBottom: -1, transition: 'color 0.15s',
+            }}>
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function LogExplorer({ initialFilter, onFilterUsed, initialMode }: {
   initialFilter?: ExplorerFilterX;
   onFilterUsed?: () => void;
+  initialMode?: ExplorerMode;
 }) {
+  const [mode, setMode] = useState<ExplorerMode>(initialMode ?? 'search');
   const [q,          setQ]         = useState('');
   const [vendor,     setVendor]    = useState('');
   const [severity,   setSev]       = useState('');
@@ -196,7 +242,21 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
 
   return (
     <>
-    <PageHeader title="Log Explorer" subtitle="Search and filter syslog entries with smart presets" />
+    <PageHeader
+      title="Log Explorer"
+      subtitle={mode === 'live'
+        ? 'Stream log entries as they arrive'
+        : 'Search and filter syslog entries with smart presets'}
+    />
+    <ExplorerModeTabs mode={mode} onChange={setMode} />
+
+    {/* Live mode deliberately renders ONLY LiveTail: the search controls below
+        (time range, presets, pagination, export) have no meaning while tailing
+        a live stream, and LiveTail carries its own pause / clear / autoscroll /
+        quick-filter. Unmounting the search side also drops its result set, which
+        is the behaviour the old separate tab already had. */}
+    {mode === 'live' ? <LiveTail /> : (
+    <>
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
       padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
       <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Log Explorer</div>
@@ -453,6 +513,8 @@ export default function LogExplorer({ initialFilter, onFilterUsed }: {
         onFilterSeverity={s => { setSev(s); setTimeout(() => triggerSearch(), 50); }}
       />
     </div>
+    </>
+    )}
     </>
   );
 }

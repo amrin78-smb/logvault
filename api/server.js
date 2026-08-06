@@ -2644,6 +2644,11 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.31.0': [
+    'Live Tail is now a mode inside Log Explorer rather than a menu item of its own. Open Log Explorer and switch between Search and Live Tail at the top. It is the same question — what is in the logs — asked about now instead of about the past, so it belongs beside the search rather than in a separate place.',
+    'Nothing about tailing itself has changed: pause, clear, auto-scroll and the quick filter all behave exactly as before, and the stream still starts only when you open it. The controls that mean nothing while tailing — time range, paging and export — are simply not shown in that mode.',
+    'The sidebar is now three items shorter than it was this morning: Security Overview, Threat Map and Live Tail have each been folded into the section they belong to, without removing any of their content.',
+  ],
   '2.30.1': [
     'Security and Network Health panels now return in a fraction of the time. The log table is split into 56 daily sections for storage, and the way the date range was written meant the database re-examined all 56 of them every single time a panel loaded — before reading a single row. Asking for the same data with an explicit cut-off date lets it go straight to the handful of sections that matter.',
     'Measured on this server: the same six security figures went from 4.4 seconds to 0.13 seconds, returning byte-for-byte identical results. Most of the saving is work the database was doing before it even started looking at your logs.',

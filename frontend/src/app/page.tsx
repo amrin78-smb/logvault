@@ -29,20 +29,22 @@ const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION;
 // complexity for content shown right away. Every OTHER tab's component is loaded
 // on-demand instead of being bundled into the initial page load: a live audit found
 // the app shipping ALL 10 tabs' JS (~1.4MB total) upfront regardless of which tab
-// the user actually opens, with zero use of next/dynamic anywhere. These 9 imports
+// the user actually opens, with zero use of next/dynamic anywhere. These imports
 // are the fix — each becomes its own chunk, fetched only the first time its tab is
 // selected. ssr:false is safe (not just an optimization) for all of them: `tab`
 // state defaults to 'dashboard' and only ever changes via client-side interaction,
 // so none of these conditionally-rendered branches are ever true during the
-// server-render pass anyway — and LiveTail specifically depends on browser-only
-// WebSocket APIs that would break under SSR if it ever were.
+// server-render pass anyway.
+//
+// LiveTail is NOT listed here any more: since 2.31.0 it is a mode inside Log
+// Explorer rather than a tab, so LogExplorer owns its (still dynamic, still
+// ssr:false) import — it depends on browser-only WebSocket APIs.
 const tabLoading = (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 0' }}>
     <Spinner size={22} />
   </div>
 );
 const LogExplorer      = dynamic(() => import('@/components/LogExplorer'),      { ssr: false, loading: () => tabLoading });
-const LiveTail         = dynamic(() => import('@/components/LiveTail'),         { ssr: false, loading: () => tabLoading });
 const AlertEvents      = dynamic(() => import('@/components/AlertEvents'),      { ssr: false, loading: () => tabLoading });
 const NetworkHealth    = dynamic(() => import('@/components/NetworkHealth'),    { ssr: false, loading: () => tabLoading });
 const SecurityAnalysis = dynamic(() => import('@/components/SecurityAnalysis'), { ssr: false, loading: () => tabLoading });
@@ -54,7 +56,7 @@ const SocOverview      = dynamic(() => import('@/components/SocOverview'),      
 const EntityProfile    = dynamic(() => import('@/components/EntityProfile'),    { ssr: false, loading: () => tabLoading });
 const ThreatMap        = dynamic(() => import('@/components/ThreatMap'),        { ssr: false, loading: () => tabLoading });
 
-type Tab = 'dashboard' | 'explorer' | 'livetail' | 'alerts' | 'health' | 'security' | 'intelligence' | 'entities' | 'hosts' | 'reports' | 'settings';
+type Tab = 'dashboard' | 'explorer' | 'alerts' | 'health' | 'security' | 'intelligence' | 'entities' | 'hosts' | 'reports' | 'settings';
 
 // Security is one tab with three views. They used to be three sibling top-level
 // tabs (Security Overview / Security / Threat Map) covering the same subject —
@@ -78,12 +80,13 @@ const LEGACY_TAB_MAP: Record<string, { tab: Tab; view: SecView }> = {
   soc:       { tab: 'security', view: 'overview' },
   threatmap: { tab: 'security', view: 'map' },
 };
+// 'livetail' likewise: it is now a mode inside Log Explorer, not a tab.
+const LEGACY_LIVETAIL = 'livetail';
 export interface ExplorerFilter { severity?: string; vendor?: string; host?: string; hours?: string; category?: string; q?: string; technique?: string; threat?: string; }
 
 const Icons: Record<Tab, JSX.Element> = {
   dashboard: (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1" fill="currentColor"/><rect x="9" y="1" width="6" height="6" rx="1" fill="currentColor"/><rect x="1" y="9" width="6" height="6" rx="1" fill="currentColor"/><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor"/></svg>),
   explorer:  (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="1.5" rx="0.75" fill="currentColor"/><rect x="1" y="7" width="10" height="1.5" rx="0.75" fill="currentColor"/><rect x="1" y="11" width="12" height="1.5" rx="0.75" fill="currentColor"/></svg>),
-  livetail:  (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3" fill="currentColor"/><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.2" fill="none" opacity="0.5"/></svg>),
   alerts:    (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1L1 13h14L8 1z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none"/><line x1="8" y1="6" x2="8" y2="9.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><circle cx="8" cy="11.5" r="0.8" fill="currentColor"/></svg>),
   health:    (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polyline points="1,8 4,4 6,10 9,3 11,8 13,6 15,8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>),
   security:  (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.4L2.6 3.7v4.4c0 3.3 2.3 5.5 5.4 6.5 3.1-1 5.4-3.2 5.4-6.5V3.7L8 1.4z" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round"/><polyline points="5.4,7.8 7.2,9.6 10.6,5.9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>),
@@ -99,7 +102,6 @@ const Icons: Record<Tab, JSX.Element> = {
 const NAV_COLORS: Record<Tab, { color: string; bg: string }> = {
   dashboard: { color: '#f87171', bg: 'rgba(248,113,113,0.22)' },
   explorer:  { color: '#60a5fa', bg: 'rgba(96,165,250,0.20)' },
-  livetail:  { color: '#22d3ee', bg: 'rgba(34,211,238,0.20)' },
   alerts:    { color: '#fbbf24', bg: 'rgba(251,191,36,0.20)' },
   health:    { color: '#34d399', bg: 'rgba(52,211,153,0.20)' },
   security:  { color: '#a78bfa', bg: 'rgba(167,139,250,0.20)' },
@@ -200,6 +202,10 @@ export default function Home() {
   const isAdmin     = role === 'admin' || role === 'super_admin';
   const [tab, setTab]                       = useState<Tab>('dashboard');
   const [secView, setSecView]               = useState<SecView>('overview');
+  // Only set by the legacy 'livetail' navigate event — it seeds Log Explorer's
+  // own mode on mount. Normal Search/Live switching happens inside LogExplorer
+  // and never touches this.
+  const [explorerMode, setExplorerMode]     = useState<'search' | 'live' | undefined>(undefined);
   const [hours, setHours]                   = useState(24);
   const [summary, setSummary]               = useState<any[]>([]);
   const [health, setHealth]                 = useState<any>(null);
@@ -271,6 +277,7 @@ export default function Home() {
       if (detail?.tab) {
         const legacy = LEGACY_TAB_MAP[detail.tab as string];
         if (legacy) { setSecView(legacy.view); setTab(legacy.tab); }
+        else if (detail.tab === LEGACY_LIVETAIL) { setExplorerMode('live'); setTab('explorer'); }
         else setTab(detail.tab as Tab);
       }
     };
@@ -299,7 +306,7 @@ export default function Home() {
   const TABS: { id: Tab; label: string }[] = [
     { id: 'dashboard', label: 'Dashboard' },
     { id: 'explorer', label: 'Log Explorer' },
-    { id: 'livetail',  label: 'Live Tail' }, { id: 'alerts',   label: 'Alerts' },
+    { id: 'alerts',   label: 'Alerts' },
     { id: 'health',    label: 'Network Health' }, { id: 'security', label: 'Security' },
     { id: 'intelligence', label: 'Intelligence' },
     { id: 'entities',  label: 'Entities' },
@@ -563,8 +570,10 @@ export default function Home() {
             </>
           )}
 
-          {tab === 'explorer'  && <ErrorBoundary name="Log Explorer"><LogExplorer initialFilter={explorerFilter} onFilterUsed={() => setExplorerFilter({})} /></ErrorBoundary>}
-          {tab === 'livetail'  && <ErrorBoundary name="Live Tail"><LiveTail /></ErrorBoundary>}
+          {/* key forces a remount when a legacy 'livetail' navigation arrives, so
+              initialMode (read once, on mount) actually takes effect even if the
+              user is already sitting on Log Explorer. */}
+          {tab === 'explorer'  && <ErrorBoundary name="Log Explorer"><LogExplorer key={explorerMode || 'search'} initialFilter={explorerFilter} initialMode={explorerMode} onFilterUsed={() => setExplorerFilter({})} /></ErrorBoundary>}
           {tab === 'alerts'    && <ErrorBoundary name="Alerts"><AlertEvents initialTechnique={alertTechnique} hours={hours} onTechniqueConsumed={() => setAlertTechnique(undefined)} /></ErrorBoundary>}
           {tab === 'health'    && <ErrorBoundary name="Network Health"><NetworkHealth hours={hours} onHoursChange={setHours} refreshInterval={refreshInterval} onRefreshChange={setRefreshInterval} /></ErrorBoundary>}
           {tab === 'security'  && (
