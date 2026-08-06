@@ -1860,7 +1860,28 @@ internal/proxied — so verify via the frontend port for consistency:
   logs_last_hour) and `/api/stats` (logs_today / log_sources / active_alerts).
 - Also use `curl` for HTTP-status sanity (200 vs 500, e.g. after a query change:
   `curl -s -o /dev/null -w "%{http_code}" http://192.168.6.111:3004/api/logs`).
-- Deploys are **manual** — Amrin runs `Update-LogVault.ps1`; Claude never deploys.
-  Always verify **after** the deploy: confirm `/api/health` shows the new version,
-  then confirm data via the read-only DB, then eyeball the UI. (Backend-only
-  changes can fast-path via restarting the LogVault-API service.)
+- Deploys are **routine for Claude** (changed 2026-08-06; this used to read "Amrin
+  runs `Update-LogVault.ps1`; Claude never deploys"). The standing loop is test →
+  build → commit → push → **deploy → verify live**, with ONE precondition: only
+  when the VPN is up and `192.168.6.111` is reachable. Preflight it (a `curl
+  /api/health` is enough); if unreachable, stop at the push and say so — don't
+  retry blindly or read it as an app fault. A VPN drop makes all four apps look
+  dead at once, which is the tell.
+- Deploy by running this app's own `installer/Update-LogVault.ps1` over WinRM
+  `Invoke-Command`, never by hand-editing the server. Pass
+  `-InstallDir C:\Apps\LogVault\app` — the install root is the `app` **subfolder**
+  (`C:\Apps\LogVault` itself holds only `app`/`logs`/`nssm`). Run it backgrounded:
+  an npm install + build outlasts a foreground tool timeout, and timing out
+  mid-deploy tears down the WinRM session. The updater applies `scripts/schema.sql`
+  as `postgres` and will not restart services if the build fails, so the old
+  version keeps serving. (Backend-only changes can still fast-path via restarting
+  the LogVault-API service.)
+- Always verify **after** the deploy, and verify *independently* rather than
+  trusting the updater's own output: confirm `/api/health` shows the new version,
+  confirm data via the read-only DB, then exercise the behaviour you actually
+  changed in the UI. This is not ceremony — a live post-deploy click check is what
+  caught SpanVault 1.88.1's site-header bug, where a stretched link swallowed 68%
+  of the header's clicks. Every static check passed it, and it was invisible in a
+  screenshot. Note this app is a single-page tab UI: tabs are `useState` in
+  `page.tsx`, not routes, so a live check must CLICK the sidebar buttons — visiting
+  `/hosts` or `/alerts` as URLs proves nothing.
