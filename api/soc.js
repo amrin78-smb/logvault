@@ -24,6 +24,7 @@
 
 const express = require('express');
 const { getSiteFilter, getAlertSiteFilter, getRollupSiteFilter } = require('./rbac');
+const { gatherSecurityKpis } = require('./securityKpis');
 
 // Same one-liner as api/server.js — asyncHandler is module-private there.
 const asyncHandler = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -214,36 +215,21 @@ async function gatherIncidents(pool, rbac, hours) {
 
 // Security counters — reuses the EXACT sub-queries of GET /api/security/summary
 // (auth_fail / deny / vpn / ips / after_hours / brute_force only).
+// Thin adapter over the SHARED implementation in api/securityKpis.js. This used
+// to be a second, hand-maintained copy of the same six queries, which had
+// already drifted from /api/security/summary (it never received the
+// action='blocked' correctness fix, so the Denied KPI here read 0 while the
+// Security tab's equivalent card read the truth). Only the field names differ
+// now — keep those, SocOverview.tsx renders them.
 async function gatherSecurity(pool, rbac, hours) {
-  const sf  = getSiteFilter(rbac, 2, 'syslog_entries'); // bare-table subqueries
-  const sfA = getSiteFilter(rbac, 2, 'a');               // brute-force success alias
-  const sfRollupDenies = getRollupSiteFilter(rbac, 2);
-  const sfRollupVpn    = getRollupSiteFilter(rbac, 2);
-  const sfRollupIps    = getRollupSiteFilter(rbac, 2);
-  const [authFail, denies, vpn, ips, afterHours, bruteSuccess] = await Promise.all([
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND structured_data->>'subcategory' IN ('login_failed','auth_failed') ${sf.clause}`, [hours, ...sf.params]),
-    pool.query(`SELECT COALESCE(SUM(log_count), 0)::bigint AS count FROM syslog_fortinet_field_rollup WHERE dimension = 'action' AND value = 'blocked' AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1)) ${sfRollupDenies.clause}`, [hours, ...sfRollupDenies.params]),
-    pool.query(`SELECT COALESCE(SUM(log_count), 0)::bigint AS count FROM syslog_fortinet_field_rollup WHERE dimension = 'subtype' AND value = 'vpn' AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1)) ${sfRollupVpn.clause}`, [hours, ...sfRollupVpn.params]),
-    pool.query(`SELECT COALESCE(SUM(log_count), 0)::bigint AS count FROM syslog_fortinet_field_rollup WHERE dimension = 'type' AND value = 'utm' AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1)) ${sfRollupIps.clause}`, [hours, ...sfRollupIps.params]),
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND structured_data->>'subcategory' IN ('login_failed','config_change','auth_failed') AND EXTRACT(HOUR FROM received_at) NOT BETWEEN 7 AND 19 ${sf.clause}`, [hours, ...sf.params]),
-    pool.query(`SELECT COUNT(DISTINCT COALESCE(a.structured_data->>'srcip', a.source_ip::text)) AS count
-      FROM syslog_entries a
-      INNER JOIN syslog_entries b
-        ON COALESCE(b.structured_data->>'srcip', b.source_ip::text) = COALESCE(a.structured_data->>'srcip', a.source_ip::text)
-        AND b.structured_data->>'subcategory' = 'login_failed'
-        AND b.received_at > NOW() - make_interval(hours => $1)
-        AND b.received_at < a.received_at
-      WHERE a.received_at > NOW() - make_interval(hours => $1)
-        AND a.structured_data->>'subcategory' = 'login_success'
-      ${sfA.clause}`, [hours, ...sfA.params]),
-  ]);
+  const k = await gatherSecurityKpis(pool, rbac, hours);
   return {
-    auth_fail:    parseInt(authFail.rows[0].count) || 0,
-    deny:         parseInt(denies.rows[0].count) || 0,
-    vpn:          parseInt(vpn.rows[0].count) || 0,
-    ips:          parseInt(ips.rows[0].count) || 0,
-    after_hours:  parseInt(afterHours.rows[0].count) || 0,
-    brute_force:  parseInt(bruteSuccess.rows[0].count) || 0,
+    auth_fail:   k.auth_failures,
+    deny:        k.firewall_denies,
+    vpn:         k.vpn_events,
+    ips:         k.ips_events,
+    after_hours: k.after_hours_events,
+    brute_force: k.brute_force_success,
   };
 }
 

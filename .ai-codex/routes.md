@@ -70,7 +70,7 @@ GET /api/health/device-status [auth] [db] — per-device status table, reads sys
 GET /api/health/summary [auth] [db] — 5-metric dashboard mini-widget (interface/stp/mac/config/routing counts)
 
 ## Express — Security
-GET /api/security/summary [auth] [db] — auth-fail/deny/vpn/ips/after-hours/brute-force/known-bad counts
+GET /api/security/summary [auth] [db] — auth-fail/deny/vpn/ips/after-hours/brute-force/known-bad counts. Since 2.30.0 the SQL lives in api/securityKpis.js (gatherSecurityKpis) and is SHARED with soc.js gatherSecurity — do not re-inline it, the two copies had already drifted. Cached 60s per (hours, rbac scope)
 GET /api/security/auth-failures [auth] [db] — auth failure event list
 GET /api/security/brute-force [auth] [db] — brute-force detection (repeated auth fail from one source)
 GET /api/security/firewall-denies [auth] [db] — Fortinet action='blocked' events (NOT 'deny' — see gotchas.md)

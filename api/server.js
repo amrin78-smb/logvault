@@ -17,6 +17,7 @@ const { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter, getStats
 const { getLicense, getLicenseState } = require('./licenseCheck');
 const { writeAudit } = require('./auditLog');
 const { createReportsRouter } = require('./reports');
+const { gatherSecurityKpis } = require('./securityKpis');
 const { createSocRouter } = require('./soc');
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env.local') });
 
@@ -155,6 +156,47 @@ async function enforceLicense(req, res, next) {
 }
 
 app.use(enforceLicense);
+
+// ── Short-TTL response cache for read-only security aggregates ───────────────
+//
+// The Security tab fires ~15 requests in one burst against a pool of `max: 10`,
+// so the tail of that burst QUEUES. Measured live 2026-08-06:
+// /api/alerts/events/recent-unacked took 44ms when it loaded alone and 5,028ms
+// in that burst — the same endpoint, 114x worse, purely from waiting for a
+// connection. Individually these queries are 0.6-1.7s; fifteen at once made the
+// tab take ~8s. The dashboard's stat endpoints have had getCached for a while
+// and these never did, which is much of why one tab felt faster than the other.
+//
+// Response-level rather than per-handler: it is one place to audit instead of
+// eleven hand-edited handlers, and the thing that MUST be right here is the
+// cache key. It includes rbacCacheKey(req.rbac), so a site-scoped user can
+// never be served an admin-scoped entry (or another site's). Mounted AFTER
+// rbacMiddleware for exactly that reason — req.rbac must already be resolved —
+// and AFTER enforceLicense, so a cached 200 can never be replayed past a
+// license expiry that should now be returning 402.
+//
+// Only 200s are stored, so an error or a 402/403 is never cached and replayed.
+const RESP_CACHE_TTL_MS = 60000;
+const RESP_CACHE_PATHS = [
+  /^\/api\/security\//,
+  /^\/api\/stats\/(geo|heatmap|mitre-coverage)$/,
+];
+app.use((req, res, next) => {
+  if (req.method !== 'GET') return next();
+  if (!RESP_CACHE_PATHS.some((rx) => rx.test(req.path))) return next();
+  // Query params are part of the key — ?hours= and ?metric= select different
+  // result sets and must not collide.
+  const qs = Object.keys(req.query).sort().map((k) => `${k}=${req.query[k]}`).join('&');
+  const key = `resp:${req.path}?${qs}:${rbacCacheKey(req.rbac)}`;
+  const hit = statCache.get(key);
+  if (hit && Date.now() - hit.at < RESP_CACHE_TTL_MS) return res.json(hit.data);
+  const sendJson = res.json.bind(res);
+  res.json = (body) => {
+    if (res.statusCode === 200) statCache.set(key, { data: body, at: Date.now() });
+    return sendJson(body);
+  };
+  next();
+});
 
 // ── REPORTING (Phase 1) ──────────────────────────────────────
 // Mounted after rbacMiddleware (req.rbac exists) and enforceLicense (gated
@@ -1633,88 +1675,17 @@ app.get('/api/health/summary', asyncHandler(async (req, res) => {
 
 app.get('/api/security/summary', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const sf  = getSiteFilter(req.rbac, 2, 'syslog_entries'); // bare-table subqueries
-  const sfA = getSiteFilter(req.rbac, 2, 'a');               // alias 'a' subquery (brute-force success)
-  const sfSe = getSiteFilter(req.rbac, 2, 'se');             // alias 'se' subquery (known-bad join)
-  // firewall_denies/vpn_events/ips_events read syslog_fortinet_field_rollup
-  // (scripts/schema.sql "PHASE 4 HOURLY ROLLUP TABLES") instead of scanning
-  // raw syslog_entries — vendor='fortinet' matches ~100% of rows in this
-  // single-vendor deployment, the same no-selectivity shape Phase 2's
-  // top-security-events already hit (7-92s live, worse at wider ranges).
-  // getRollupSiteFilter, not getSiteFilter, since site_id is already resolved
-  // on the rollup row (no known_hosts join needed at read time) — same
-  // pattern as every other rollup-backed endpoint.
-  //
-  // Correctness fix riding along with this: firewall_denies used to filter
-  // structured_data->>'action' = 'deny', a value this deployment's Fortinet
-  // parser never actually emits (confirmed live: the real value is 'blocked'
-  // — 546 rows/24h — 'deny' matches 0 rows, always). This card has silently
-  // shown "0" since it shipped. Now correctly reads dimension='action',
-  // value='blocked'.
-  //
-  // vpn_events also drops the redundant `OR message ILIKE '%vpn%'` — a live
-  // check (same technique as the already-fixed auth-failure/brute-force
-  // ILIKE removals) confirmed structured_data->>'subtype'='vpn' alone
-  // catches every row the ILIKE branch did, at a fraction of the cost.
-  const sfRollupDenies = getRollupSiteFilter(req.rbac, 2);
-  const sfRollupVpn    = getRollupSiteFilter(req.rbac, 2);
-  const sfRollupIps     = getRollupSiteFilter(req.rbac, 2);
-  const [authFail, denies, vpn, ips, afterHours, bruteSuccess, vpnLoginFail, knownBadFail] = await Promise.all([
-    // Real auth failure = normalized subcategory (vendor-agnostic). The old broad
-    // %fail%/%error% match counted SSL teardown noise (ssl-exit-error/ssl-alert/
-    // negotiate) as login failures — dropped. The message ILIKE fallback that used
-    // to sit alongside the subcategory check was ALSO dropped (perf pass, 2026-07):
-    // a live 30-day production check confirmed it caught zero rows beyond what
-    // subcategory already covers (every vendor parser has reliably populated
-    // structured_data.subcategory since 2.9.0), while costing ~60x more query time
-    // (forces a 3-way BitmapOr across the subcategory + message-trigram indexes on
-    // every one of the 35 partitions — ~350ms of planning alone). Do not re-add it
-    // without fresh evidence it's catching something real.
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND structured_data->>'subcategory' IN ('login_failed','auth_failed') ${sf.clause}`, [hours, ...sf.params]),
-    pool.query(`SELECT COALESCE(SUM(log_count), 0)::bigint AS count FROM syslog_fortinet_field_rollup WHERE dimension = 'action' AND value = 'blocked' AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1)) ${sfRollupDenies.clause}`, [hours, ...sfRollupDenies.params]),
-    pool.query(`SELECT COALESCE(SUM(log_count), 0)::bigint AS count FROM syslog_fortinet_field_rollup WHERE dimension = 'subtype' AND value = 'vpn' AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1)) ${sfRollupVpn.clause}`, [hours, ...sfRollupVpn.params]),
-    pool.query(`SELECT COALESCE(SUM(log_count), 0)::bigint AS count FROM syslog_fortinet_field_rollup WHERE dimension = 'type' AND value = 'utm' AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1)) ${sfRollupIps.clause}`, [hours, ...sfRollupIps.params]),
-    // Same message-ILIKE-fallback removal as authFail above (zero extra recall,
-    // verified over 30 days) applies here too.
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND structured_data->>'subcategory' IN ('login_failed','config_change','auth_failed') AND EXTRACT(HOUR FROM received_at) NOT BETWEEN 7 AND 19 ${sf.clause}`, [hours, ...sf.params]),
-    // Brute-force success: vendor-agnostic. A real attacker source (real srcip, not the
-    // firewall) that had a login_failed AND a later login_success within the window.
-    pool.query(`SELECT COUNT(DISTINCT COALESCE(a.structured_data->>'srcip', a.source_ip::text)) AS count
-      FROM syslog_entries a
-      INNER JOIN syslog_entries b
-        ON COALESCE(b.structured_data->>'srcip', b.source_ip::text) = COALESCE(a.structured_data->>'srcip', a.source_ip::text)
-        AND b.structured_data->>'subcategory' = 'login_failed'
-        AND b.received_at > NOW() - make_interval(hours => $1)
-        AND b.received_at < a.received_at
-      WHERE a.received_at > NOW() - make_interval(hours => $1)
-        AND a.structured_data->>'subcategory' = 'login_success'
-      ${sfA.clause}`, [hours, ...sfA.params]),
-    // VPN login failures: vpn category/subtype AND a normalized auth failure.
-    pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND (category='vpn' OR structured_data->>'subtype'='vpn') AND structured_data->>'subcategory' IN ('login_failed','auth_failed') ${sf.clause}`, [hours, ...sf.params]),
-    // Known-bad failures: login-failure events whose real source matches a known_hosts
-    // row flagged is_known_bad OR abuse_score >= 50. Join uses host(ip_address) because
-    // known_hosts.ip_address is INET stored with a /32 mask; shape-guard the join key.
-    pool.query(`SELECT COUNT(*) AS count
-      FROM syslog_entries se
-      LEFT JOIN known_hosts kh
-        ON COALESCE(se.structured_data->>'srcip', se.source_ip::text) ~ '^[0-9.]+$'
-       AND host(kh.ip_address) = COALESCE(se.structured_data->>'srcip', se.source_ip::text)
-      WHERE se.received_at > NOW() - make_interval(hours => $1)
-        AND se.structured_data->>'subcategory' IN ('login_failed','auth_failed')
-        AND (kh.is_known_bad = TRUE OR kh.abuse_score >= 50)
-      ${sfSe.clause}`, [hours, ...sfSe.params]),
-  ]);
-  res.json({
-    hours,
-    auth_failures:       parseInt(authFail.rows[0].count),
-    firewall_denies:     parseInt(denies.rows[0].count),
-    vpn_events:          parseInt(vpn.rows[0].count),
-    ips_events:          parseInt(ips.rows[0].count),
-    after_hours_events:  parseInt(afterHours.rows[0].count),
-    brute_force_success: parseInt(bruteSuccess.rows[0].count),
-    vpn_login_failures:  parseInt(vpnLoginFail.rows[0].count),
-    known_bad_failures:  parseInt(knownBadFail.rows[0].count),
-  });
+  // Shared with the Security Overview KPI strip — see api/securityKpis.js for
+  // why this is one function and not two copies of the same SQL.
+  // Cached 60s per (window, RBAC scope): the Security tab fires ~15 requests at
+  // once against a pool of 10, and rbacCacheKey keeps a site-scoped user from
+  // ever reading an admin-scoped entry.
+  const data = await getCached(
+    `sec:summary:${hours}:${rbacCacheKey(req.rbac)}`,
+    60000,
+    () => gatherSecurityKpis(pool, req.rbac, hours)
+  );
+  res.json({ hours, ...data });
 }));
 
 app.get('/api/security/auth-failures', asyncHandler(async (req, res) => {
@@ -2657,6 +2628,12 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.30.0': [
+    'Security Overview, Security and Threat Map are now one "Security" tab with three views along the top: Overview, Detections and Threat Map. They covered the same subject and overlapped — Threat Map was a whole tab for a single chart that Security already showed as a panel. Nothing has been removed; the sidebar is two items shorter and everything is where you would expect it.',
+    'The Security tab now loads several times faster. It used to request every panel at once — around fifteen calls competing for ten database connections — so most of the wait was requests queueing behind each other rather than any one report being slow. Only the view you are looking at now loads, and results are held briefly so switching between views and returning to the tab is close to instant.',
+    'The six headline figures on Overview and the summary card on Detections are now produced by one piece of code instead of two separate copies that had drifted apart. The "Denied" figure on Overview had been reading zero because only one of the two copies ever received an earlier correction; both are now right.',
+    'Known limitation, unchanged by this release: several security panels — Brute Force in particular — will always read zero on this deployment, because the firewall does not send successful-login events at all (none in the last 47 days, against 748 failed logins). That is a firewall logging setting, not a fault in LogVault, and the panels will populate on their own once those events start arriving.',
+  ],
   '2.29.0': [
     'You can now switch the whole interface between rounded and square corners. The control is in the avatar menu at the top right, under "Corners" — it applies instantly across every page and switches back just as easily. Neither look is temporary or "the real one".',
     'The choice is remembered per browser and is yours alone: it changes nothing for other users, needs no administrator rights, and is applied before the page draws so there is no flicker on load.',
