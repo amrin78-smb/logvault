@@ -39,6 +39,24 @@ const { getSiteFilter, getRollupSiteFilter } = require('./rbac');
  * @returns {Promise<object>} all eight metrics
  */
 async function gatherSecurityKpis(pool, rbac, hours) {
+  // $1 is an explicit CUTOFF TIMESTAMP, not an hours integer — this is a ~30x
+  // difference, and it is all planning time, not execution.
+  //
+  // `syslog_entries` has 56 daily partitions. With the old
+  // `received_at > NOW() - make_interval(hours => $1)` form, the cutoff is not a
+  // plan-time constant (NOW() is STABLE, not IMMUTABLE), so the planner cannot
+  // prune partitions while planning and instead considers all 56 with their
+  // indexes on EVERY call. Measured live 2026-08-06 on the auth-failures query:
+  //
+  //   NOW() - make_interval(hours => $1)   planning 566ms + execution   6ms  -> 624ms round-trip
+  //   received_at > $1 (timestamptz)       planning 2.5ms + execution   6ms  ->  21ms round-trip
+  //
+  // Both prune to the same 19 partitions at execution and return identical
+  // results; the difference is purely that a real parameter value lets the
+  // planner prune up front. Do NOT "tidy" these back into make_interval — it
+  // reads cleaner and costs ~600ms per query. The same pattern is still present
+  // elsewhere in api/ and is worth converting the same way.
+  const since = new Date(Date.now() - hours * 3600 * 1000);
   const sf  = getSiteFilter(rbac, 2, 'syslog_entries'); // bare-table subqueries
   const sfA = getSiteFilter(rbac, 2, 'a');              // brute-force success alias
   const sfSe = getSiteFilter(rbac, 2, 'se');            // known-bad join alias
@@ -54,41 +72,41 @@ async function gatherSecurityKpis(pool, rbac, hours) {
       // ILIKE fallback that sat alongside it was dropped too — a live 30-day
       // check found it caught zero rows subcategory did not already cover, at
       // ~60x the cost (3-way BitmapOr across subcategory + message-trigram).
-      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND structured_data->>'subcategory' IN ('login_failed','auth_failed') ${sf.clause}`, [hours, ...sf.params]),
+      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > $1 AND structured_data->>'subcategory' IN ('login_failed','auth_failed') ${sf.clause}`, [since, ...sf.params]),
 
       // dimension='action', value='blocked' — NOT 'deny'. This deployment's
       // Fortinet parser never emits 'deny' (confirmed live: 'blocked' 546
       // rows/24h, 'deny' always 0), which is why this card silently read 0.
-      pool.query(`SELECT COALESCE(SUM(log_count), 0)::bigint AS count FROM syslog_fortinet_field_rollup WHERE dimension = 'action' AND value = 'blocked' AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1)) ${sfRollupDenies.clause}`, [hours, ...sfRollupDenies.params]),
+      pool.query(`SELECT COALESCE(SUM(log_count), 0)::bigint AS count FROM syslog_fortinet_field_rollup WHERE dimension = 'action' AND value = 'blocked' AND hour_bucket >= date_trunc('hour', $1::timestamptz) ${sfRollupDenies.clause}`, [since, ...sfRollupDenies.params]),
 
-      pool.query(`SELECT COALESCE(SUM(log_count), 0)::bigint AS count FROM syslog_fortinet_field_rollup WHERE dimension = 'subtype' AND value = 'vpn' AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1)) ${sfRollupVpn.clause}`, [hours, ...sfRollupVpn.params]),
+      pool.query(`SELECT COALESCE(SUM(log_count), 0)::bigint AS count FROM syslog_fortinet_field_rollup WHERE dimension = 'subtype' AND value = 'vpn' AND hour_bucket >= date_trunc('hour', $1::timestamptz) ${sfRollupVpn.clause}`, [since, ...sfRollupVpn.params]),
 
-      pool.query(`SELECT COALESCE(SUM(log_count), 0)::bigint AS count FROM syslog_fortinet_field_rollup WHERE dimension = 'type' AND value = 'utm' AND hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1)) ${sfRollupIps.clause}`, [hours, ...sfRollupIps.params]),
+      pool.query(`SELECT COALESCE(SUM(log_count), 0)::bigint AS count FROM syslog_fortinet_field_rollup WHERE dimension = 'type' AND value = 'utm' AND hour_bucket >= date_trunc('hour', $1::timestamptz) ${sfRollupIps.clause}`, [since, ...sfRollupIps.params]),
 
-      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND structured_data->>'subcategory' IN ('login_failed','config_change','auth_failed') AND EXTRACT(HOUR FROM received_at) NOT BETWEEN 7 AND 19 ${sf.clause}`, [hours, ...sf.params]),
+      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > $1 AND structured_data->>'subcategory' IN ('login_failed','config_change','auth_failed') AND EXTRACT(HOUR FROM received_at) NOT BETWEEN 7 AND 19 ${sf.clause}`, [since, ...sf.params]),
 
       pool.query(`SELECT COUNT(DISTINCT COALESCE(a.structured_data->>'srcip', a.source_ip::text)) AS count
         FROM syslog_entries a
         INNER JOIN syslog_entries b
           ON COALESCE(b.structured_data->>'srcip', b.source_ip::text) = COALESCE(a.structured_data->>'srcip', a.source_ip::text)
           AND b.structured_data->>'subcategory' = 'login_failed'
-          AND b.received_at > NOW() - make_interval(hours => $1)
+          AND b.received_at > $1
           AND b.received_at < a.received_at
-        WHERE a.received_at > NOW() - make_interval(hours => $1)
+        WHERE a.received_at > $1
           AND a.structured_data->>'subcategory' = 'login_success'
-        ${sfA.clause}`, [hours, ...sfA.params]),
+        ${sfA.clause}`, [since, ...sfA.params]),
 
-      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1) AND (category='vpn' OR structured_data->>'subtype'='vpn') AND structured_data->>'subcategory' IN ('login_failed','auth_failed') ${sf.clause}`, [hours, ...sf.params]),
+      pool.query(`SELECT COUNT(*) AS count FROM syslog_entries WHERE received_at > $1 AND (category='vpn' OR structured_data->>'subtype'='vpn') AND structured_data->>'subcategory' IN ('login_failed','auth_failed') ${sf.clause}`, [since, ...sf.params]),
 
       pool.query(`SELECT COUNT(*) AS count
         FROM syslog_entries se
         LEFT JOIN known_hosts kh
           ON COALESCE(se.structured_data->>'srcip', se.source_ip::text) ~ '^[0-9.]+$'
          AND host(kh.ip_address) = COALESCE(se.structured_data->>'srcip', se.source_ip::text)
-        WHERE se.received_at > NOW() - make_interval(hours => $1)
+        WHERE se.received_at > $1
           AND se.structured_data->>'subcategory' IN ('login_failed','auth_failed')
           AND (kh.is_known_bad = TRUE OR kh.abuse_score >= 50)
-        ${sfSe.clause}`, [hours, ...sfSe.params]),
+        ${sfSe.clause}`, [since, ...sfSe.params]),
     ]);
 
   const n = (r) => parseInt(r.rows[0].count) || 0;
