@@ -415,6 +415,10 @@ async function reportSecuritySummary(db, q, rbac) {
 // relay-based scoping as /api/stats/mitre-coverage's alert_tech CTE.
 async function reportSiteActivity(db, q, rbac) {
   const hours = safeHours(q.hours);
+  // Explicit cutoff rather than NOW() - make_interval: syslog_entries has 56
+  // daily partitions, and only a real parameter value lets the planner prune
+  // at plan time (~566ms planning -> 2.5ms, measured 2026-08-06).
+  const since = new Date(Date.now() - hours * 3600 * 1000);
 
   // Per-site log volume + distinct device count.
   const sfSite = getStatsSiteFilter(rbac, 2, 'se');
@@ -424,11 +428,11 @@ async function reportSiteActivity(db, q, rbac) {
            COUNT(DISTINCT se.source_ip)::int AS device_count
     FROM syslog_entries se
     LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
-    WHERE se.received_at > NOW() - make_interval(hours => $1)
+    WHERE se.received_at > $1
     ${sfSite.clause}
     GROUP BY COALESCE(kh.site_name, 'Unassigned')
     ORDER BY log_count DESC
-  `, [hours, ...sfSite.params]);
+  `, [since, ...sfSite.params]);
 
   // Vendor breakdown per site (drives both the top-vendor-per-site column and
   // the overall vendor breakdown chart).
@@ -437,10 +441,10 @@ async function reportSiteActivity(db, q, rbac) {
     SELECT COALESCE(kh.site_name, 'Unassigned') AS site, se.vendor, COUNT(*)::int AS c
     FROM syslog_entries se
     LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
-    WHERE se.received_at > NOW() - make_interval(hours => $1)
+    WHERE se.received_at > $1
     ${sfVendor.clause}
     GROUP BY COALESCE(kh.site_name, 'Unassigned'), se.vendor
-  `, [hours, ...sfVendor.params]);
+  `, [since, ...sfVendor.params]);
 
   // Top devices by log volume across the whole (site-scoped) estate, limit 15.
   const sfDev = getStatsSiteFilter(rbac, 3, 'se');
@@ -451,12 +455,12 @@ async function reportSiteActivity(db, q, rbac) {
            COUNT(*)::int AS log_count
     FROM syslog_entries se
     LEFT JOIN known_hosts kh ON kh.ip_address = se.source_ip
-    WHERE se.received_at > NOW() - make_interval(hours => $1)
+    WHERE se.received_at > $1
     ${sfDev.clause}
     GROUP BY se.source_ip, kh.hostname, kh.site_name, kh.vendor
     ORDER BY log_count DESC
     LIMIT $2
-  `, [hours, 15, ...sfDev.params]);
+  `, [since, 15, ...sfDev.params]);
 
   // Active (unacknowledged) alerts by site — current-state count, not
   // windowed by `hours` (an "active alert" doesn't stop being active just
@@ -545,6 +549,10 @@ async function reportSiteActivity(db, q, rbac) {
 // its own tactic taxonomy.
 async function reportMitreCoverage(db, q, rbac) {
   const hours = safeHours(q.hours);
+  // Explicit cutoff rather than NOW() - make_interval: syslog_entries has 56
+  // daily partitions, and only a real parameter value lets the planner prune
+  // at plan time (~566ms planning -> 2.5ms, measured 2026-08-06).
+  const since = new Date(Date.now() - hours * 3600 * 1000);
 
   const sfEvents = getSiteFilter(rbac, 2, 'se');
   const sfAlerts = getAlertSiteFilter(rbac, 2 + sfEvents.params.length, 'ae');
@@ -561,7 +569,7 @@ async function reportMitreCoverage(db, q, rbac) {
              CASE WHEN jsonb_typeof(se.structured_data->'mitre') = 'array'
                   THEN se.structured_data->'mitre' ELSE '[]'::jsonb END
            ) AS t(technique)
-      WHERE se.received_at > NOW() - make_interval(hours => $1)
+      WHERE se.received_at > $1
         AND se.structured_data ? 'mitre'
       ${sfEvents.clause}
       GROUP BY t.technique
@@ -571,7 +579,7 @@ async function reportMitreCoverage(db, q, rbac) {
       FROM alert_events ae
       JOIN alert_rules ar ON ar.id = ae.rule_id,
            LATERAL unnest(ar.mitre_techniques) AS tech
-      WHERE ae.fired_at > NOW() - make_interval(hours => $1)
+      WHERE ae.fired_at > $1
         AND ar.mitre_techniques IS NOT NULL
       ${sfAlerts.clause}
       GROUP BY tech
@@ -583,7 +591,7 @@ async function reportMitreCoverage(db, q, rbac) {
     FROM event_tech e
     FULL OUTER JOIN alert_tech a ON a.technique = e.technique
     ORDER BY count DESC
-  `, [hours, ...sfEvents.params, ...sfAlerts.params]);
+  `, [since, ...sfEvents.params, ...sfAlerts.params]);
 
   const rows = raw.map(r => ({
     technique: r.technique,
