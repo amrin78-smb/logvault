@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { MitreBadges } from './mitre';
 import { sevStyle } from './severity';
 import { riskBand } from './palette';
+import { copyText } from '@/lib/clipboard';
 
 interface LogRow {
   id:              number;
@@ -97,11 +98,13 @@ function RiskFactorBreakdown({ factors, score }: { factors: RiskFactor[]; score:
 
 function Field({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   const [copied, setCopied] = useState(false);
+  // copyText, not navigator.clipboard directly — the clipboard API does not
+  // exist over plain HTTP, so the previous `.writeText(...).then(...)` threw a
+  // TypeError here and the "Copied" feedback never appeared.
   const copy = () => {
-    navigator.clipboard.writeText(value).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
+    if (!copyText(value)) return;
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   };
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 0',
@@ -319,13 +322,13 @@ export default function LogDetailPanel({ log, onClose, onFilterIP, onFilterVendo
                   display: 'flex', alignItems: 'center', gap: 5 }}>
                 🔴 Filter by Severity
               </button>
-              <button onClick={() => navigator.clipboard.writeText(log.message)}
+              <button onClick={() => copyText(log.message)}
                 style={{ padding: '7px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                   cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   display: 'flex', alignItems: 'center', gap: 5 }}>
                 ⎘ Copy Message
               </button>
-              <button onClick={() => navigator.clipboard.writeText(JSON.stringify(log, null, 2))}
+              <button onClick={() => copyText(JSON.stringify(log, null, 2))}
                 style={{ padding: '7px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                   cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   display: 'flex', alignItems: 'center', gap: 5 }}>

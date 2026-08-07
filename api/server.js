@@ -2676,6 +2676,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.31.5': [
+    'Fixed the copy buttons in the log and alert detail panels. Copying a field, a message or the raw JSON did nothing at all — browsers only expose the clipboard to pages served over HTTPS, and this server runs over plain HTTP, so the attempt failed before it started and the tick confirming the copy never appeared. All of them now use a method that works without HTTPS.',
+  ],
   '2.31.4': [
     'Internal: the short-term result caches are now size-limited. Cached results were never discarded once they went stale — they were simply no longer used — so on a server running for weeks the memory held by them could only grow, particularly for anyone using Custom time ranges. They are now capped and the oldest are dropped. No change to what you see.',
   ],

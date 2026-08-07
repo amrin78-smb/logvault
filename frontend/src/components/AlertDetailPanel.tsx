@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { MitreBadges, mitreInfo } from './mitre';
 import LogDetailPanel from './LogDetailPanel';
 import { sevStyle } from './severity';
+import { copyText } from '@/lib/clipboard';
 
 // Mirrors the AlertEvent interface from AlertEvents.tsx (kept loose where the
 // backend may add fields like acknowledged_by / mitre_techniques on the event).
@@ -50,11 +51,13 @@ const CORRELATION_NAMES = new Set([
 // Field row — same styling as LogDetailPanel's Field, with optional copy.
 function Field({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   const [copied, setCopied] = useState(false);
+  // copyText, not navigator.clipboard directly — the clipboard API does not
+  // exist over plain HTTP, so the previous `.writeText(...).then(...)` threw a
+  // TypeError here and the "Copied" feedback never appeared.
   const copy = () => {
-    navigator.clipboard.writeText(value).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
+    if (!copyText(value)) return;
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   };
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 0',
