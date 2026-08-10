@@ -25,6 +25,7 @@
 const express = require('express');
 const { getSiteFilter, getAlertSiteFilter, getRollupSiteFilter } = require('./rbac');
 const { gatherSecurityKpis } = require('./securityKpis');
+const { countryAliasCte } = require('./countryAlias');
 
 // Same one-liner as api/server.js — asyncHandler is module-private there.
 const asyncHandler = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -187,7 +188,7 @@ async function gatherTopCountries(pool, rbac, hours, limit) {
   // and the code from the other, which could render a country beside the wrong
   // flag.
   const { rows } = await pool.query(`
-    WITH code_map AS (
+    WITH ${countryAliasCte()}, code_map AS (
       SELECT country_name, MIN(country_code) AS country_code
       FROM known_hosts
       WHERE country_name IS NOT NULL AND country_code IS NOT NULL
@@ -206,7 +207,12 @@ async function gatherTopCountries(pool, rbac, hours, limit) {
     )
     SELECT agg.country, cm.country_code, agg.count, agg.prev_count
     FROM agg
-    LEFT JOIN code_map cm ON cm.country_name = agg.country
+    -- Same alias reconciliation as /api/stats/geo: the firewall's ISO long form
+    -- ("Korea, Republic of") never matches known_hosts' common form ("South
+    -- Korea"), so those countries lost their flag. agg.country stays the
+    -- DISPLAYED name — the card's drill searches it as free text.
+    LEFT JOIN country_alias ca ON ca.raw = agg.country
+    LEFT JOIN code_map cm ON cm.country_name = COALESCE(ca.common, agg.country)
     WHERE agg.count > 0
     ORDER BY agg.count DESC
     LIMIT $${limitIdx}

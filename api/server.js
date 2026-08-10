@@ -18,6 +18,7 @@ const { getLicense, getLicenseState } = require('./licenseCheck');
 const { writeAudit } = require('./auditLog');
 const { createReportsRouter } = require('./reports');
 const { gatherSecurityKpis } = require('./securityKpis');
+const { countryAliasCte } = require('./countryAlias');
 const { createSocRouter } = require('./soc');
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env.local') });
 
@@ -2404,7 +2405,7 @@ app.get('/api/stats/geo', asyncHandler(async (req, res) => {
     // per-row unindexable host(kh.ip_address) join; keying it by the displayed
     // name also guarantees the flag matches the label.
     const { rows } = await pool.query(`
-      WITH code_map AS (
+      WITH ${countryAliasCte()}, code_map AS (
         SELECT country_name, MIN(country_code) AS country_code
         FROM known_hosts
         WHERE country_name IS NOT NULL AND country_code IS NOT NULL
@@ -2428,7 +2429,13 @@ app.get('/api/stats/geo', asyncHandler(async (req, res) => {
       )
       SELECT agg.country, cm.country_code, agg.count, agg.prev_count, agg.distinct_sources
       FROM agg
-      LEFT JOIN code_map cm ON cm.country_name = agg.country
+      -- The firewall's ISO long form ("Russian Federation") never matches
+      -- known_hosts' common form ("Russia"), so those countries ranked correctly
+      -- but resolved no code — no flag, and no map bubble, since the centroids
+      -- are keyed by alpha-2. agg.country stays the DISPLAYED name: the
+      -- drill-through free-text searches it against the raw logs.
+      LEFT JOIN country_alias ca ON ca.raw = agg.country
+      LEFT JOIN code_map cm ON cm.country_name = COALESCE(ca.common, agg.country)
       WHERE agg.count > 0
       ORDER BY agg.count DESC
       LIMIT 20
@@ -2773,6 +2780,11 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.31.10': [
+    'Countries the firewall names in their formal style now get a flag and a map pin. It writes "Russian Federation" and "Korea, Republic of" where the location data says "Russia" and "South Korea", and the two were matched by name, so those countries were listed with the right numbers but no flag and no bubble on the Threat Map.',
+    'Checked against a week of your own traffic: every country in both the Threat Map and the Top Countries panel now resolves, with nothing that previously worked affected.',
+    'The other formal-style names in the same family are covered too, so a country appearing for the first time will not quietly turn up without a pin.',
+  ],
   '2.31.9': [
     'The Threat Map now shows data. It was restricted to failed logins, which this firewall does not report, so it was permanently empty. It now plots blocked traffic: 20 destination countries in the last 24 hours, 18 of them on the map.',
     'It shows blocked traffic by DESTINATION country, not source, and is labelled accordingly. Nothing is being blocked coming inward: every blocked event in the window came from an internal address on your own network being stopped on its way out. What the map now answers is where blocked traffic was heading, and how many of your own machines were trying to get there - which is how a compromised machine calling home tends to show itself.',
