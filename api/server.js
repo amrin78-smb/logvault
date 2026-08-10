@@ -2744,6 +2744,12 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.31.8': [
+    'The Top Countries panel on the Security page now shows data. It described itself as source countries by event volume but was in fact restricted to failed-login events, and this firewall does not send any: it reports allowed traffic, web filtering, VPN and SSL, so exactly one event in the last 216,000 carried a login result. The panel sat empty while around 6,000 events from 15 countries were present in the window.',
+    'It now counts all events by source country, which is what the panel says it does and what clicking a country already did. Sources the firewall reports as "Reserved" - internal addresses on your own network - are excluded, as they are not a country and account for 97% of the volume.',
+    'Country flags are now guaranteed to match the country named beside them. The name and the flag were previously taken from two different sources, which disagree on some addresses, so a country could appear next to the wrong flag.',
+    'Geographic lookup itself was not at fault and needed no change: 41,373 of 43,241 known hosts already carry a country and network operator.',
+  ],
   '2.31.7': [
     'Fixed the clipped label on the Severity Distribution doughnut. A label belonging to a segment on the left of the chart was drawn outwards from the edge and ran off the side, so all that remained on screen was the tail of a word — on this installation, a 97% warning share showed only as "g 97%".',
     'Labels are now measured before they are drawn and kept inside the chart. Where the full name will not fit, the percentage is shown on its own; the legend beneath the chart names every segment in any case. This affected any chart with a large segment on the left, not only this one.',

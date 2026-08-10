@@ -152,36 +152,65 @@ async function gatherTopEntities(pool, rbac) {
   }));
 }
 
-// Top attacker countries — reuses GET /api/stats/geo (failed/auth-login scope,
-// srccountry → known_hosts.country_name, current vs prior window), getSiteFilter.
+// Top SOURCE countries by event volume — what the card actually says it shows
+// ("Source countries by event volume · vs previous window"), and what clicking a
+// row already did (the drill opens the Log Explorer on the country name, with no
+// auth-failure scope of its own).
+//
+// It used to additionally require subcategory IN ('login_failed','auth_failed').
+// That is an ATTACKER-countries scope, and it belongs to the threat map, not
+// here. On a firewall that sends no auth logs at all the card was permanently
+// blank: this deployment reports traffic/forward, utm/webfilter, event/vpn,
+// utm/ssl and event/system — exactly 1 row in 216k carried any subcategory over
+// 24h — so the card read "No country data" while 6,000 events from 15 countries
+// sat in the window.
+//
+// 'Reserved' is FortiGate's label for a non-routable source (RFC1918 and
+// friends). It is not a country and it is 97% of the volume, so leaving it in
+// would bury every real source under one meaningless row.
 async function gatherTopCountries(pool, rbac, hours, limit) {
-  const sf = getSiteFilter(rbac, 2, 'se');
+  // Explicit timestamptz bounds, not NOW() - make_interval(...): NOW() is STABLE
+  // so the planner gets no constant to prune on and considers every daily
+  // partition of syslog_entries. Same fix as the rest of this file's queries —
+  // it matters much more here now that the cheap subcategory filter is gone.
+  const now = Date.now();
+  const windowStart = new Date(now - hours * 3600e3);
+  const prevStart   = new Date(now - hours * 2 * 3600e3);
+  const sf = getSiteFilter(rbac, 3, 'se');
   const limitIdx = sf.nextParamIndex;
+  // country_code comes from a name→code map built from known_hosts ONCE, rather
+  // than a per-row join on host(kh.ip_address) = <expression>, which is
+  // unindexable and would now run against the whole two-window scan. Keying the
+  // map by the same name we display also guarantees the flag matches the label:
+  // the two geo sources disagree on some IPs (srccountry said Bulgaria where
+  // known_hosts said the Netherlands), and the old query took the name from one
+  // and the code from the other, which could render a country beside the wrong
+  // flag.
   const { rows } = await pool.query(`
-    SELECT
-      COALESCE(se.structured_data->>'srccountry', kh.country_name) AS country,
-      kh.country_code,
-      COUNT(*) FILTER (
-        WHERE se.received_at > NOW() - make_interval(hours => $1)
-      )::bigint AS count,
-      COUNT(*) FILTER (
-        WHERE se.received_at BETWEEN NOW() - make_interval(hours => $1 * 2)
-                                 AND NOW() - make_interval(hours => $1)
-      )::bigint AS prev_count
-    FROM syslog_entries se
-    LEFT JOIN known_hosts kh
-      ON COALESCE(se.structured_data->>'srcip', se.source_ip::text) ~ '^[0-9.]+$'
-     AND host(kh.ip_address) = COALESCE(se.structured_data->>'srcip', se.source_ip::text)
-    WHERE se.received_at > NOW() - make_interval(hours => $1 * 2)
-      AND se.structured_data->>'subcategory' IN ('login_failed','auth_failed')
-      AND COALESCE(se.structured_data->>'srccountry', kh.country_name) IS NOT NULL
-      AND COALESCE(se.structured_data->>'srccountry', kh.country_name) <> ''
-    ${sf.clause}
-    GROUP BY COALESCE(se.structured_data->>'srccountry', kh.country_name), kh.country_code
-    HAVING COUNT(*) FILTER (WHERE se.received_at > NOW() - make_interval(hours => $1)) > 0
-    ORDER BY count DESC
+    WITH code_map AS (
+      SELECT country_name, MIN(country_code) AS country_code
+      FROM known_hosts
+      WHERE country_name IS NOT NULL AND country_code IS NOT NULL
+      GROUP BY country_name
+    ), agg AS (
+      SELECT
+        se.structured_data->>'srccountry' AS country,
+        COUNT(*) FILTER (WHERE se.received_at > $1)::bigint AS count,
+        COUNT(*) FILTER (WHERE se.received_at BETWEEN $2 AND $1)::bigint AS prev_count
+      FROM syslog_entries se
+      WHERE se.received_at > $2
+        AND se.structured_data->>'srccountry' IS NOT NULL
+        AND se.structured_data->>'srccountry' NOT IN ('', 'Reserved', 'N/A')
+      ${sf.clause}
+      GROUP BY 1
+    )
+    SELECT agg.country, cm.country_code, agg.count, agg.prev_count
+    FROM agg
+    LEFT JOIN code_map cm ON cm.country_name = agg.country
+    WHERE agg.count > 0
+    ORDER BY agg.count DESC
     LIMIT $${limitIdx}
-  `, [hours, ...sf.params, limit]);
+  `, [windowStart, prevStart, ...sf.params, limit]);
   return rows.map(r => ({
     country: r.country,
     country_code: r.country_code,
