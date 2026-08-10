@@ -12,11 +12,11 @@ import worldLandData from './worldLand.json';
 //
 // DATA CONSTRAINT: there is NO lat/lon in the database — geo is country-level
 // only. So this is a WORLD ATTACK MAP drawn with an inline SVG equirectangular
-// projection: each country in the failed-auth/attack feed is plotted as a
-// bubble at a BUNDLED centroid (below), sized by attack count. Countries with
+// projection: each country in the BLOCKED-traffic feed is plotted as a
+// bubble at a BUNDLED centroid (below), sized by blocked count. Countries with
 // no bundled centroid still appear in the ranked list, just without a bubble.
 //
-// Source endpoint (already attack/failed-auth scoped):
+// Source endpoint (blocked traffic, grouped by DESTINATION country):
 //   GET /api/stats/geo?hours=<h>
 //     → { hours, data: [{ country, country_code, count, prev_count, distinct_sources }] }
 //   country_code is ISO-3166 alpha-2 uppercase (may be null when the country
@@ -36,7 +36,7 @@ interface GeoRow {
 
 // ── Bundled centroid lookup (visual only — a few degrees off is fine) ─────────
 // Keyed by ISO-3166 alpha-2 (uppercase). ~140 countries, weighted toward the
-// likely-attacker set. { lat, lon, name }. Do NOT fetch these from anywhere.
+// commonly-seen set. { lat, lon, name }. Do NOT fetch these from anywhere.
 const COUNTRY_CENTROIDS: Record<string, { lat: number; lon: number; name: string }> = {
   // ── North & Central America ──
   US: { lat: 39.5, lon: -98.4, name: 'United States' },
@@ -198,7 +198,7 @@ const MAP_W = 720;
 const MAP_H = 360;
 const MIN_R = 3;   // smallest bubble radius (SVG units)
 const MAX_R = 18;  // largest bubble radius
-const TOP_N = 3;   // number of top attackers that get the pulse/glow
+const TOP_N = 3;   // number of top destinations that get the pulse/glow
 
 // Equirectangular projection helpers.
 function projX(lon: number): number { return ((lon + 180) / 360) * MAP_W; }
@@ -270,7 +270,7 @@ function BubbleTooltip({ row, name }: { row: GeoRow; name: string }) {
       </div>
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'flex',
         justifyContent: 'space-between', gap: 14 }}>
-        <span>Attacks</span>
+        <span>Blocked</span>
         <span style={{ fontWeight: 700, color: 'var(--tint-danger-fg)' }}>{num(row.count).toLocaleString()}</span>
       </div>
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'flex',
@@ -292,7 +292,7 @@ function RankRow({ row, rank, onClick }: { row: GeoRow; rank: number; onClick: (
   return (
     <div
       onClick={onClick}
-      title={`Open failed-auth activity from ${name} in Log Explorer`}
+      title={`Open blocked traffic to ${name} in Log Explorer`}
       style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
         borderRadius: 'var(--radius)', background: 'var(--surface-subtle)', border: '1px solid var(--border-light)',
         cursor: 'pointer' }}
@@ -371,7 +371,7 @@ export default function ThreatMap({ hours, openExplorer }: {
       const json = await res.json();
       setRows(Array.isArray(json?.data) ? json.data : []);
     } catch (e) {
-      setError('Could not load geographic attack activity.');
+      setError('Could not load geographic blocked-traffic activity.');
       setRows([]);
     } finally {
       setLoading(false);
@@ -409,7 +409,7 @@ export default function ThreatMap({ hours, openExplorer }: {
         const count = num(row.count);
         const frac = maxCount > 0 ? Math.sqrt(count / maxCount) : 0;
         const r = MIN_R + (MAX_R - MIN_R) * frac;
-        // Top attackers most saturated; taper opacity by rank.
+        // Top destinations most saturated; taper opacity by rank.
         const opacity = Math.max(0.32, 0.9 - idx * 0.06);
         return {
           row, idx, count,
@@ -427,13 +427,19 @@ export default function ThreatMap({ hours, openExplorer }: {
   // Click behavior: the geo feed is failed-auth scoped, and the Log Explorer's
   // free-text `q` matches structured_data->>'srccountry' (verified in
   // api/server.js), so a bubble/row click drills into Explorer filtered to
-  // authentication logs whose source country matches — the closest honest
-  // reproduction of "failed-auth from this country" (Explorer has no country
-  // filter field). No-op if we have no usable country string.
+  // Free-text search on the country name — the closest honest reproduction of
+  // "blocked traffic to this country" (Explorer has no country filter field).
+  //
+  // This deliberately does NOT pass category:'authentication' any more. That
+  // paired with the old failed-auth scope, and left behind it would send every
+  // click to authentication logs — which this firewall does not produce at all,
+  // so every country on the map would drill into an empty Explorer. Same
+  // free-text shape the SOC overview's Top Countries card uses, so the two
+  // behave alike. No-op if we have no usable country string.
   const drillCountry = useCallback((row: GeoRow) => {
     const name = row.country || row.country_code || '';
     if (!name) return;
-    openExplorer({ q: name, category: 'authentication', hours: String(localHours) });
+    openExplorer({ q: name, hours: String(localHours) });
   }, [openExplorer, localHours]);
 
   const hoveredBubble = hovered != null ? bubbles.find(b => b.idx === hovered) : undefined;
@@ -450,7 +456,7 @@ export default function ThreatMap({ hours, openExplorer }: {
         .threatmap-pulse-ring { animation: threatmap-pulse 2.4s ease-out infinite; }
       `}</style>
 
-      <PageHeader title="Threat Map" subtitle="Attack & failed-auth activity by source country">
+      <PageHeader title="Threat Map" subtitle="Blocked traffic by destination country">
         <RangeSelector value={localHours} onChange={setLocalHours} />
       </PageHeader>
 
@@ -486,8 +492,8 @@ export default function ThreatMap({ hours, openExplorer }: {
       ) : !error && sorted.length === 0 ? (
         <EmptyState
           icon={<span style={{ fontSize: 24 }}>{GLOBE}</span>}
-          title="No geographic attack activity in this window"
-          message="No failed-auth or attack activity with a resolvable source country was recorded for the selected time range."
+          title="No blocked traffic with a destination country in this window"
+          message="Nothing was blocked toward a resolvable destination country in the selected time range."
         />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(260px, 1fr)',
@@ -498,10 +504,10 @@ export default function ThreatMap({ hours, openExplorer }: {
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
               gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
               <div style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)' }}>
-                World attack map
+                World blocked-traffic map
               </div>
               <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-                {bubbles.length} of {sorted.length} countries plotted · bubble size = attack volume
+                {bubbles.length} of {sorted.length} countries plotted · bubble size = blocked volume
               </div>
             </div>
 
@@ -509,7 +515,7 @@ export default function ThreatMap({ hours, openExplorer }: {
               <svg viewBox={`0 0 ${MAP_W} ${MAP_H}`} width="100%"
                 style={{ display: 'block', borderRadius: 'var(--radius)' }}
                 preserveAspectRatio="xMidYMid meet"
-                role="img" aria-label="World map of attack activity by source country">
+                role="img" aria-label="World map of blocked traffic by destination country">
                 <defs>
                   <clipPath id="tm-frame-clip">
                     <rect x={0} y={0} width={MAP_W} height={MAP_H} rx={6} />
@@ -530,7 +536,7 @@ export default function ThreatMap({ hours, openExplorer }: {
                     style={{ cursor: 'pointer' }}
                     tabIndex={0}
                     role="button"
-                    aria-label={`${b.name}: ${b.count.toLocaleString()} attacks`}
+                    aria-label={`${b.name}: ${b.count.toLocaleString()} blocked`}
                     onMouseEnter={() => setHovered(b.idx)}
                     onMouseLeave={() => setHovered(h => (h === b.idx ? null : h))}
                     onFocus={() => setHovered(b.idx)}
@@ -570,7 +576,7 @@ export default function ThreatMap({ hours, openExplorer }: {
               Top source countries
             </div>
             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 12 }}>
-              Ranked by attack count · trend vs. prior window
+              Ranked by blocked count · trend vs. prior window
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {sorted.map((row, i) => (

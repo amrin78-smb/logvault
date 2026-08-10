@@ -2369,41 +2369,70 @@ app.get('/api/stats/heatmap', asyncHandler(async (req, res) => {
 //    window immediately before that (computed in one query via FILTER).
 app.get('/api/stats/geo', asyncHandler(async (req, res) => {
   const hours = safeHours(req.query.hours);
-  const sf = getSiteFilter(req.rbac, 2, 'se');
-  // Same country resolution + known_hosts join as /api/security/failed-logins-by-country
-  // (prefer the event's srccountry, fall back to known_hosts geo of the REAL source).
-  // The outer time bound covers BOTH windows (now-2*hours … now); the FILTER clauses
-  // split current vs prior so count + prev_count come from a single scan.
+  // BLOCKED traffic by DESTINATION country, current vs prior window.
+  //
+  // This used to be failed-auth by SOURCE country. Two separate reasons that
+  // produced a permanently blank map, both confirmed against live data:
+  //
+  //  1. subcategory IN ('login_failed','auth_failed') never matches. This
+  //     firewall sends traffic/forward, utm/webfilter, event/vpn, utm/ssl and
+  //     event/system — 1 row in 216k carried any subcategory over 24h.
+  //  2. Re-scoping to blocked traffic by SOURCE would ALSO have been blank:
+  //     all 504 blocked events carry srccountry 'Reserved' (a non-routable
+  //     internal address) and there were ZERO blocked events from an external
+  //     source. Nothing is attacking inward and being blocked, so there is no
+  //     inbound attack geography to draw.
+  //
+  // What this firewall does observe is the opposite direction: internal hosts
+  // stopped from reaching an external destination. That is worth a map — it is
+  // where blocked traffic was heading, which is how callbacks and blocked
+  // categories surface — so the panel now plots dstcountry and is labelled for
+  // it. Don't "restore" srccountry here: it is 'Reserved' on every blocked row.
+  //
+  // action='blocked' is the same definition the Denied tile uses. This parser
+  // never emits 'deny' (see api/securityKpis.js — live-checked, 'deny' is
+  // always 0), so matching on 'deny' silently reads zero.
+  const sf = getSiteFilter(req.rbac, 3, 'se');
+  const now = Date.now();
+  const windowStart = new Date(now - hours * 3600e3);
+  const prevStart   = new Date(now - hours * 2 * 3600e3);
   const cacheKey = `geo:${hours}:${rbacCacheKey(req.rbac)}`;
   const data = await getCached(cacheKey, 60000, async () => {
+    // Explicit timestamptz bounds so the planner can prune partitions — NOW() -
+    // make_interval() is STABLE and gives it no constant to prune on. country_code
+    // comes from a name→code map built once from known_hosts rather than a
+    // per-row unindexable host(kh.ip_address) join; keying it by the displayed
+    // name also guarantees the flag matches the label.
     const { rows } = await pool.query(`
-      SELECT
-        COALESCE(se.structured_data->>'srccountry', kh.country_name) AS country,
-        kh.country_code,
-        COUNT(*) FILTER (
-          WHERE se.received_at > NOW() - make_interval(hours => $1)
-        )::bigint AS count,
-        COUNT(*) FILTER (
-          WHERE se.received_at BETWEEN NOW() - make_interval(hours => $1 * 2)
-                                   AND NOW() - make_interval(hours => $1)
-        )::bigint AS prev_count,
-        COUNT(DISTINCT COALESCE(se.structured_data->>'srcip', se.source_ip::text)) FILTER (
-          WHERE se.received_at > NOW() - make_interval(hours => $1)
-        )::bigint AS distinct_sources
-      FROM syslog_entries se
-      LEFT JOIN known_hosts kh
-        ON COALESCE(se.structured_data->>'srcip', se.source_ip::text) ~ '^[0-9.]+$'
-       AND host(kh.ip_address) = COALESCE(se.structured_data->>'srcip', se.source_ip::text)
-      WHERE se.received_at > NOW() - make_interval(hours => $1 * 2)
-        AND se.structured_data->>'subcategory' IN ('login_failed','auth_failed')
-        AND COALESCE(se.structured_data->>'srccountry', kh.country_name) IS NOT NULL
-        AND COALESCE(se.structured_data->>'srccountry', kh.country_name) <> ''
-      ${sf.clause}
-      GROUP BY COALESCE(se.structured_data->>'srccountry', kh.country_name), kh.country_code
-      HAVING COUNT(*) FILTER (WHERE se.received_at > NOW() - make_interval(hours => $1)) > 0
-      ORDER BY count DESC
+      WITH code_map AS (
+        SELECT country_name, MIN(country_code) AS country_code
+        FROM known_hosts
+        WHERE country_name IS NOT NULL AND country_code IS NOT NULL
+        GROUP BY country_name
+      ), agg AS (
+        SELECT
+          se.structured_data->>'dstcountry' AS country,
+          COUNT(*) FILTER (WHERE se.received_at > $1)::bigint AS count,
+          COUNT(*) FILTER (WHERE se.received_at BETWEEN $2 AND $1)::bigint AS prev_count,
+          -- The internal hosts that tried. On an outbound block these are the
+          -- machines worth chasing, which is what the UI's "sources" means here.
+          COUNT(DISTINCT COALESCE(se.structured_data->>'srcip', se.source_ip::text))
+            FILTER (WHERE se.received_at > $1)::bigint AS distinct_sources
+        FROM syslog_entries se
+        WHERE se.received_at > $2
+          AND se.structured_data->>'action' = 'blocked'
+          AND se.structured_data->>'dstcountry' IS NOT NULL
+          AND se.structured_data->>'dstcountry' NOT IN ('', 'Reserved', 'N/A')
+        ${sf.clause}
+        GROUP BY 1
+      )
+      SELECT agg.country, cm.country_code, agg.count, agg.prev_count, agg.distinct_sources
+      FROM agg
+      LEFT JOIN code_map cm ON cm.country_name = agg.country
+      WHERE agg.count > 0
+      ORDER BY agg.count DESC
       LIMIT 20
-    `, [hours, ...sf.params]);
+    `, [windowStart, prevStart, ...sf.params]);
     return { hours, data: rows };
   });
   res.json(data);
@@ -2744,6 +2773,12 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.31.9': [
+    'The Threat Map now shows data. It was restricted to failed logins, which this firewall does not report, so it was permanently empty. It now plots blocked traffic: 20 destination countries in the last 24 hours, 18 of them on the map.',
+    'It shows blocked traffic by DESTINATION country, not source, and is labelled accordingly. Nothing is being blocked coming inward: every blocked event in the window came from an internal address on your own network being stopped on its way out. What the map now answers is where blocked traffic was heading, and how many of your own machines were trying to get there - which is how a compromised machine calling home tends to show itself.',
+    'Clicking a country now opens the Log Explorer on that country. It previously filtered to authentication logs, which this firewall does not produce, so every country on the map led to an empty result.',
+    'Two countries appear in the ranked list without a map bubble, because the firewall names them "Russian Federation" and "Korea, Republic of" while the location data uses the shorter everyday names. Their counts are correct; only the map pin is missing.',
+  ],
   '2.31.8': [
     'The Top Countries panel on the Security page now shows data. It described itself as source countries by event volume but was in fact restricted to failed-login events, and this firewall does not send any: it reports allowed traffic, web filtering, VPN and SSL, so exactly one event in the last 216,000 carried a login result. The panel sat empty while around 6,000 events from 15 countries were present in the window.',
     'It now counts all events by source country, which is what the panel says it does and what clicking a country already did. Sources the firewall reports as "Reserved" - internal addresses on your own network - are excluded, as they are not a country and account for 97% of the volume.',
