@@ -1,7 +1,6 @@
 import NextAuth, { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { Pool } from 'pg';
-import bcrypt from 'bcryptjs';
 
 // Fail fast if the shared SSO secret is not provided by the environment
 // (NSSM AppEnvironmentExtra in prod, .env.local in dev). Never fall back to a
@@ -23,32 +22,6 @@ const netvaultPool = new Pool({
   ssl:      false,
   max:      3,
 });
-
-// Resolve the allowed-apps claim for the direct email/password login path from the
-// SAME source the SSO path's issuer (NetVault) uses — the `user_apps` table — so both
-// login paths produce a consistent, correctly-enforced `apps` claim instead of the
-// credentials path silently granting unrestricted access. Mirrors the semantics of
-// netvault's lib/appAccess.ts: super_admin and an existing user with zero rows both
-// mean full access (return undefined — proxy.ts's appAllowed() treats no claim as
-// allow-all, matching legacy tokens). A DB error must FAIL CLOSED, not open — but
-// appAllowed() treats an EMPTY apps array the same as "no claim" (allow-all), so a
-// closed failure can't be represented as `[]` here; instead resolve to a non-empty
-// sentinel array containing no real app slug, so appAllowed()'s `apps.includes(slug)`
-// check denies every app (netvault itself stays allowed — that check runs before the
-// apps check in proxy.ts).
-const DB_ERROR_DENY_ALL_APPS = ['__db_error_deny_all__'];
-
-async function resolveDirectLoginApps(userId: string, role: string): Promise<string[] | undefined> {
-  if (role === 'super_admin') return undefined; // full access, no query needed
-  try {
-    const { rows } = await netvaultPool.query('SELECT app FROM user_apps WHERE user_id = $1', [userId]);
-    if (rows.length === 0) return undefined; // existing user, no rows = full access (legacy/default-all)
-    return rows.map((r: any) => r.app);
-  } catch (err) {
-    console.error('[Auth] user_apps lookup failed for direct login, failing closed:', err);
-    return DB_ERROR_DENY_ALL_APPS;
-  }
-}
 
 export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
@@ -96,29 +69,25 @@ export const authOptions: NextAuthOptions = {
           }
         }
 
-        // ── Credentials path: direct login ────────────────────
-        if (!credentials.email || !credentials.password) return null;
-
-        try {
-          const { rows } = await netvaultPool.query(
-            'SELECT id, name, email, password_hash, role FROM users WHERE email = $1',
-            [credentials.email.toLowerCase().trim()]
-          );
-          if (rows.length === 0) return null;
-
-          const user = rows[0];
-          const valid = await bcrypt.compare(credentials.password, user.password_hash);
-          if (!valid) return null;
-
-          // Resolve the allowed-apps claim here too (see resolveDirectLoginApps) —
-          // this path must be gated exactly like the SSO path, not left to the
-          // fail-open "no claim = default-all" behavior in appAllowed()/jwt().
-          const apps = await resolveDirectLoginApps(String(user.id), user.role);
-          return { id: String(user.id), name: user.name, email: user.email, role: user.role, apps };
-        } catch (err) {
-          console.error('[Auth] DB error:', err);
-          return null;
-        }
+        // Direct email/password is NOT supported — LogVault has no login UI, and
+        // the hub is the suite's single authentication point.
+        //
+        // This used to bcrypt-compare against netvault.users.password_hash right
+        // here, which made LogVault a second front door into the hub's own user
+        // table. Nothing in this app ever used it: there is no login page, and
+        // the only signIn('credentials') call site is /sso, which passes an
+        // ssoToken. It was reachable solely by POSTing directly to
+        // /api/auth/callback/credentials — so it added no capability for a user
+        // and one whole bypass route for everyone else.
+        //
+        // It has to stay closed. Any authentication policy the hub enforces
+        // (MFA being the immediate reason, but equally password rotation,
+        // lockout, or an IdP migration) is enforced in NetVault's authorize().
+        // A second password path here silently opts out of all of it, and would
+        // do so while the hub reported the policy as active.
+        //
+        // Matches SpanVault, which has always returned null here.
+        return null;
       },
     }),
   ],

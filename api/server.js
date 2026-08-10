@@ -2780,6 +2780,11 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.31.11': [
+    'LogVault no longer accepts an email and password directly. Signing in has always gone through the NocVault hub and there is no login page here, but the underlying check still existed and could be reached by sending credentials straight to the address the sign-in form would normally use. Confirmed against this server before the change: it granted a full session without the hub being involved at all.',
+    'Nothing changes for anyone signing in normally. There was no way to reach this from the LogVault interface, so no existing habit or bookmark depended on it.',
+    'This matters ahead of two-factor authentication: any sign-in requirement added at the hub would have been enforced there while this second route quietly ignored it. The hub is now the only way in, which is already how SpanVault works.',
+  ],
   '2.31.10': [
     'Countries the firewall names in their formal style now get a flag and a map pin. It writes "Russian Federation" and "Korea, Republic of" where the location data says "Russia" and "South Korea", and the two were matched by name, so those countries were listed with the right numbers but no flag and no bubble on the Threat Map.',
     'Checked against a week of your own traffic: every country in both the Threat Map and the Top Countries panel now resolves, with nothing that previously worked affected.',
