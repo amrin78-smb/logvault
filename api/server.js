@@ -2744,6 +2744,10 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.31.7': [
+    'Fixed the clipped label on the Severity Distribution doughnut. A label belonging to a segment on the left of the chart was drawn outwards from the edge and ran off the side, so all that remained on screen was the tail of a word — on this installation, a 97% warning share showed only as "g 97%".',
+    'Labels are now measured before they are drawn and kept inside the chart. Where the full name will not fit, the percentage is shown on its own; the legend beneath the chart names every segment in any case. This affected any chart with a large segment on the left, not only this one.',
+  ],
   '2.31.6': [
     'Extended the query speed-up to the Log Explorer, the remaining Network Health panels and the report exports. These ask the database for a time range in a way that let it skip straight to the relevant days rather than examining all 56 daily sections of the log table first — the same change that took the security panels from seconds to milliseconds.',
     'Log Explorer searches and exports benefit most, since they were still using the slower form on the largest table in the system.',

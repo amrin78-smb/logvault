@@ -13,6 +13,21 @@ const SEV_FILTER: Record<string, string> = {
 const RADIAN = Math.PI / 180;
 const CX = 90; const CY = 70; const INNER = 30; const OUTER = 50;
 
+// Label fitting. The slice labels sit on a radius OUTER+16 = 66 from CX = 90, so
+// a label for a slice centred on the left runs outward from x ~= 24 with
+// textAnchor="end" — i.e. leftward, past x = 0 and out of the viewBox, where the
+// svg's overflow:hidden clips it. A single dominant slice puts its label exactly
+// there, which is the common case rather than an edge case: 97% warning rendered
+// as a clipped "g 97%".
+//
+// So measure before drawing. estLabelWidth over-estimates on purpose — being too
+// generous shortens a label that would have fitted, being too mean clips it, and
+// only one of those is recoverable by eye.
+const VB_W = 180;          // viewBox width — labels must land inside 0..VB_W
+const LABEL_FS = 7.5;      // must match the <text> fontSize below
+const LABEL_PAD = 2;
+const estLabelWidth = (s: string) => s.length * LABEL_FS * 0.6;
+
 export default function SeverityChart({ summary, onSeverityClick, compact }: {
   summary: any[]; onSeverityClick?: (severity: string) => void; compact?: boolean;
 }) {
@@ -74,12 +89,28 @@ export default function SeverityChart({ summary, onSeverityClick, compact }: {
               ))}
               {slices.map(({ entry, i, pct, lx, ly }) => {
                 if (pct < 0.08) return null;
+                const onLeft = lx <= CX;
+                const percent = `${(pct*100).toFixed(0)}%`;
+                // Room between the label's anchor and the edge it grows toward.
+                const room = (onLeft ? lx : VB_W - lx) - LABEL_PAD;
+                // Drop the severity name rather than let it run off the edge —
+                // the legend below already names every slice, and the label sits
+                // against its own slice, so the percentage alone still reads.
+                const text = estLabelWidth(`${entry.name} ${percent}`) <= room
+                  ? `${entry.name} ${percent}`
+                  : percent;
+                // Last guard: a near-vertical slice can leave less room than even
+                // the percentage needs, so pin it inside the box.
+                const w = estLabelWidth(text);
+                const x = onLeft
+                  ? Math.max(lx, w + LABEL_PAD)
+                  : Math.min(lx, VB_W - w - LABEL_PAD);
                 return (
-                  <text key={`lbl-${i}`} x={lx} y={ly} fill="var(--text-secondary)"
-                    textAnchor={lx > CX ? 'start' : 'end'}
-                    dominantBaseline="central" fontSize={7.5} fontWeight={600}
+                  <text key={`lbl-${i}`} x={x} y={ly} fill="var(--text-secondary)"
+                    textAnchor={onLeft ? 'end' : 'start'}
+                    dominantBaseline="central" fontSize={LABEL_FS} fontWeight={600}
                     style={{ pointerEvents: 'none', userSelect: 'none' }}>
-                    {`${entry.name} ${(pct*100).toFixed(0)}%`}
+                    {text}
                   </text>
                 );
               })}
