@@ -1,2 +1,3 @@
 - [SecVault division of labor](secvault-division-of-labor.md) — SecVault owns compliance/firewall scope; what LogVault won't build
 - [LogVault enterprise roadmap status](logvault-enterprise-roadmap-status.md) — phases done/deferred/skipped + open credential-rotation loose end
+- [LogVault vs Log360 gap roadmap](logvault-log360-gap-roadmap.md) — KIV: what's built vs missing vs SecVault's; phased plan A-D, nothing started; binding constraint is log coverage (100% fortinet, MITRE matched 1 of 1.5M events)
