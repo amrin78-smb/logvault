@@ -2780,6 +2780,11 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.31.12': [
+    'The "License expires in N days" warning now appears in LogVault. It has been showing in NetVault and DDIVault for some time, but never here, so the licence could quietly approach expiry without any warning on this app.',
+    'The code for the warning was already present but could never run: the banner returned early for any active licence, before reaching the check for one that is close to expiring. It only ever appeared once the licence had already expired or entered its grace period - by which point a warning is too late to be useful.',
+    'The wording, the 30-day threshold and the "Licensed to:" attribution now match NetVault and DDIVault exactly, so the same licence reads the same way in every app.',
+  ],
   '2.31.11': [
     'LogVault no longer accepts an email and password directly. Signing in has always gone through the NocVault hub and there is no login page here, but the underlying check still existed and could be reached by sending credentials straight to the address the sign-in form would normally use. Confirmed against this server before the change: it granted a full session without the hub being involved at all.',
     'Nothing changes for anyone signing in normally. There was no way to reach this from the LogVault interface, so no existing habit or bookmark depended on it.',

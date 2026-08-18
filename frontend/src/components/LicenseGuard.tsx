@@ -80,10 +80,21 @@ export function LicenseGate({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+/** Days before expiry at which an ACTIVE licence starts warning. Suite-wide. */
+const EXPIRY_WARNING_DAYS = 30;
+
 export function LicenseBanner() {
   const { license, state } = useLicense();
   const hubUrl = getHubUrl();
-  if (!license || state.mode === 'active') return null;
+  // Guard-with-exception, NOT a flat `mode === 'active' -> return null`. The
+  // expiring-soon block below already existed but was UNREACHABLE behind that
+  // flat return, so this banner had never rendered. The giveaway was the
+  // `(state.mode as string)` cast that used to sit on it: after an early return
+  // on 'active', TypeScript narrows the type so `mode === 'active'` is provably
+  // impossible and errors as a non-overlapping comparison — the cast silenced
+  // the compiler that was correctly reporting the code was dead. Fixing the
+  // guard removes the need for the cast; don't reintroduce either.
+  if (!license || (state.mode === 'active' && license.daysRemaining > EXPIRY_WARNING_DAYS)) return null;
 
   const configs: Record<string, { bg: string; message: string }> = {
     trial:       { bg: '#1d4ed8', message: `Trial license — ${license.daysRemaining} day${license.daysRemaining !== 1 ? 's' : ''} remaining.` },
@@ -92,11 +103,16 @@ export function LicenseBanner() {
     unreachable: { bg: '#374151', message: 'License server unreachable — running in offline mode.' },
   };
 
-  if ((state.mode as string) === 'active' && license.daysRemaining <= 30) {
-    configs.expiring = { bg: '#92400e', message: `License expires in ${license.daysRemaining} day${license.daysRemaining !== 1 ? 's' : ''}. Renew now.` };
+  if (state.mode === 'active' && license.daysRemaining <= EXPIRY_WARNING_DAYS) {
+    // Wording matches DDIVault/NetVault exactly — this string is the same
+    // renewal notice across the suite, not a per-app paraphrase.
+    configs.expiring = {
+      bg: '#92400e',
+      message: `License expires in ${license.daysRemaining} day${license.daysRemaining !== 1 ? 's' : ''}. Renew now to avoid service interruption.`,
+    };
   }
 
-  const cfg = configs[state.mode] || (license.daysRemaining <= 30 ? configs.expiring : null);
+  const cfg = configs[state.mode] || (license.daysRemaining <= EXPIRY_WARNING_DAYS ? configs.expiring : null);
   if (!cfg) return null;
 
   return (
@@ -108,7 +124,8 @@ export function LicenseBanner() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span>⚠️</span>
         <span>{cfg.message}</span>
-        {license.customer && <span style={{ opacity: 0.7, marginLeft: 8 }}>· {license.customer}</span>}
+        {/* "Licensed to:" label matches DDIVault/NetVault. */}
+        {license.customer && <span style={{ opacity: 0.7, marginLeft: 8 }}>· Licensed to: {license.customer}</span>}
       </div>
       <a href={`${hubUrl}/settings/license`} target="_blank" rel="noopener noreferrer"
         style={{ color: '#fff', textDecoration: 'underline', fontSize: 'var(--text-sm)', whiteSpace: 'nowrap', marginLeft: 16 }}>
