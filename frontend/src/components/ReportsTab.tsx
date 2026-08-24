@@ -29,7 +29,17 @@ interface ReportData {
   charts: ReportChart[];
 }
 
-type ReportKey = 'security-summary' | 'site-activity' | 'mitre-coverage' | 'web-usage' | 'blocked-threat';
+type ReportKey = 'security-summary' | 'site-activity' | 'mitre-coverage' | 'web-usage' | 'blocked-threat' | 'custom';
+
+// Builder metadata — served by GET /api/reports/dimensions from the SAME
+// whitelist the backend gather enforces, so the picker can never offer an
+// option the server would reject.
+interface DimensionOpt { key: string; label: string; supportsCategory: boolean; }
+interface BuilderMeta { dimensions: DimensionOpt[]; categories: string[]; chartTypes: string[]; limits: number[]; }
+interface BuilderCfg { dimension: string; category: string; chart: string; limit: number; }
+interface SavedReport { id: number; name: string; report_type: string; params: BuilderCfg; created_by: string | null; }
+
+const DEFAULT_BUILDER: BuilderCfg = { dimension: 'category', category: '', chart: 'bar', limit: 25 };
 interface ReportDef { key: ReportKey; title: string; desc: string; color: string; icon: React.ReactNode; }
 
 // Hardcoded chart-series palette (module-level, not a design token) — mirrors
@@ -79,6 +89,13 @@ const REPORTS: ReportDef[] = [
     desc: 'Blocked destinations and services, blocked-activity trend, known-bad IP contacts and TLS/IPSec error volume.',
     color: 'var(--orange)',
     icon: I(<><path d="M12 2.6 4.8 5.8v5.4c0 4.9 3.4 8.3 7.2 9.8 3.8-1.5 7.2-4.9 7.2-9.8V5.8L12 2.6z" /><line x1="9.2" y1="9.2" x2="14.8" y2="14.8" /><line x1="14.8" y1="9.2" x2="9.2" y2="14.8" /></>),
+  },
+  {
+    key: 'custom',
+    title: 'Custom Report',
+    desc: 'Build your own: choose what to group by, optionally filter by category, pick a chart type and how many rows to show. Save it and re-run it later.',
+    color: 'var(--green)',
+    icon: I(<><line x1="4" y1="20" x2="4" y2="10" /><line x1="10" y1="20" x2="10" y2="4" /><line x1="16" y1="20" x2="16" y2="13" /><line x1="21" y1="20" x2="3" y2="20" /></>),
   },
 ];
 
@@ -174,6 +191,12 @@ export default function ReportsTab() {
   const [error, setError] = useState<string | null>(null);
   const [hours, setHours] = useState(24);
   const [refreshInterval, setRefreshInterval] = useState(30);
+  const [meta, setMeta] = useState<BuilderMeta | null>(null);
+  const [cfg, setCfg] = useState<BuilderCfg>(DEFAULT_BUILDER);
+  const [saved, setSaved] = useState<SavedReport[]>([]);
+  const [saveName, setSaveName] = useState('');
+  const cfgRef = useRef<BuilderCfg>(DEFAULT_BUILDER);
+  cfgRef.current = cfg;
 
   // activeRef mirrors `active` so the hours-change effect can re-fetch the
   // currently-selected report without adding a stale `active` closure to the
@@ -182,6 +205,25 @@ export default function ReportsTab() {
   const activeRef = useRef<ReportDef | null>(null);
   const seqRef = useRef(0);
 
+  // ONE place that turns state into query parameters. Used by the preview
+  // fetch AND by both exports — if these were built separately, a custom
+  // report could preview one dimension and export another, which is the exact
+  // screen-vs-export drift this codebase has been bitten by before.
+  const buildQuery = useCallback((def: ReportDef, c: BuilderCfg): URLSearchParams => {
+    const qs = new URLSearchParams({ hours: String(Math.max(1, Math.round(hours))) });
+    if (def.key === 'custom') {
+      qs.set('dimension', c.dimension);
+      qs.set('chart', c.chart);
+      qs.set('limit', String(c.limit));
+      // Only sent when the chosen dimension can honour it — the server rejects
+      // a category filter on dimensions whose rollup has no category column,
+      // rather than silently returning unfiltered totals.
+      const dim = meta?.dimensions.find(d => d.key === c.dimension);
+      if (c.category && dim?.supportsCategory) qs.set('category', c.category);
+    }
+    return qs;
+  }, [hours, meta]);
+
   const generate = useCallback(async (def: ReportDef) => {
     activeRef.current = def;
     setActive(def);
@@ -189,7 +231,7 @@ export default function ReportsTab() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/reports/${def.key}?hours=${Math.max(1, Math.round(hours))}`);
+      const res = await fetch(`/api/reports/${def.key}?${buildQuery(def, cfgRef.current).toString()}`);
       if (!res.ok) {
         let msg = `HTTP ${res.status}`;
         try { msg = (await res.json()).error || msg; } catch { /* non-JSON error body */ }
@@ -205,7 +247,7 @@ export default function ReportsTab() {
     } finally {
       if (seq === seqRef.current) setLoading(false);
     }
-  }, [hours]);
+  }, [hours, buildQuery]);
 
   // Re-fetch the active report whenever the time range changes.
   useEffect(() => {
@@ -219,9 +261,57 @@ export default function ReportsTab() {
   // call in this app, so no fetch/blob indirection is needed here.
   const exportReport = (fmt: 'csv' | 'pdf') => {
     if (!active) return;
-    const params = new URLSearchParams({ hours: String(Math.max(1, Math.round(hours))), format: fmt });
+    const params = buildQuery(active, cfg);
+    params.set('format', fmt);
     window.open(`/api/reports/${active.key}?${params.toString()}`, '_blank');
   };
+
+  // Builder metadata + saved list, loaded once.
+  useEffect(() => {
+    let off = false;
+    fetch('/api/reports/dimensions').then(r => r.ok ? r.json() : null).then(d => { if (!off && d) setMeta(d); }).catch(() => {});
+    fetch('/api/reports/saved').then(r => r.ok ? r.json() : null).then(d => { if (!off && d) setSaved(d.data || []); }).catch(() => {});
+    return () => { off = true; };
+  }, []);
+
+  // Re-run the custom report when its configuration changes.
+  useEffect(() => {
+    if (activeRef.current?.key === 'custom') generate(activeRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg.dimension, cfg.category, cfg.chart, cfg.limit]);
+
+  const saveCurrent = async () => {
+    const name = saveName.trim();
+    if (!name || !active) return;
+    const res = await fetch('/api/reports/saved', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, report_type: active.key, params: active.key === 'custom' ? cfg : {} }),
+    });
+    if (res.ok) {
+      const row = await res.json();
+      setSaved(s => [row, ...s]);
+      setSaveName('');
+    }
+  };
+
+  const loadSaved = (s: SavedReport) => {
+    const def = REPORTS.find(r => r.key === s.report_type);
+    if (!def) return;
+    if (s.report_type === 'custom' && s.params) {
+      const next = { ...DEFAULT_BUILDER, ...s.params };
+      cfgRef.current = next;
+      setCfg(next);
+    }
+    generate(def);
+  };
+
+  const deleteSaved = async (id: number) => {
+    const res = await fetch(`/api/reports/saved/${id}`, { method: 'DELETE' });
+    if (res.ok) setSaved(s => s.filter(x => x.id !== id));
+  };
+
+  const activeDim = meta?.dimensions.find(d => d.key === cfg.dimension);
+  const SEL: React.CSSProperties = { padding: '6px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 'var(--text-base)' };
 
   return (
     <div>
@@ -258,6 +348,27 @@ export default function ReportsTab() {
               </button>
             );
           })}
+
+          {saved.length > 0 && (
+            <div style={{ ...CARD, padding: 12 }}>
+              <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                Saved Reports
+              </div>
+              {saved.map(s => (
+                <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderTop: '1px solid var(--border-light)' }}>
+                  <button type="button" onClick={() => loadSaved(s)}
+                    style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                      fontSize: 'var(--text-sm)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {s.name}
+                  </button>
+                  <button type="button" title="Delete" onClick={() => deleteSaved(s.id)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 'var(--text-sm)', padding: '0 2px' }}>
+                    x
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* ── RIGHT — live preview ── */}
@@ -279,6 +390,53 @@ export default function ReportsTab() {
                   <button className="btn btn-primary" disabled={!active} onClick={() => exportReport('pdf')}>Export PDF</button>
                 </div>
               </div>
+
+              {active.key === 'custom' && (
+                <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border-light)', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <span style={{ ...MUTED, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Group by</span>
+                    <select style={SEL} value={cfg.dimension} onChange={e => setCfg(c => ({ ...c, dimension: e.target.value, category: '' }))}>
+                      {(meta?.dimensions || []).map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
+                    </select>
+                  </label>
+
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <span style={{ ...MUTED, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Category</span>
+                    {/* Disabled rather than hidden, with the reason stated: only
+                        two rollups carry a category column, and the server
+                        rejects the filter on the others instead of silently
+                        returning unfiltered totals. */}
+                    <select style={{ ...SEL, opacity: activeDim?.supportsCategory ? 1 : 0.5 }}
+                      disabled={!activeDim?.supportsCategory}
+                      title={activeDim?.supportsCategory ? '' : 'This dimension has no category breakdown'}
+                      value={cfg.category} onChange={e => setCfg(c => ({ ...c, category: e.target.value }))}>
+                      <option value="">All categories</option>
+                      {(meta?.categories || []).map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </label>
+
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <span style={{ ...MUTED, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Chart</span>
+                    <select style={SEL} value={cfg.chart} onChange={e => setCfg(c => ({ ...c, chart: e.target.value }))}>
+                      {(meta?.chartTypes || ['bar']).map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </label>
+
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <span style={{ ...MUTED, fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Rows</span>
+                    <select style={SEL} value={cfg.limit} onChange={e => setCfg(c => ({ ...c, limit: parseInt(e.target.value, 10) || 25 }))}>
+                      {(meta?.limits || [25]).map(n => <option key={n} value={n}>Top {n}</option>)}
+                    </select>
+                  </label>
+
+                  <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', alignItems: 'flex-end' }}>
+                    <input style={{ ...SEL, width: 160 }} placeholder="Name this report" value={saveName}
+                      onChange={e => setSaveName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') saveCurrent(); }} />
+                    <button className="btn" disabled={!saveName.trim()} onClick={saveCurrent}>Save</button>
+                  </div>
+                </div>
+              )}
 
               {loading ? (
                 <TableSkeleton rows={8} cols={5} />

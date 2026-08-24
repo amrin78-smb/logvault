@@ -46,6 +46,7 @@ entity_risk  entity_type+entity_value(composite PK) | source_ip(INET) | risk_sco
 ## Reporting engine
 
 saved_reports  id(PK,SERIAL) | name(TEXT,NOT NULL) | report_type(TEXT,NOT NULL) | params(JSONB) | created_by(TEXT) | created_at | updated_at
+  — IN USE from 2.33.0 (was scaffolding with no code touching it). Holds custom-report configurations: params = {dimension, category, chart, limit}. Stores a CONFIG, never data or SQL — the report it drives is re-run and re-scoped per viewer at run time, so a saved report cannot leak another user's site data. created_by is the rbac userId as text; delete is creator-or-admin.
 report_run_history  id(PK,BIGSERIAL) | report_type(TEXT,NOT NULL) | format('json'|'csv'|'pdf') | params(JSONB) | row_count(INTEGER) | status(TEXT,default 'success') | trigger_type(TEXT,default 'manual') | generated_by(TEXT) | generated_at
 
 ## Views (read-only convenience, not tables)

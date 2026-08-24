@@ -850,12 +850,169 @@ async function reportBlockedThreat(db, q, rbac) {
   };
 }
 
+// ── custom (user-built) reports ─────────────────────────────
+// A GUIDED builder, not a query builder. The user picks a dimension from this
+// whitelist; they never supply a table name, a column name, or SQL. Every
+// identifier below is a literal in this file, so the generated SQL is fixed at
+// author time and only VALUES are ever bound as parameters.
+//
+// That is a deliberate limit, not laziness: free-form querying against a 57 GB
+// partitioned log store is both an injection surface and a trivial way for one
+// user to melt the database. Every entry here also targets a pre-aggregated
+// hourly rollup, so a custom report costs tens-to-hundreds of milliseconds
+// rather than a table scan.
+//
+// Every dimension was validated against 30 days of live data before being
+// offered — an option that returns nothing is the same "looks broken" failure
+// as an empty report. `vendor` and `source_host` currently hold a single value
+// each (one vendor, one syslog sender); they are kept because they are correct
+// and become useful the moment a second is onboarded.
+//
+// supportsCategory marks the only two tables carrying a `category` column. A
+// category filter on any other dimension is REJECTED rather than ignored —
+// silently returning unfiltered totals under a filtered heading is exactly the
+// class of quietly-wrong figure these reports exist to avoid.
+const CUSTOM_DIMENSIONS = {
+  category:     { label: 'Category',          table: 'syslog_stats_rollup',          col: 'category',       metric: 'log_count', supportsCategory: false },
+  severity:     { label: 'Severity',          table: 'syslog_stats_rollup',          col: 'severity_label', metric: 'log_count', supportsCategory: true },
+  vendor:       { label: 'Vendor',            table: 'syslog_stats_rollup',          col: 'vendor',         metric: 'log_count', supportsCategory: true },
+  source_host:  { label: 'Reporting Device',  table: 'syslog_source_host_rollup',    col: 'source_host',    metric: 'log_count', supportsCategory: false },
+  srcip:        { label: 'Source IP',         table: 'syslog_talker_rollup',         col: 'srcip',          metric: 'log_count', supportsCategory: false },
+  dstip:        { label: 'Destination IP',    table: 'syslog_dest_rollup',           col: 'dstip',          metric: 'log_count', supportsCategory: false },
+  event_type:   { label: 'Security Event',    table: 'syslog_security_event_rollup', col: 'event_type',     metric: 'log_count', supportsCategory: false },
+  known_bad_ip: { label: 'Known-Bad IP',      table: 'syslog_known_bad_hit_rollup',  col: 'ip_address',     metric: 'hit_count', supportsCategory: false },
+  country:      { label: 'Country',           table: 'syslog_distinct_value_rollup', col: 'value', metric: 'log_count', dim: 'country', supportsCategory: false },
+  user:         { label: 'User',              table: 'syslog_distinct_value_rollup', col: 'value', metric: 'log_count', dim: 'user',    supportsCategory: false },
+  service:      { label: 'Service',           table: 'syslog_distinct_value_rollup', col: 'value', metric: 'log_count', dim: 'service', supportsCategory: false },
+  source_addr:  { label: 'Source Address',    table: 'syslog_distinct_value_rollup', col: 'value', metric: 'log_count', dim: 'source',  supportsCategory: false },
+  action:       { label: 'Firewall Action',   table: 'syslog_fortinet_field_rollup', col: 'value', metric: 'log_count', dim: 'action',  supportsCategory: false },
+  subtype:      { label: 'Log Subtype',       table: 'syslog_fortinet_field_rollup', col: 'value', metric: 'log_count', dim: 'subtype', supportsCategory: false },
+  log_type:     { label: 'Log Type',          table: 'syslog_fortinet_field_rollup', col: 'value', metric: 'log_count', dim: 'type',    supportsCategory: false },
+};
+
+const CUSTOM_CHART_TYPES = ['bar', 'line', 'area'];
+
+// Categories offerable as a filter. Read from the same rollup the filter is
+// applied to, so the picker can never offer a value the query cannot honour.
+async function customCategories(db, rbac) {
+  const sf = getRollupSiteFilter(rbac, 1);
+  const r = await db.query(`
+    SELECT DISTINCT category FROM syslog_stats_rollup
+    WHERE category IS NOT NULL AND hour_bucket > NOW() - INTERVAL '30 days' ${sf.clause}
+    ORDER BY 1
+  `, sf.params);
+  return r.rows.map(x => x.category);
+}
+
+async function reportCustom(db, q, rbac) {
+  const hours = safeHours(q.hours);
+  const key = String(q.dimension || '');
+  const d = CUSTOM_DIMENSIONS[key];
+  if (!d) {
+    throw new BadRequestError(`unknown dimension '${key}' - choose one of: ${Object.keys(CUSTOM_DIMENSIONS).join(', ')}`);
+  }
+  const rawLimit = parseInt(q.limit, 10);
+  const limit = Math.min(Math.max(isNaN(rawLimit) ? 25 : rawLimit, 1), 200);
+  const chartType = CUSTOM_CHART_TYPES.includes(String(q.chart)) ? String(q.chart) : 'bar';
+  const category = q.category ? String(q.category) : null;
+  if (category && !d.supportsCategory) {
+    throw new BadRequestError(`the '${d.label}' dimension cannot be filtered by category - only ${Object.entries(CUSTOM_DIMENSIONS).filter(([, x]) => x.supportsCategory).map(([k]) => k).join(', ')} carry one`);
+  }
+
+  // Build the WHERE once. `d.table`/`d.col`/`d.metric` are literals from the
+  // whitelist above; only the time window, the dimension discriminator and the
+  // category VALUE are bound.
+  const build = (startIdx) => {
+    const params = [hours];
+    const parts = [`hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))`];
+    if (d.dim) { params.push(d.dim); parts.push(`dimension = $${params.length}`); }
+    if (category) { params.push(category); parts.push(`category = $${params.length}`); }
+    const sf = getRollupSiteFilter(rbac, params.length + 1);
+    return { where: parts.join(' AND ') + ' ' + sf.clause, params: [...params, ...sf.params] };
+  };
+
+  const wTop = build();
+  // Bound, not interpolated. `limit` is already clamped to an integer in
+  // [1,200] so interpolating it would be safe — but every other user-derived
+  // value here is bound, and one exception is how the next one slips in.
+  wTop.params.push(limit);
+  const topR = await db.query(`
+    SELECT ${d.col} AS k, SUM(${d.metric})::bigint AS n
+    FROM ${d.table} WHERE ${wTop.where}
+    GROUP BY 1 ORDER BY 2 DESC NULLS LAST LIMIT $${wTop.params.length}
+  `, wTop.params);
+
+  // Grand total is its own query, NOT a sum of the top-N rows — otherwise the
+  // share column and the total tile would describe different populations.
+  // Deliberately no COUNT(DISTINCT): on dstip that alone costs ~4.6s, while
+  // this grouped query costs ~330ms.
+  const wTot = build();
+  const totR = await db.query(`
+    SELECT COALESCE(SUM(${d.metric}), 0)::bigint AS n FROM ${d.table} WHERE ${wTot.where}
+  `, wTot.params);
+
+  const wTrend = build();
+  const trendR = await db.query(`
+    SELECT date_trunc('day', hour_bucket) AS d, SUM(${d.metric})::bigint AS n
+    FROM ${d.table} WHERE ${wTrend.where}
+    GROUP BY 1 ORDER BY 1
+  `, wTrend.params);
+
+  const total = parseInt(totR.rows[0] && totR.rows[0].n) || 0;
+  const rows = topR.rows.map((r, i) => {
+    const n = parseInt(r.n) || 0;
+    return {
+      rank: i + 1,
+      value: r.k == null || r.k === '' ? 'unknown' : String(r.k),
+      log_count: n,
+      share: total > 0 ? `${(n / total * 100).toFixed(1)}%` : '0%',
+    };
+  });
+  const shown = rows.reduce((a, r) => a + r.log_count, 0);
+  const top = rows[0];
+  const scope = category ? `${d.label} - ${category}` : d.label;
+
+  return {
+    columns: [
+      { key: 'rank', label: '#', align: 'right' },
+      { key: 'value', label: d.label, align: 'left' },
+      { key: 'log_count', label: 'Events', align: 'right' },
+      { key: 'share', label: 'Share', align: 'right' },
+    ],
+    rows,
+    summary: [
+      { label: 'Total Events', value: total.toLocaleString() },
+      { label: `Top ${d.label}`, value: top ? top.value : '-' },
+      { label: 'Top Share', value: top ? top.share : '0%' },
+      // Names the cap explicitly so a truncated view never reads as the whole.
+      { label: `Coverage (top ${rows.length})`, value: total > 0 ? `${(shown / total * 100).toFixed(1)}%` : '0%' },
+    ],
+    charts: [
+      {
+        type: chartType,
+        title: `Top ${rows.length} by ${scope}`,
+        x: rows.map(r => r.value),
+        series: [{ label: 'Events', points: rows.map(r => r.log_count), color: RED }],
+        yFormat: 'number',
+      },
+      {
+        type: 'line',
+        title: `${scope} - Daily Trend`,
+        x: trendR.rows.map(r => new Date(r.d).toISOString().slice(0, 10)),
+        series: [{ label: 'Events', points: trendR.rows.map(r => parseInt(r.n) || 0), color: NAVY }],
+        yFormat: 'number',
+      },
+    ],
+  };
+}
+
 const REPORTS = {
   'security-summary': { title: 'Security Summary Report', gather: reportSecuritySummary },
   'site-activity':    { title: 'Site Activity Report', gather: reportSiteActivity },
   'mitre-coverage':   { title: 'MITRE ATT&CK Coverage Report', gather: reportMitreCoverage },
   'web-usage':        { title: 'Web & User Activity Report', gather: reportWebUsage },
   'blocked-threat':   { title: 'Blocked & Threat Activity Report', gather: reportBlockedThreat },
+  'custom':           { title: 'Custom Report', gather: reportCustom },
 };
 
 // ════════════════════════════════════════════════════════════
@@ -1052,6 +1209,92 @@ function createReportsRouter(db) {
     res.json({ data: Object.entries(REPORTS).map(([key, r]) => ({ key, title: r.title })) });
   });
 
+  // ── Builder metadata + saved-report CRUD ───────────────────
+  // DECLARED BEFORE router.get('/:type'). Express matches in registration
+  // order, so a '/:type' registered first would swallow '/dimensions' and
+  // '/saved' and answer them with "Unknown report type".
+
+  // The picker's option list. Served from the same whitelist the gather
+  // enforces, so the UI can never offer a dimension the backend would reject.
+  router.get('/dimensions', async (req, res) => {
+    try {
+      const categories = await customCategories(db, req.rbac);
+      res.json({
+        dimensions: Object.entries(CUSTOM_DIMENSIONS).map(([key, d]) => ({
+          key, label: d.label, supportsCategory: !!d.supportsCategory,
+        })),
+        categories,
+        chartTypes: CUSTOM_CHART_TYPES,
+        limits: [10, 25, 50, 100],
+      });
+    } catch (err) {
+      console.error('[Reports] dimensions error:', err.message);
+      res.status(500).json({ error: 'Failed to load report dimensions' });
+    }
+  });
+
+  router.get('/saved', async (req, res) => {
+    try {
+      const r = await db.query(
+        `SELECT id, name, report_type, params, created_by, created_at, updated_at
+           FROM saved_reports ORDER BY updated_at DESC NULLS LAST, id DESC`);
+      res.json({ data: r.rows });
+    } catch (err) {
+      console.error('[Reports] saved list error:', err.message);
+      res.status(500).json({ error: 'Failed to load saved reports' });
+    }
+  });
+
+  router.post('/saved', async (req, res) => {
+    try {
+      const name = String((req.body && req.body.name) || '').trim();
+      const reportType = String((req.body && req.body.report_type) || '').trim();
+      const params = (req.body && req.body.params) || {};
+      if (!name) return res.status(400).json({ error: 'name is required' });
+      if (name.length > 120) return res.status(400).json({ error: 'name must be 120 characters or fewer' });
+      // Only a real report type may be saved — otherwise a saved entry could
+      // point at a type that 404s the moment someone runs it.
+      if (!REPORTS[reportType]) return res.status(400).json({ error: 'unknown report_type' });
+      // A saved custom report is only useful if its dimension is still valid;
+      // validating here means a bad config is rejected at save time rather
+      // than surfacing as a 400 later when someone runs it.
+      if (reportType === 'custom' && !CUSTOM_DIMENSIONS[String(params.dimension || '')]) {
+        return res.status(400).json({ error: 'params.dimension must be a known dimension' });
+      }
+      const r = await db.query(
+        `INSERT INTO saved_reports (name, report_type, params, created_by)
+         VALUES ($1, $2, $3::jsonb, $4)
+         RETURNING id, name, report_type, params, created_by, created_at, updated_at`,
+        [name, reportType, JSON.stringify(params), req.rbac && req.rbac.userId ? String(req.rbac.userId) : 'system']);
+      res.status(201).json(r.rows[0]);
+    } catch (err) {
+      console.error('[Reports] saved create error:', err.message);
+      res.status(500).json({ error: 'Failed to save report' });
+    }
+  });
+
+  router.delete('/saved/:id', async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ error: 'invalid id' });
+      const own = await db.query('SELECT created_by FROM saved_reports WHERE id = $1', [id]);
+      if (!own.rows.length) return res.status(404).json({ error: 'not found' });
+      // Creator or admin. Anyone may READ a saved config (it holds no data,
+      // only a dimension + window, and the report it runs is still site-scoped
+      // per-viewer at run time) but only its owner or an admin may remove it.
+      const me = req.rbac && req.rbac.userId ? String(req.rbac.userId) : '';
+      const isAdmin = !!(req.rbac && req.rbac.isAdmin);
+      if (!isAdmin && String(own.rows[0].created_by) !== me) {
+        return res.status(403).json({ error: 'only the creator or an admin can delete this saved report' });
+      }
+      await db.query('DELETE FROM saved_reports WHERE id = $1', [id]);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[Reports] saved delete error:', err.message);
+      res.status(500).json({ error: 'Failed to delete saved report' });
+    }
+  });
+
   router.get('/:type', async (req, res) => {
     const def = REPORTS[req.params.type];
     if (!def) return res.status(404).json({ error: 'Unknown report type' });
@@ -1111,4 +1354,4 @@ function createReportsRouter(db) {
   return router;
 }
 
-module.exports = { createReportsRouter, REPORTS };
+module.exports = { createReportsRouter, REPORTS, CUSTOM_DIMENSIONS, CUSTOM_CHART_TYPES };

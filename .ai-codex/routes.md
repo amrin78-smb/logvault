@@ -94,7 +94,12 @@ GET /api/ueba/baseline-status [auth] [db] — baseline-readiness indicator, neve
 
 ## Express — Reports (api/reports.js, mounted at /api/reports)
 GET /api/reports/ [auth] [db] — list available report types
+GET /api/reports/dimensions [auth] [db] — custom-report builder metadata: whitelisted dimensions (+supportsCategory), selectable categories, chart types, row limits. Served from the SAME CUSTOM_DIMENSIONS whitelist the gather enforces, so the picker cannot offer an option the server rejects.
+GET /api/reports/saved [auth] [db] — list saved report configurations
+POST /api/reports/saved [auth] [db] — save a configuration (validates report_type exists, and for type 'custom' that params.dimension is whitelisted, so a bad config fails at save time not run time)
+DELETE /api/reports/saved/:id [auth] [db] — delete; creator or admin only (403 otherwise)
 GET /api/reports/:type [auth] [db] — generate report (format=json|csv|pdf), logs to report_run_history
+  ⚠ ORDER MATTERS: /dimensions and /saved are registered BEFORE /:type. Express matches in registration order, so moving /:type above them makes every one of those routes answer "Unknown report type".
 
 ## Express — SOC console (api/soc.js, mounted at /api/soc)
 GET /api/soc/overview [auth] [db] — one composed dashboard payload (severity + totals + top entities/countries + active incidents + security counters); reuses stats/summary, ueba/top, stats/geo, alerts, security/summary, threats/known-bad SQL; cached 30s per rbac scope

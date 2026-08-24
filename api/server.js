@@ -2780,6 +2780,12 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.33.0': [
+    "Custom reports. Choose what to group the data by - category, severity, source or destination address, country, user, service, firewall action, security event, known-bad IP and more - then pick a chart type and how many rows to show. The result previews on screen and exports to CSV or PDF exactly like the built-in reports.",
+    "Save a configuration under a name and re-run it later from the list beside the report catalogue. Saved reports store the settings only, never the data, and are re-scoped to whoever opens them, so a shared report can never expose another user's sites.",
+    "Grouping options are limited to a fixed, checked list rather than free-form querying. Each one reads a pre-aggregated table, so a custom report returns in well under a second instead of scanning the full log store, and every option was verified to actually contain data before being offered.",
+    "Where a grouping has no category breakdown, the category filter is disabled and explains why. Asking for one is refused outright rather than quietly returning unfiltered totals under a filtered heading.",
+  ],
   '2.32.0': [
     "Two new reports. Web & User Activity covers roughly half of everything LogVault ingests and was previously invisible in the Reports tab - web volume over time, the busiest users and hosts, and each user's share of the period.",
     "Blocked & Threat Activity brings together the security signals the current log feed actually carries: blocked destinations and services, the blocked-activity trend, contacts with known-bad IP addresses, and TLS/IPSec error volume.",
