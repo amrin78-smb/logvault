@@ -29,7 +29,7 @@ interface ReportData {
   charts: ReportChart[];
 }
 
-type ReportKey = 'security-summary' | 'site-activity' | 'mitre-coverage';
+type ReportKey = 'security-summary' | 'site-activity' | 'mitre-coverage' | 'web-usage' | 'blocked-threat';
 interface ReportDef { key: ReportKey; title: string; desc: string; color: string; icon: React.ReactNode; }
 
 // Hardcoded chart-series palette (module-level, not a design token) — mirrors
@@ -65,6 +65,20 @@ const REPORTS: ReportDef[] = [
     desc: 'Tactic and technique coverage matrix with the top techniques observed over the period.',
     color: 'var(--purple)',
     icon: I(<><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="0.6" fill="currentColor" /></>),
+  },
+  {
+    key: 'web-usage',
+    title: 'Web & User Activity',
+    desc: 'Web volume trend, top users and hosts by web activity, with per-user share of the period. Scoped to web-category events only.',
+    color: 'var(--teal)',
+    icon: I(<><circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z" /></>),
+  },
+  {
+    key: 'blocked-threat',
+    title: 'Blocked & Threat Activity',
+    desc: 'Blocked destinations and services, blocked-activity trend, known-bad IP contacts and TLS/IPSec error volume.',
+    color: 'var(--orange)',
+    icon: I(<><path d="M12 2.6 4.8 5.8v5.4c0 4.9 3.4 8.3 7.2 9.8 3.8-1.5 7.2-4.9 7.2-9.8V5.8L12 2.6z" /><line x1="9.2" y1="9.2" x2="14.8" y2="14.8" /><line x1="14.8" y1="9.2" x2="9.2" y2="14.8" /></>),
   },
 ];
 

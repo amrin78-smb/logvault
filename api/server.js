@@ -2780,6 +2780,13 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.32.0': [
+    "Two new reports. Web & User Activity covers roughly half of everything LogVault ingests and was previously invisible in the Reports tab - web volume over time, the busiest users and hosts, and each user's share of the period.",
+    "Blocked & Threat Activity brings together the security signals the current log feed actually carries: blocked destinations and services, the blocked-activity trend, contacts with known-bad IP addresses, and TLS/IPSec error volume.",
+    "Both are built only on metrics the firewall genuinely sends. Reports keyed on failed logins or denied traffic were deliberately not built - the firewall forwards allowed-traffic, web and VPN session logs only, so such a report would always be empty and look like a fault rather than a logging-scope choice.",
+    "On-screen figures and the CSV/PDF exports are produced from one shared calculation, so the same report cannot show different numbers in different formats.",
+    "Both run off pre-aggregated hourly tables rather than the raw log store, so they return in well under a second even over a 30-day window.",
+  ],
   '2.31.12': [
     'The "License expires in N days" warning now appears in LogVault. It has been showing in NetVault and DDIVault for some time, but never here, so the licence could quietly approach expiry without any warning on this app.',
     'The code for the warning was already present but could never run: the banner returned early for any active licence, before reaching the check for one that is close to expiring. It only ever appeared once the licence had already expired or entered its grace period - by which point a warning is too late to be useful.',

@@ -30,7 +30,7 @@ api/pdfCharts.js
   renderTrendChart(...) — chart image generation for PDF reports
 
 api/reports.js
-  createReportsRouter(pool) — Express router factory mounted at /api/reports; REPORTS array defines report types, logRun() best-effort-logs to report_run_history (wrapped in try/catch so a logging failure never breaks an export)
+  createReportsRouter(pool) — Express router factory mounted at /api/reports; REPORTS registry defines report types, logRun() best-effort-logs to report_run_history (wrapped in try/catch so a logging failure never breaks an export). Types: security-summary, site-activity, mitre-coverage, web-usage (2.32.0), blocked-threat (2.32.0). **Anti-drift contract:** each type exposes ONE gather(db, query, rbac) -> {columns, rows, summary, charts}, and the router feeds that single payload to the JSON, CSV and PDF renderers alike — the screen and the export cannot disagree because they are not separate implementations. Never compute a report figure in the frontend, and never add a second query path for the PDF (that is exactly how SpanVault's screen/PDF numbers drifted apart).
 
 api/soc.js
   createSocRouter(pool) — Express router factory mounted at /api/soc; composes existing stats/security/ueba/anomaly/alert/threat aggregates into SOC-console payloads (overview, deterministic NLG digest, alert killchain, entity timeline). No new tables — compute-on-read only. Uses ./rbac site filters + a local anomalySiteFilter/getCached/rbacCacheKey copy (those are module-private in server.js)

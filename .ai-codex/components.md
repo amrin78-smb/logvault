@@ -32,7 +32,7 @@ Every file has `'use client'` at the top — this app has no server components b
 (c) LogExplorer  initialFilter?, onFilterUsed?
 (c) NetworkHealth  hours, onHoursChange, refreshInterval, onRefreshChange
 (c) RecentCritical  hours, onRowClick?
-(c) ReportsTab  (no props — self-contained)
+(c) ReportsTab  (no props — self-contained) — catalog of 5 report types mirrors api/reports.js's REPORTS registry; the local REPORTS array here is presentation only (title/desc/colour/icon). All figures, columns and charts come from the server payload — never compute a report number in this component, or the screen and the CSV/PDF export start to drift.
 (c) SecurityAnalysis  hours, onHoursChange, refreshInterval, onRefreshChange, onTechnique, onDrill
 (c) SocOverview  hours, openExplorer, openAlerts — SIEM Phase 4 SOC single-pane (soc tab); fetches /api/soc/overview + /api/soc/digest; opens KillChainTimeline
 (c) KillChainTimeline  alertId, onClose — modal; fetches /api/soc/killchain/:alertId; groups events into MITRE tactic phases (mitre.tsx)

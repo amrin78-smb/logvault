@@ -632,10 +632,230 @@ async function reportMitreCoverage(db, q, rbac) {
 }
 
 // All reports render PORTRAIT.
+// ── web-usage ───────────────────────────────────────────────
+// Web & user activity — the biggest blind spot in the Phase 1 catalog: `web`
+// is ~47% of everything ingested and nothing surfaced it.
+//
+// EVERY figure here is category-scoped to category='web'. Only two rollups
+// carry `category` (syslog_stats_rollup, syslog_entity_activity_rollup), so
+// those are the only sources used. syslog_distinct_value_rollup's user/country/
+// service dimensions are NOT category-scoped — mixing them in would report
+// estate-wide numbers under a "web" heading, exactly the kind of quietly-wrong
+// figure these reports exist to eliminate.
+//
+// Deliberately ABSENT: "top sites/domains visited". No rollup carries
+// hostname/url, so it would mean scanning structured_data across the raw 57 GB
+// partitioned table. A report that takes minutes is worse than one that answers
+// a slightly narrower question instantly.
+async function reportWebUsage(db, q, rbac) {
+  const hours = safeHours(q.hours);
+  const since = `hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))`;
+
+  // Authoritative total + trend come from stats_rollup, which counts each log
+  // ONCE. The entity rollup must never be SUMmed for a total — a single log
+  // appears there under both its user and its srcip, so it double-counts.
+  const sfTrend = getRollupSiteFilter(rbac, 2);
+  const trendR = await db.query(`
+    SELECT date_trunc('day', hour_bucket) AS d, SUM(log_count)::bigint AS n
+    FROM syslog_stats_rollup
+    WHERE ${since} AND category = 'web' ${sfTrend.clause}
+    GROUP BY 1 ORDER BY 1
+  `, [hours, ...sfTrend.params]);
+
+  const sfTot = getRollupSiteFilter(rbac, 2);
+  const totR = await db.query(`
+    SELECT COALESCE(SUM(log_count), 0)::bigint AS n
+    FROM syslog_stats_rollup
+    WHERE ${since} AND category = 'web' ${sfTot.clause}
+  `, [hours, ...sfTot.params]);
+
+  const sfUser = getRollupSiteFilter(rbac, 2);
+  const userR = await db.query(`
+    SELECT entity_value AS name, SUM(log_count)::bigint AS n, MAX(last_seen) AS last_seen
+    FROM syslog_entity_activity_rollup
+    WHERE ${since} AND entity_type = 'user' AND category = 'web' ${sfUser.clause}
+    GROUP BY 1 ORDER BY 2 DESC LIMIT 50
+  `, [hours, ...sfUser.params]);
+
+  const sfHost = getRollupSiteFilter(rbac, 2);
+  const hostR = await db.query(`
+    SELECT entity_value AS name, SUM(log_count)::bigint AS n
+    FROM syslog_entity_activity_rollup
+    WHERE ${since} AND entity_type = 'srcip' AND category = 'web' ${sfHost.clause}
+    GROUP BY 1 ORDER BY 2 DESC LIMIT 10
+  `, [hours, ...sfHost.params]);
+
+  const sfCnt = getRollupSiteFilter(rbac, 2);
+  const cntR = await db.query(`
+    SELECT COUNT(DISTINCT entity_value) FILTER (WHERE entity_type = 'user')::int  AS users,
+           COUNT(DISTINCT entity_value) FILTER (WHERE entity_type = 'srcip')::int AS hosts
+    FROM syslog_entity_activity_rollup
+    WHERE ${since} AND category = 'web' ${sfCnt.clause}
+  `, [hours, ...sfCnt.params]);
+
+  const totalWeb = parseInt(totR.rows[0] && totR.rows[0].n) || 0;
+  const counts = cntR.rows[0] || { users: 0, hosts: 0 };
+
+  const rows = userR.rows.map(r => {
+    const n = parseInt(r.n) || 0;
+    return {
+      user: r.name || 'unattributed',
+      log_count: n,
+      // Share of the authoritative category total, not of the top-50 subtotal —
+      // otherwise the column would sum to 100% while covering only part of it.
+      share: totalWeb > 0 ? `${(n / totalWeb * 100).toFixed(1)}%` : '0%',
+      last_seen: r.last_seen ? new Date(r.last_seen).toISOString().replace('T', ' ').slice(0, 16) : '-',
+    };
+  });
+
+  const busiest = rows[0];
+  return {
+    columns: [
+      { key: 'user', label: 'User', align: 'left' },
+      { key: 'log_count', label: 'Web Events', align: 'right' },
+      { key: 'share', label: 'Share', align: 'right' },
+      { key: 'last_seen', label: 'Last Seen', align: 'left' },
+    ],
+    rows,
+    summary: [
+      { label: 'Web Events', value: totalWeb.toLocaleString() },
+      { label: 'Distinct Users', value: counts.users || 0 },
+      { label: 'Distinct Hosts', value: counts.hosts || 0 },
+      { label: 'Busiest User', value: busiest ? `${busiest.user} (${busiest.log_count.toLocaleString()})` : '-' },
+    ],
+    charts: [
+      {
+        type: 'line',
+        title: 'Web Activity Trend (daily)',
+        x: trendR.rows.map(r => new Date(r.d).toISOString().slice(0, 10)),
+        series: [{ label: 'Web events', points: trendR.rows.map(r => parseInt(r.n) || 0), color: RED }],
+        yFormat: 'number',
+      },
+      {
+        type: 'bar',
+        title: 'Top Hosts by Web Activity',
+        x: hostR.rows.map(r => r.name),
+        series: [{ label: 'Web events', points: hostR.rows.map(r => parseInt(r.n) || 0), color: NAVY }],
+        yFormat: 'number',
+      },
+    ],
+  };
+}
+
+// ── blocked-threat ──────────────────────────────────────────
+// Blocked & threat activity — the closest thing to a real security report the
+// current log feed supports, built ONLY on signals verified to carry volume
+// against 30 days of live data:
+//   event_class='blocked'         14,865   syslog_dest_event_rollup
+//   known-bad IP hits              7,502   syslog_known_bad_hit_rollup
+//   SSL Alert / Exit / IPSec err  ~171k    syslog_security_event_rollup
+//
+// Deliberately NOT built on authentication or denied-traffic events: the
+// firewall sends allowed-traffic, web and VPN session logs only, so
+// category='authentication' is 39 logs in 30 days. A report keyed on those
+// would render permanently empty and read as a broken product rather than a
+// logging-scope decision. Revisit if the firewall's logging scope widens.
+async function reportBlockedThreat(db, q, rbac) {
+  const hours = safeHours(q.hours);
+  const since = `hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))`;
+
+  const sfDest = getRollupSiteFilter(rbac, 2);
+  const destR = await db.query(`
+    SELECT dstip, COALESCE(service, 'unknown') AS service, SUM(log_count)::bigint AS n
+    FROM syslog_dest_event_rollup
+    WHERE ${since} AND event_class = 'blocked' ${sfDest.clause}
+    GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 50
+  `, [hours, ...sfDest.params]);
+
+  const sfTrend = getRollupSiteFilter(rbac, 2);
+  const trendR = await db.query(`
+    SELECT date_trunc('day', hour_bucket) AS d, SUM(log_count)::bigint AS n
+    FROM syslog_dest_event_rollup
+    WHERE ${since} AND event_class = 'blocked' ${sfTrend.clause}
+    GROUP BY 1 ORDER BY 1
+  `, [hours, ...sfTrend.params]);
+
+  // Grand total for the window, independent of the top-50 row cap, so the tile
+  // and the table can never quietly disagree about what "blocked" means.
+  const sfBlkTot = getRollupSiteFilter(rbac, 2);
+  const blkTotR = await db.query(`
+    SELECT COALESCE(SUM(log_count), 0)::bigint AS n, COUNT(DISTINCT dstip)::int AS dests
+    FROM syslog_dest_event_rollup
+    WHERE ${since} AND event_class = 'blocked' ${sfBlkTot.clause}
+  `, [hours, ...sfBlkTot.params]);
+
+  const sfBad = getRollupSiteFilter(rbac, 2);
+  const badR = await db.query(`
+    SELECT ip_address, SUM(hit_count)::bigint AS n
+    FROM syslog_known_bad_hit_rollup
+    WHERE ${since} ${sfBad.clause}
+    GROUP BY 1 ORDER BY 2 DESC LIMIT 10
+  `, [hours, ...sfBad.params]);
+
+  const sfBadTot = getRollupSiteFilter(rbac, 2);
+  const badTotR = await db.query(`
+    SELECT COALESCE(SUM(hit_count), 0)::bigint AS n, COUNT(DISTINCT ip_address)::int AS ips
+    FROM syslog_known_bad_hit_rollup
+    WHERE ${since} ${sfBadTot.clause}
+  `, [hours, ...sfBadTot.params]);
+
+  const sfSsl = getRollupSiteFilter(rbac, 2);
+  const sslR = await db.query(`
+    SELECT COALESCE(SUM(log_count), 0)::bigint AS n
+    FROM syslog_security_event_rollup
+    WHERE ${since} AND event_type IN ('SSL Alert', 'SSL Exit Error', 'IPSec Phase 1 Error') ${sfSsl.clause}
+  `, [hours, ...sfSsl.params]);
+
+  const blkTot = blkTotR.rows[0] || { n: 0, dests: 0 };
+  const badTot = badTotR.rows[0] || { n: 0, ips: 0 };
+  const blockedTotal = parseInt(blkTot.n) || 0;
+  const badHits = parseInt(badTot.n) || 0;
+  const sslTotal = parseInt(sslR.rows[0] && sslR.rows[0].n) || 0;
+
+  const rows = destR.rows.map(r => ({
+    dstip: r.dstip || 'unknown',
+    service: r.service,
+    log_count: parseInt(r.n) || 0,
+  }));
+
+  return {
+    columns: [
+      { key: 'dstip', label: 'Blocked Destination', align: 'left' },
+      { key: 'service', label: 'Service', align: 'left' },
+      { key: 'log_count', label: 'Events', align: 'right' },
+    ],
+    rows,
+    summary: [
+      { label: 'Blocked Events', value: blockedTotal.toLocaleString(), color: blockedTotal > 0 ? YELLOW : GREEN },
+      { label: 'Blocked Destinations', value: blkTot.dests || 0 },
+      { label: 'Known-Bad IP Hits', value: badHits.toLocaleString(), color: badHits > 0 ? RED : GREEN },
+      { label: 'TLS / IPSec Errors', value: sslTotal.toLocaleString() },
+    ],
+    charts: [
+      {
+        type: 'bar',
+        title: 'Blocked Activity Trend (daily)',
+        x: trendR.rows.map(r => new Date(r.d).toISOString().slice(0, 10)),
+        series: [{ label: 'Blocked', points: trendR.rows.map(r => parseInt(r.n) || 0), color: YELLOW }],
+        yFormat: 'number',
+      },
+      {
+        type: 'bar',
+        title: 'Top Known-Bad IPs Contacted',
+        x: badR.rows.map(r => r.ip_address),
+        series: [{ label: 'Hits', points: badR.rows.map(r => parseInt(r.n) || 0), color: RED }],
+        yFormat: 'number',
+      },
+    ],
+  };
+}
+
 const REPORTS = {
   'security-summary': { title: 'Security Summary Report', gather: reportSecuritySummary },
   'site-activity':    { title: 'Site Activity Report', gather: reportSiteActivity },
   'mitre-coverage':   { title: 'MITRE ATT&CK Coverage Report', gather: reportMitreCoverage },
+  'web-usage':        { title: 'Web & User Activity Report', gather: reportWebUsage },
+  'blocked-threat':   { title: 'Blocked & Threat Activity Report', gather: reportBlockedThreat },
 };
 
 // ════════════════════════════════════════════════════════════
