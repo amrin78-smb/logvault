@@ -2780,6 +2780,11 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.33.2': [
+    "Reports no longer refresh themselves. A report is generated deliberately and then read, so re-running it every 30 seconds re-queried the database for as long as the tab stayed open and moved the figures under whoever was reading them. The refresh control is still there for anyone who wants a live view - it now has an Off setting, and Reports starts on it.",
+    "Off is a real setting everywhere the control appears: choosing it stops the timer rather than merely hiding the countdown. Dashboards are unchanged and keep refreshing as before.",
+    "The record of who generated and exported which report is now trimmed after a year. It had no limit at all before; the only thing keeping it small was that nobody left the Reports tab open. The trim cannot fail the nightly maintenance run - it is the least important step in it, and the job that actually reclaims log storage runs first.",
+  ],
   '2.33.1': [
     "A custom report with no matching data now shows the same \"No data\" panel as every other report, instead of an empty table alongside tiles reading 0%. Reachable on any grouping and time range with nothing in it, such as known-bad IP contacts over the last hour.",
     "The total on a custom report now names what it is counting - \"Total (Country)\" rather than \"Total Events\". The figure counts events carrying the selected attribute, which is nearly every log when grouping by country but only the subset with a username attached when grouping by user. One label for two different populations made two custom reports look comparable when they were not. No figure changed, only its label.",

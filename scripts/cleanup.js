@@ -43,6 +43,25 @@ async function runCleanup(pool) {
   );
   console.log(`[Cleanup] Deleted ${alerts.rowCount} old acknowledged alert events`);
 
+  // 4. Trim the report audit trail. Kept far longer than telemetry (a year vs
+  // 30 days for alerts) because this is an audit record of who generated and
+  // exported what — but it had NO retention at all, so its only bound was
+  // "nobody leaves the Reports tab open". Real usage writes well under a row
+  // a day; this just makes the ceiling explicit instead of accidental.
+  // Non-fatal on purpose. This is the LEAST important step in a script whose
+  // main job is dropping syslog partitions; a failure here (missing table on a
+  // part-migrated install, a permission change) must not fail the run and mask
+  // whether retention actually happened. Verified logvault_user does hold
+  // DELETE on this table today — the guard is for the day that changes.
+  try {
+    const reportRuns = await pool.query(
+      `DELETE FROM report_run_history WHERE generated_at < NOW() - INTERVAL '365 days'`
+    );
+    console.log(`[Cleanup] Deleted ${reportRuns.rowCount} report run-history rows older than 365 days`);
+  } catch (e) {
+    console.error('[Cleanup] report_run_history trim failed (non-fatal):', e.message);
+  }
+
   console.log('[Cleanup] Done.');
 }
 

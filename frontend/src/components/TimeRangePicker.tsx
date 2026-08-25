@@ -55,6 +55,13 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
 
   useEffect(() => {
     setCountdown(refreshInterval);
+    // 0 = Off: no interval is created at all, so nothing re-fetches and
+    // nothing is logged. Previously the timer ran unconditionally, which gave
+    // every consumer dashboard behaviour whether it wanted it or not — a
+    // report is a point-in-time artifact, and having its figures shift
+    // mid-read (the rollups refresh on their own schedule) is a defect, not a
+    // feature. Dashboards keep their existing defaults and are unaffected.
+    if (!(refreshInterval > 0)) return;
     const t = setInterval(() => {
       setCountdown(c => {
         // queueMicrotask keeps the fetch out of the state updater — an updater
@@ -74,7 +81,7 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const pct = ((refreshInterval - countdown) / refreshInterval) * 100;
+  const pct = refreshInterval > 0 ? ((refreshInterval - countdown) / refreshInterval) * 100 : 0;
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} ref={ref}>
@@ -88,13 +95,13 @@ export default function TimeRangePicker({ hours, onHoursChange, refreshInterval,
             strokeLinecap="round" transform="rotate(-90 8 8)"
             style={{ transition: 'stroke-dasharray 1s linear' }}/>
         </svg>
-        {[10, 30, 60, 300].map(s => (
+        {[0, 10, 30, 60, 300].map(s => (
           <button key={s} onClick={() => onRefreshChange(s)}
             style={{ padding: '3px 7px', borderRadius: 'var(--radius-sm)', border: 'none', fontSize: 'var(--text-xs)', cursor: 'pointer',
               fontWeight: refreshInterval === s ? 600 : 400,
               background: refreshInterval === s ? '#1a202c' : 'transparent',
               color: refreshInterval === s ? '#fff' : 'var(--text-muted)' }}>
-            {s < 60 ? `${s}s` : `${s/60}m`}
+            {s === 0 ? 'Off' : s < 60 ? `${s}s` : `${s / 60}m`}
           </button>
         ))}
         <button onClick={onRefreshNow}

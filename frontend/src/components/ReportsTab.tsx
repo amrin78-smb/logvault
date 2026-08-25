@@ -190,7 +190,11 @@ export default function ReportsTab() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hours, setHours] = useState(24);
-  const [refreshInterval, setRefreshInterval] = useState(30);
+  // Reports default to Off. A report is generated deliberately and then read;
+  // silently re-running it every 30s re-queried the database forever on an
+  // open tab, wrote an audit row per tick, and moved the figures under the
+  // reader. The control is still there for anyone who wants a live view.
+  const [refreshInterval, setRefreshInterval] = useState(0);
   const [meta, setMeta] = useState<BuilderMeta | null>(null);
   const [cfg, setCfg] = useState<BuilderCfg>(DEFAULT_BUILDER);
   const [saved, setSaved] = useState<SavedReport[]>([]);
