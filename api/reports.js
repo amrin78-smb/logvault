@@ -922,7 +922,7 @@ async function reportCustom(db, q, rbac) {
   // Build the WHERE once. `d.table`/`d.col`/`d.metric` are literals from the
   // whitelist above; only the time window, the dimension discriminator and the
   // category VALUE are bound.
-  const build = (startIdx) => {
+  const build = () => {
     const params = [hours];
     const parts = [`hour_bucket >= date_trunc('hour', NOW() - make_interval(hours => $1))`];
     if (d.dim) { params.push(d.dim); parts.push(`dimension = $${params.length}`); }
@@ -965,7 +965,7 @@ async function reportCustom(db, q, rbac) {
       rank: i + 1,
       value: r.k == null || r.k === '' ? 'unknown' : String(r.k),
       log_count: n,
-      share: total > 0 ? `${(n / total * 100).toFixed(1)}%` : '0%',
+      share: total > 0 ? `${(n / total * 100).toFixed(1)}%` : '-',
     };
   });
   const shown = rows.reduce((a, r) => a + r.log_count, 0);
@@ -981,11 +981,11 @@ async function reportCustom(db, q, rbac) {
     ],
     rows,
     summary: [
-      { label: 'Total Events', value: total.toLocaleString() },
+      { label: `Total (${d.label})`, value: total.toLocaleString() },
       { label: `Top ${d.label}`, value: top ? top.value : '-' },
-      { label: 'Top Share', value: top ? top.share : '0%' },
+      { label: 'Top Share', value: top ? top.share : '-' },
       // Names the cap explicitly so a truncated view never reads as the whole.
-      { label: `Coverage (top ${rows.length})`, value: total > 0 ? `${(shown / total * 100).toFixed(1)}%` : '0%' },
+      { label: rows.length ? `Coverage (top ${rows.length})` : 'Coverage', value: (total > 0 && rows.length) ? `${(shown / total * 100).toFixed(1)}%` : '-' },
     ],
     charts: [
       {
