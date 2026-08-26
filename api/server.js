@@ -2780,6 +2780,10 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.34.1': [
+    "Fixes the country flags shipped moments earlier in 2.34.0, which did not actually appear. The flag images were being answered with a web page instead of the image, so every one of them rendered as a broken image.",
+    "The app routes every address through its sign-in check unless the address is explicitly listed as an exception. The new flags folder was not on that list, so requests for a flag were treated as a page request. It is now listed alongside the other static files, which also means flags no longer go through a sign-in check on every request and can be cached properly by the browser.",
+  ],
   '2.34.0': [
     "Country flags now actually appear next to country names - on the Threat Map, the SOC overview, top talkers and destinations, and the threat-intelligence lists.",
     "They were always meant to. The flags were drawn as emoji, which Windows cannot render: Chrome and Edge on Windows fall back to printing the two-letter country code, so the Threat Map showed SG, US and TW where flags belonged. It looked like a fault in LogVault and was really a gap in the Windows emoji font. Firefox and Macs were showing the flags correctly all along.",

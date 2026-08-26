@@ -125,7 +125,19 @@ export const config = {
   matcher: [
     // Non-auth API calls → proxy to Express (exclude /api/auth/*).
     '/api/((?!auth(?:/|$)).+)',
-    // Page routes → auth guard (exclude api, sso landing, next internals).
-    '/((?!api|sso|_next/static|_next/image|favicon.ico).*)',
+    // Page routes → auth guard (exclude api, sso landing, next internals and
+    // public static assets).
+    //
+    // `flags` MUST stay excluded. Anything this matcher catches goes through
+    // the auth guard and comes back as app HTML, so /flags/sg.svg returned a
+    // 10 KB HTML document with Content-Type text/html instead of the SVG —
+    // every country flag rendered as a broken image, and a missing flag
+    // answered 200 instead of 404 so the component's onError fallback could
+    // never fire. They are public artwork with no data in them, exactly like
+    // favicon.ico above. Excluding them also keeps them true static assets:
+    // no per-request JWT verification, and next.config.js's /flags/ 
+    // Cache-Control rule actually applies (a middleware-rendered response
+    // carries the page's headers, not the static file's).
+    '/((?!api|sso|_next/static|_next/image|favicon.ico|flags/).*)',
   ],
 };
