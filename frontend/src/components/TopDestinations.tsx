@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { countryFlag, KnownBadBadge } from './ThreatIntel';
+import { countryFlag, CountryFlag, KnownBadBadge } from './ThreatIntel';
 
 // Top Destinations (outbound) — mirrors TopTalkers but on the DESTINATION IP
 // (the external side of firewall logs). Surfaces outbound callouts: high-volume
@@ -37,7 +37,7 @@ export default function TopDestinations({ hours, onHostClick }: {
               {/* Single line: flag + host + country·ASN (inline, muted) + known-bad, count right */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3, gap: 6 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
-                  {flag && <span style={{ flexShrink: 0, fontSize: 'var(--text-xs)' }}>{flag}</span>}
+                  {flag && <CountryFlag code={row.country_code} size={14} />}
                   <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 500, whiteSpace: 'nowrap', flexShrink: 0 }}>{row.host}</span>
                   {geoText && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{geoText}</span>}
                   {knownBad && <KnownBadBadge score={row.abuse_score} compact />}

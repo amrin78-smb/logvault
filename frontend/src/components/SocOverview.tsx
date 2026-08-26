@@ -18,7 +18,7 @@ import TimeRangePicker from './TimeRangePicker';
 import SeverityChart from './SeverityChart';
 import { RiskBadge } from './palette';
 import { MitreBadges } from './mitre';
-import { countryFlag, GLOBE } from './ThreatIntel';
+import { CountryFlag } from './ThreatIntel';
 import { TopSecurityEvents } from './DashboardWidgets';
 import { KillChainTimeline } from './KillChainTimeline';
 // `import type` is erased at build time, so this does NOT create a runtime
@@ -221,7 +221,6 @@ function TopCountriesCard({ rows, onDrill }:
       ) : (
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {rows.map((r, i) => {
-            const flag = countryFlag(r.country_code) || GLOBE;
             const delta = num(r.count) - num(r.prev_count);
             return (
               <div key={r.country_code || i} onClick={() => onDrill?.(r)}
@@ -230,7 +229,7 @@ function TopCountriesCard({ rows, onDrill }:
                   padding: '6px 8px', background: 'var(--surface-subtle)', borderRadius: 'var(--radius-sm)',
                   cursor: onDrill ? 'pointer' : 'default' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                  <span style={{ flexShrink: 0 }}>{flag}</span>
+                  <CountryFlag code={r.country_code} size={18} />
                   <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', fontWeight: 500,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {r.country || r.country_code || '—'}

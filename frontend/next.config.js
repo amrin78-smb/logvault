@@ -65,6 +65,22 @@ const nextConfig = {
           { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
         ],
       },
+      // Country flag SVGs (public/flags). Without this they inherit the
+      // blanket no-store above and every page load re-downloads every flag on
+      // screen. They are static artwork, so that is pure waste.
+      //
+      // NOT 'immutable' like /_next/static: those filenames are content-hashed
+      // so a change always produces a new URL, whereas /flags/sg.svg keeps its
+      // name forever. A week is long enough to make the repeat cost nil and
+      // short enough that a corrected flag rolls out on its own — deliberately
+      // conservative given this app's history with an intermediary cache
+      // serving stale content (see the no-store rule above).
+      {
+        source: '/flags/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=604800' },
+        ],
+      },
     ];
   },
 };

@@ -22,6 +22,70 @@ export function countryFlag(code?: string | null): string {
 // Fallback glyph when no usable country code is present.
 export const GLOBE = '🌐';
 
+/**
+ * Country flag as a bundled SVG image.
+ *
+ * countryFlag() above returns Unicode regional-indicator pairs. Those render as
+ * real flags on macOS/iOS/Android and in Firefox (which ships its own Twemoji
+ * font) — but Chromium on WINDOWS resolves them through Segoe UI Emoji, which
+ * has no flag ligatures, so it draws the two ISO letters instead. Every country
+ * display in LogVault therefore showed "SG"/"US" rather than a flag for anyone
+ * on a Windows desktop, which is most users. It looked like a rendering glitch
+ * because it is one, just not ours to fix in CSS.
+ *
+ * The SVGs are VENDORED in frontend/public/flags (flag-icons, 4x3, run through
+ * svgo) rather than pulled from a CDN or an npm dependency, so an offline or
+ * air-gapped install still renders them — the same reason the installer had to
+ * drop next/font/google. 271 files / ~1.9 MB on disk, but a page only fetches
+ * the few it shows: the nine rows of the Threat Map list total about 7 KB.
+ *
+ * countryFlag() is deliberately KEPT — several call sites test its truthiness to
+ * decide whether to render a geo block at all, and it is still the right thing
+ * for any text-only context (a PDF, a CSV, a title attribute).
+ */
+export function CountryFlag({ code, size = 18, className }: { code?: string | null; size?: number; className?: string }) {
+  const cc = (code || '').trim().toUpperCase();
+  const usable = /^[A-Z]{2}$/.test(cc);
+  // A code with no bundled file (rare, but the feed can carry odd values) must
+  // degrade to something readable rather than a broken-image icon.
+  const [broken, setBroken] = useState(false);
+
+  if (!usable || broken) {
+    return (
+      <span
+        title={usable ? cc : undefined}
+        className={className}
+        style={{
+          flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: size, height: Math.round(size * 0.75), borderRadius: 2,
+          background: 'var(--surface-subtle)', border: '1px solid var(--border-light)',
+          fontSize: Math.max(7, Math.round(size * 0.42)), fontWeight: 700,
+          color: 'var(--text-muted)', letterSpacing: '-0.02em', lineHeight: 1,
+        }}
+      >{usable ? cc : ''}</span>
+    );
+  }
+
+  return (
+    <img
+      src={`/flags/${cc.toLowerCase()}.svg`}
+      alt={cc}
+      title={cc}
+      width={size}
+      height={Math.round(size * 0.75)}
+      loading="lazy"
+      onError={() => setBroken(true)}
+      className={className}
+      // The hairline ring keeps mostly-white flags (JP, PL) from vanishing
+      // into a light card background.
+      style={{
+        flexShrink: 0, display: 'block', borderRadius: 2, objectFit: 'cover',
+        boxShadow: '0 0 0 1px rgba(0,0,0,0.10)',
+      }}
+    />
+  );
+}
+
 // Shape returned by the enriched stats endpoints (talkers / blocked rows).
 export interface EnrichedFields {
   country_code?: string | null;
@@ -74,7 +138,7 @@ export function GeoInline({ row }: { row: EnrichedFields }) {
     <span title={parts.join(' · ')}
       style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0,
         fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-      {flag && <span style={{ flexShrink: 0 }}>{flag}</span>}
+      {flag && <CountryFlag code={row.country_code} size={14} />}
       {parts.length > 0 && (
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130 }}>
           {parts.join(' · ')}
@@ -174,7 +238,6 @@ export function KnownBadSources({ onNavigate }: { onNavigate?: (ip: string) => v
       ) : (
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 6, display: 'flex', flexDirection: 'column', gap: 8 }}>
           {rows.map((row, i) => {
-            const flag = countryFlag(row.country_code) || GLOBE;
             const tags = Array.isArray(row.threat_tags) ? row.threat_tags : [];
             return (
               <div key={row.ip_address || i}
@@ -185,7 +248,7 @@ export function KnownBadSources({ onNavigate }: { onNavigate?: (ip: string) => v
                 {/* Row 1: IP + flag/country + abuse badge */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                    <span style={{ flexShrink: 0 }}>{flag}</span>
+                    <CountryFlag code={row.country_code} size={18} />
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', fontWeight: 600,
                       color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130 }}>
                       {row.ip_address}

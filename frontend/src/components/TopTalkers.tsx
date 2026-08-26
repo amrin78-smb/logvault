@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { countryFlag, KnownBadBadge } from './ThreatIntel';
+import { countryFlag, CountryFlag, KnownBadBadge } from './ThreatIntel';
 import { VENDOR_COLORS, VENDOR_FALLBACK } from './palette';
 
 export default function TopTalkers({ hours, onHostClick, compact }: {
@@ -34,7 +34,7 @@ export default function TopTalkers({ hours, onHostClick, compact }: {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                   {/* intentional: 50% keeps the vendor dot circular */}
                   <div style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                  {flag && <span style={{ flexShrink: 0, fontSize: 'var(--text-xs)' }}>{flag}</span>}
+                  {flag && <CountryFlag code={row.country_code} size={14} />}
                   <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.host}</span>
                 </div>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 600, flexShrink: 0 }}>{parseInt(row.log_count).toLocaleString()}</span>

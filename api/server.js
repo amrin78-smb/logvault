@@ -2780,6 +2780,12 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.34.0': [
+    "Country flags now actually appear next to country names - on the Threat Map, the SOC overview, top talkers and destinations, and the threat-intelligence lists.",
+    "They were always meant to. The flags were drawn as emoji, which Windows cannot render: Chrome and Edge on Windows fall back to printing the two-letter country code, so the Threat Map showed SG, US and TW where flags belonged. It looked like a fault in LogVault and was really a gap in the Windows emoji font. Firefox and Macs were showing the flags correctly all along.",
+    "The flags are now proper images shipped with the app rather than emoji, so they look the same in every browser and on every machine, and still work on an installation with no internet access.",
+    "A country whose flag is unavailable falls back to a small, readable country-code tag instead of a broken image.",
+  ],
   '2.33.2': [
     "Reports no longer refresh themselves. A report is generated deliberately and then read, so re-running it every 30 seconds re-queried the database for as long as the tab stayed open and moved the figures under whoever was reading them. The refresh control is still there for anyone who wants a live view - it now has an Off setting, and Reports starts on it.",
     "Off is a real setting everywhere the control appears: choosing it stops the timer rather than merely hiding the countdown. Dashboards are unchanged and keep refreshing as before.",

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { PageHeader, EmptyState, Skeleton, Spinner } from './ui';
-import { countryFlag, GLOBE } from './ThreatIntel';
+import { CountryFlag, GLOBE } from './ThreatIntel';
 import { Trend } from './Trend';
 import type { ExplorerFilter } from '@/app/page';
 import worldLandData from './worldLand.json';
@@ -257,7 +257,6 @@ function Graticule() {
 
 // ── Floating tooltip content (module level) ───────────────────────────────────
 function BubbleTooltip({ row, name }: { row: GeoRow; name: string }) {
-  const flag = countryFlag(row.country_code) || GLOBE;
   return (
     <div style={{
       background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
@@ -265,7 +264,7 @@ function BubbleTooltip({ row, name }: { row: GeoRow; name: string }) {
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--text-base)',
         fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
-        <span>{flag}</span>
+        <CountryFlag code={row.country_code} size={16} />
         <span>{name}</span>
       </div>
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'flex',
@@ -284,7 +283,6 @@ function BubbleTooltip({ row, name }: { row: GeoRow; name: string }) {
 
 // ── Ranked country list row (module level) ────────────────────────────────────
 function RankRow({ row, rank, onClick }: { row: GeoRow; rank: number; onClick: () => void }) {
-  const flag = countryFlag(row.country_code) || GLOBE;
   const name = row.country || (row.country_code ? row.country_code : 'Unknown');
   const count = num(row.count);
   const prev = num(row.prev_count);
@@ -301,7 +299,7 @@ function RankRow({ row, rank, onClick }: { row: GeoRow; rank: number; onClick: (
     >
       <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 700,
         width: 18, textAlign: 'right', flexShrink: 0 }}>{rank}</span>
-      <span style={{ flexShrink: 0, fontSize: 'var(--text-md)' }}>{flag}</span>
+      <CountryFlag code={row.country_code} size={20} />
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
