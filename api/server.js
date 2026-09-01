@@ -2780,6 +2780,13 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.35.0': [
+    'The collector now reports the true state of every syslog listener at startup, and repeats a warning every 60 seconds while any of them is down. Previously a port that failed to open was written to the log once and then forgotten, so a collector that could not receive anything still reported itself as running.',
+    'If NO listener can open at all, the collector now stops instead of running on. A collector with no listeners cannot do anything, and staying up made that look like a quiet night rather than a fault. If only some listeners fail the collector keeps running on the rest - stopping would turn a partial outage into a complete one.',
+    'The syslog ports are now taken from the SYSLOG_PORTS setting, which has been present in the configuration and set by the installer for some time without anything reading it. The default is unchanged at 514 and 1514.',
+    'The UDP receive buffer is now set explicitly (8 MB by default) to reduce the chance of losing messages during a burst. The collector logs the size the operating system actually granted, which can be lower than requested - the requested figure alone would be misleading.',
+    'Removed a setup-guide generator script that could not run: it imported a package that is not installed, wrote to a Linux path, and described a database engine this product does not use. The firewall commands it contained have been moved into the project documentation.',
+  ],
   '2.34.1': [
     "Fixes the country flags shipped moments earlier in 2.34.0, which did not actually appear. The flag images were being answered with a web page instead of the image, so every one of them rendered as a broken image.",
     "The app routes every address through its sign-in check unless the address is explicitly listed as an exception. The new flags folder was not on that list, so requests for a flag were treated as a page request. It is now listed alongside the other static files, which also means flags no longer go through a sign-in check on every request and can be cached properly by the browser.",

@@ -1,6 +1,6 @@
 /**
  * LogVault Collector Service
- * Syslog receiver on UDP/TCP ports 514 and 1514
+ * Syslog receiver on UDP/TCP ports from SYSLOG_PORTS (default 514,1514)
  * Parses, normalizes, writes to PostgreSQL
  * Evaluates alert rules AND correlation engine in real time
  */
@@ -219,6 +219,32 @@ function isRateLimited(sourceIp) {
 // Drop counters — logged in aggregate, never per-packet (avoids spam).
 let droppedByAllowList = 0;
 let droppedByRateLimit = 0;
+
+// ── Syslog listener configuration + state ────────────────────
+// SYSLOG_PORTS was documented in .env.local.example AND set by the suite
+// installer into the LogVault-Collector NSSM environment long before anything
+// read it. Reading it here makes that already-provisioned value load-bearing:
+// the two force-kill port loops in installer/Update-LogVault.ps1 (rollback path
+// and main path) and the firewall rules in the suite installer must agree with
+// whatever this resolves to. Changing it is therefore a THREE-file change.
+const SYSLOG_PORTS = (() => {
+  const parsed = String(process.env.SYSLOG_PORTS || '')
+    .split(',')
+    .map((v) => parseInt(v.trim(), 10))
+    .filter((n) => Number.isInteger(n) && n > 0 && n < 65536);
+  return parsed.length ? parsed : [514, 1514];
+})();
+
+// Requested UDP receive-buffer size. The OS silently CLAMPS this (Linux to
+// net.core.rmem_max, ~212 KB by default), so we read the EFFECTIVE value back
+// and report that. Reporting the requested figure would be exactly the kind of
+// misleading instrumentation this change exists to remove.
+const UDP_RECV_BUFFER_BYTES = parseInt(process.env.SYSLOG_RECV_BUFFER_BYTES || '8388608', 10);
+
+// Live state of every listener, so a failed bind stays visible long after the
+// line reporting it has scrolled out of the log.
+const listeners = [];
+const fmtBytes = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
 
 // ── Crash resilience ──────────────────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -1306,30 +1332,68 @@ async function runRollupMaintenance(pool) {
 }
 
 // ── UDP Server ────────────────────────────────────────────────
+// Resolves once the bind SETTLES, carrying the outcome — a failed bind must not
+// be indistinguishable from a successful one. The error handler stays attached
+// for the socket lifetime so a later failure still flips the recorded state.
 function startUDP(port) {
-  const server = dgram.createSocket('udp4');
-  server.on('message', (msg, rinfo) => processMessage(msg, rinfo.address));
-  server.on('error',   err => console.error(`[UDP:${port}]`, err.message));
-  server.bind(port,    ()  => console.log(`[UDP] Listening on port ${port}`));
-  return server;
+  return new Promise((resolve) => {
+    const server = dgram.createSocket('udp4');
+    const st = { proto: 'UDP', port, ok: false, error: null, recvBuffer: null };
+    listeners.push(st);
+    let settled = false;
+    const settle = () => { if (!settled) { settled = true; resolve(st); } };
+    server.on('message', (msg, rinfo) => processMessage(msg, rinfo.address));
+    server.on('error', (err) => {
+      st.ok = false;
+      st.error = err.code || err.message;
+      console.error(`[UDP:${port}] ${err.message}`);
+      settle();
+    });
+    server.bind(port, () => {
+      st.ok = true;
+      st.error = null;
+      // Must be called AFTER bind — setRecvBufferSize throws on an unbound socket.
+      try { server.setRecvBufferSize(UDP_RECV_BUFFER_BYTES); }
+      catch (e) { console.error(`[UDP:${port}] could not set receive buffer: ${e.message}`); }
+      try { st.recvBuffer = server.getRecvBufferSize(); } catch (_e) { st.recvBuffer = null; }
+      console.log(`[UDP] Listening on port ${port}` + (st.recvBuffer ? ` (receive buffer ${fmtBytes(st.recvBuffer)})` : ''));
+      settle();
+    });
+  });
 }
 
 // ── TCP Server ────────────────────────────────────────────────
+// Same contract as startUDP: resolve with the outcome, never silently.
 function startTCP(port) {
-  const server = net.createServer(socket => {
-    let leftover = '';
-    socket.on('data', data => {
-      const text  = leftover + data.toString('utf8');
-      const lines = text.split('\n');
-      leftover    = lines.pop();
-      for (const line of lines) { if (line.trim()) processMessage(Buffer.from(line), socket.remoteAddress); }
+  return new Promise((resolve) => {
+    const server = net.createServer(socket => {
+      let leftover = '';
+      socket.on('data', data => {
+        const text  = leftover + data.toString('utf8');
+        const lines = text.split('\n');
+        leftover    = lines.pop();
+        for (const line of lines) { if (line.trim()) processMessage(Buffer.from(line), socket.remoteAddress); }
+      });
+      socket.on('end',   () => { if (leftover.trim()) processMessage(Buffer.from(leftover), socket.remoteAddress); });
+      socket.on('error', err => { if (err.code !== 'ECONNRESET') console.error(`[TCP:${port}]`, err.message); });
     });
-    socket.on('end',   () => { if (leftover.trim()) processMessage(Buffer.from(leftover), socket.remoteAddress); });
-    socket.on('error', err => { if (err.code !== 'ECONNRESET') console.error(`[TCP:${port}]`, err.message); });
+    const st = { proto: 'TCP', port, ok: false, error: null, recvBuffer: null };
+    listeners.push(st);
+    let settled = false;
+    const settle = () => { if (!settled) { settled = true; resolve(st); } };
+    server.on('error', (err) => {
+      st.ok = false;
+      st.error = err.code || err.message;
+      console.error(`[TCP:${port}] ${err.message}`);
+      settle();
+    });
+    server.listen(port, () => {
+      st.ok = true;
+      st.error = null;
+      console.log(`[TCP] Listening on port ${port}`);
+      settle();
+    });
   });
-  server.on('error', err => console.error(`[TCP:${port}]`, err.message));
-  server.listen(port, () => console.log(`[TCP] Listening on port ${port}`));
-  return server;
 }
 
 // ── Startup ───────────────────────────────────────────────────
@@ -1353,8 +1417,43 @@ async function main() {
   replaySpool();
   rollSpoolSegment();
 
-  startUDP(514); startUDP(1514);
-  startTCP(514); startTCP(1514);
+  // Bind every configured port and WAIT for the outcome. Bind errors are
+  // asynchronous — bind()/listen() return immediately and EACCES/EADDRINUSE
+  // arrive later on the error event — so without awaiting, main() would arm
+  // every timer and log "running" before knowing whether a single socket
+  // actually came up. That was the whole bug: a collector that could not bind
+  // reported healthy and ingested nothing.
+  await Promise.all([
+    ...SYSLOG_PORTS.map((p) => startUDP(p)),
+    ...SYSLOG_PORTS.map((p) => startTCP(p)),
+  ]);
+
+  const listenerSummary = listeners
+    .map((l) => `${l.proto}/${l.port} ${l.ok ? 'OK' : `FAILED (${l.error})`}`)
+    .join(', ');
+  console.log(`[Ingest] Listeners: ${listenerSummary}`);
+
+  const downAtStart = listeners.filter((l) => !l.ok);
+  if (downAtStart.length === listeners.length) {
+    // Every listener failed. The collector cannot receive anything at all, so
+    // staying up would mean reporting healthy while doing nothing — the exact
+    // failure this release exists to remove. Exiting is strictly better: the
+    // service manager restarts it and the failure is impossible to miss.
+    console.error('[Ingest] FATAL: no syslog listener could bind. The collector cannot receive anything, so it is exiting rather than idling while appearing healthy.');
+    await flushBuffer().catch(() => {});
+    process.exit(1);
+  }
+  if (downAtStart.length) {
+    // PARTIAL failure is deliberately NOT fatal: the surviving listeners are
+    // still ingesting, and killing the process would turn a partial outage into
+    // a total one. It is made loud here and repeated every 60s below instead.
+    console.error(
+      `[Ingest] WARNING: ${downAtStart.length} of ${listeners.length} listeners are DOWN ` +
+      `(${downAtStart.map((l) => `${l.proto}/${l.port}: ${l.error}`).join(', ')}). ` +
+      'Devices sending to those ports are being dropped by the OS before LogVault sees them. ' +
+      'This warning repeats every 60s for as long as it lasts.'
+    );
+  }
 
   // Every timer this process arms, so shutdown can stop them ALL before pool.end().
   // Previously only flushTimer was cleared, leaving ~13 scheduled jobs (rollups,
@@ -1381,6 +1480,18 @@ async function main() {
       console.log(`[Ingest] Dropped in last 60s — allow-list: ${droppedByAllowList}, rate-limit: ${droppedByRateLimit}`);
       droppedByAllowList = 0;
       droppedByRateLimit = 0;
+    }
+    // Keep a failed bind visible. A single startup error line scrolls away in a
+    // busy log; repeating it is the difference between "logged once" and
+    // "observable". Note these counters are APPLICATION-level drops — a kernel
+    // UDP receive-buffer overflow never reaches Node at all and cannot be
+    // counted here, which is why the effective buffer size is reported instead.
+    const stillDown = listeners.filter((l) => !l.ok);
+    if (stillDown.length) {
+      console.error(
+        `[Ingest] STILL DOWN: ${stillDown.map((l) => `${l.proto}/${l.port} (${l.error})`).join(', ')}` +
+        ' — traffic to these ports is being discarded by the OS, not by LogVault.'
+      );
     }
     // Prune rate buckets older than the current second to cap memory.
     const sec = Math.floor(Date.now() / 1000);
@@ -1452,7 +1563,8 @@ async function main() {
     rollupEntityRisk(pool).catch(err => console.error('[UEBA] error:', err.message));
   }, QUARTER_HOUR_MS);
 
-  console.log('LogVault Collector running. Listening on ports 514 and 1514 (UDP+TCP).');
+  const upPorts = [...new Set(listeners.filter((l) => l.ok).map((l) => l.port))].sort((a, b) => a - b);
+  console.log(`LogVault Collector running. Listening on ${upPorts.join(' and ')} (UDP+TCP).`);
   console.log('[Correlation] Engine loaded with 8 rules');
 
   const shutdown = async () => {

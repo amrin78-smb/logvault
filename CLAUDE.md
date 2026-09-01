@@ -1552,6 +1552,25 @@ const BRAND_TO_VENDOR = {
 | 1514 | UDP + TCP | Inbound | Syslog alternate port |
 | 3005 | — | — | DO NOT OPEN — internal API only |
 
+The syslog ports come from `SYSLOG_PORTS` (default `514,1514`); the collector logs
+the state of every listener at startup and repeats a warning every 60s while any is
+down. Changing the ports means changing three things together: `SYSLOG_PORTS`, the
+two force-kill port loops in `installer/Update-LogVault.ps1`, and the firewall rules
+in the suite installer (`../netvault/installer/Install-NocVault-Suite.ps1`).
+
+Rules are created by the suite installer. For a manual/standalone host:
+
+```powershell
+netsh advfirewall firewall add rule name="LogVault Syslog UDP 514" protocol=UDP dir=in localport=514 action=allow
+netsh advfirewall firewall add rule name="LogVault Syslog TCP 514" protocol=TCP dir=in localport=514 action=allow
+netsh advfirewall firewall add rule name="LogVault Syslog UDP 1514" protocol=UDP dir=in localport=1514 action=allow
+netsh advfirewall firewall add rule name="LogVault Syslog TCP 1514" protocol=TCP dir=in localport=1514 action=allow
+netsh advfirewall firewall add rule name="LogVault Frontend TCP 3004" protocol=TCP dir=in localport=3004 action=allow
+```
+
+(Preserved here in 2.35.0 — these commands previously existed only inside
+`scripts/generate-guide.js`, which was deleted as dead code.)
+
 ---
 
 ## Known Bugs — Never Repeat
