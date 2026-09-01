@@ -688,6 +688,19 @@ if ($psql -and (Test-Path $schema)) {
     $dbName = [regex]::Match($envContent, 'LV_DB_NAME=(.+)').Groups[1].Value.Trim()
     $pgPass = [regex]::Match($envContent, 'POSTGRES_PASSWORD=(.+)').Groups[1].Value.Trim()
     if (-not $dbName) { $dbName = 'logvault' }
+
+    # Fall back to the suite-wide secrets file, exactly as Update-DDIVault.ps1
+    # already does. Verified on the production server 2026-09-01: LogVault and
+    # SpanVault carry POSTGRES_PASSWORD in their own .env.local, while DDIVault
+    # and NetVault do NOT and rely on this fallback - so an install without it in
+    # .env.local is a normal, supported shape, not a broken one.
+    if (-not $pgPass) {
+        $secretsFile = 'C:\ProgramData\NocVault\secrets.env'
+        if (Test-Path $secretsFile) {
+            $pgPass = [regex]::Match((Get-Content $secretsFile -Raw), 'POSTGRES_PASSWORD=(.+)').Groups[1].Value.Trim()
+            if ($pgPass) { Write-Warn "POSTGRES_PASSWORD not in .env.local - using $secretsFile" }
+        }
+    }
     if ($pgPass) {
         $env:PGPASSWORD = $pgPass
         # --quiet suppresses NOTICE/INFO chatter psql writes to stderr (which would
@@ -704,11 +717,37 @@ if ($psql -and (Test-Path $schema)) {
         # error now surfaces as a real failure.
         try { $null = & $psql --quiet -U postgres -d $dbName -v ON_ERROR_STOP=1 -f $schema 2>&1 } catch {}
         $psqlExit = $LASTEXITCODE
-        $env:PGPASSWORD = ''
-        # psql over WinRM commonly returns -1 on a successful run, so treat -1 as 0.
-        if ($psqlExit -eq 0 -or $psqlExit -eq -1) {
+        # $LASTEXITCODE is NOT trustworthy on its own here. The 2>&1 above makes
+        # PowerShell 5.1 wrap native stderr in a NativeCommandError, the empty catch
+        # swallows it, and $LASTEXITCODE can then still hold a value from an EARLIER
+        # command - the most likely real source of the "-1 on success" this step used
+        # to accept blindly. Measured against the production server over WinRM on
+        # 2026-09-01: psql returns 0 on success, 1 on a SQL error under
+        # ON_ERROR_STOP=1, and 2 on an auth failure. It does NOT return -1.
+        #
+        # So: 0 is success. Any OTHER non-zero code is a real psql failure and still
+        # fails the deploy exactly as before. Only the specific -1 case - the one the
+        # old fudge existed for - gets an escape hatch, and that hatch now has to
+        # PROVE the database is reachable and the schema is present instead of
+        # assuming it. A half-applied schema still fails, because ON_ERROR_STOP
+        # produces exit 1, not -1.
+        if ($psqlExit -eq 0) {
+            $env:PGPASSWORD = ''
             Write-OK "Schema applied (as postgres to $dbName)"
+        } elseif ($psqlExit -eq -1) {
+            $probe = ''
+            try {
+                $probe = (& $psql --quiet -U postgres -d $dbName -tAc "SELECT to_regclass('public.syslog_entries') IS NOT NULL" 2>&1 | Out-String).Trim()
+            } catch {}
+            $probeExit = $LASTEXITCODE
+            $env:PGPASSWORD = ''
+            if ($probeExit -eq 0 -and $probe -match '^t') {
+                Write-Warn "psql reported exit code -1 applying schema.sql, but the database is reachable and the schema is present - continuing. If this recurs, investigate the exit code rather than ignoring it."
+            } else {
+                Fail-Update -Stage 'schema-apply' -Message "psql exited -1 applying scripts\schema.sql and the database could not be verified afterwards (probe exit $probeExit) - refusing to deploy against a database that may not be migrated"
+            }
         } else {
+            $env:PGPASSWORD = ''
             # A real SQL error halted schema.sql partway through (ON_ERROR_STOP=1) -
             # refuse to deploy new code against a database it failed to migrate. This
             # rolls back CODE only; the database itself is left in whatever partial
@@ -719,8 +758,11 @@ if ($psql -and (Test-Path $schema)) {
             Fail-Update -Stage 'schema-apply' -Message "psql exited with code $psqlExit applying scripts\schema.sql as postgres to $dbName - re-run manually and fix the reported statement before assuming the schema is current"
         }
     } else {
-        Write-Warn "POSTGRES_PASSWORD not set in .env.local - skipping schema apply."
-        Write-Warn "Add POSTGRES_PASSWORD to .env.local, or apply scripts\schema.sql manually as postgres."
+        # Previously this warned and CONTINUED: the deploy went on to restart the
+        # services, pass the health gate and report success, with the schema never
+        # applied. A collector started against an un-migrated database is exactly
+        # the failure the ON_ERROR_STOP work above exists to prevent, so refuse.
+        Fail-Update -Stage 'schema-apply' -Message "POSTGRES_PASSWORD is not set in .env.local and was not found in C:\ProgramData\NocVault\secrets.env, so scripts\schema.sql cannot be applied as postgres. Add it to either file, or apply the schema manually, then re-run. Refusing to deploy new code against a database that may not be migrated."
     }
 } else {
     Write-Warn "psql not found or schema.sql missing - skipping schema apply (run manually if needed)."

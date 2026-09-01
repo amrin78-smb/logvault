@@ -2780,6 +2780,12 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.35.1': [
+    'The update process could previously report a successful deployment without having applied the database schema at all. If the PostgreSQL superuser password was missing from the configuration it printed a warning, carried on, restarted the services and passed its own health check - leaving new code running against a database that was never migrated.',
+    'The password is now also looked for in the shared suite secrets file, matching how DDIVault already behaves, and if it cannot be found in either place the update stops rather than continuing.',
+    'The update also used to treat an exit code of -1 from the database tool as success. Testing against the live server showed the tool returns 0 on success, 1 on a failed statement and 2 on a failed login - never -1 - so that code was being accepted on the strength of a comment rather than a measurement. Any genuine failure now stops the update as before, and the one unexplained case has to prove the database is actually reachable and migrated before the update continues.',
+    'This change is in the updater itself, so it takes effect from the NEXT update onwards - the current one still runs the previous version of the script.',
+  ],
   '2.35.0': [
     'The collector now reports the true state of every syslog listener at startup, and repeats a warning every 60 seconds while any of them is down. Previously a port that failed to open was written to the log once and then forgotten, so a collector that could not receive anything still reported itself as running.',
     'If NO listener can open at all, the collector now stops instead of running on. A collector with no listeners cannot do anything, and staying up made that look like a quiet night rather than a fault. If only some listeners fail the collector keeps running on the rest - stopping would turn a partial outage into a complete one.',
