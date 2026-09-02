@@ -2780,6 +2780,13 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.36.0': [
+    'Fixed: the COLLECTOR indicator in the header showed green whenever the application was reachable, including when the collector was not running at all. It reported that the web application had answered, not that anything was still receiving logs - so during the one failure it exists to warn about, it showed healthy.',
+    'The collector and the web application are separate services that share only the database, so the collector now records a heartbeat every minute and the indicator reads that. If the heartbeat stops arriving the indicator goes red, which also covers the collector being killed outright rather than stopped cleanly.',
+    'The indicator now also distinguishes a partial failure. If the collector is running but could not claim one of its syslog ports, it shows amber and names the affected port on hover - traffic sent there is being discarded before it ever reaches LogVault. Previously this was visible only in the collector log.',
+    'The Ingestion figure in the sidebar was always drawn green regardless of what was happening, so it showed a healthy green zero alongside a stopped collector. It now follows the same status as the indicator.',
+    'The health endpoint still always answers, whatever the collector is doing. A collector fault must not be able to make the application look unreachable, because the in-app update screen and the suite installation test both rely on that endpoint answering normally.',
+  ],
   '2.35.1': [
     'The update process could previously report a successful deployment without having applied the database schema at all. If the PostgreSQL superuser password was missing from the configuration it printed a warning, carried on, restarted the services and passed its own health check - leaving new code running against a database that was never migrated.',
     'The password is now also looked for in the shared suite secrets file, matching how DDIVault already behaves, and if it cannot be found in either place the update stops rather than continuing.',
@@ -3747,9 +3754,69 @@ app.get('/api/audit', requireSuperAdmin, asyncHandler(async (req, res) => {
 
 // ── HEALTH CHECK ─────────────────────────────────────────────
 
+// Collector liveness, derived from the heartbeat the collector writes into
+// app_settings every 60s (see collector/collector.js's writeCollectorStatus).
+// The API and the collector are separate processes sharing only Postgres, so
+// that row IS the channel; there is no IPC to ask.
+//
+// Age is computed DB-SIDE rather than by comparing this process's clock against
+// a timestamp inside the payload: both ends then measure against one clock, so
+// the answer cannot drift on skew between the two processes.
+//
+// A hard-killed collector never gets to write anything, so STALENESS is the
+// detection mechanism and the 'stopped' marker is only a nicety on top of it.
+// The threshold is 3x the write interval - do NOT tighten it toward 60s, or one
+// slow write starts flapping the pill, which is a worse lie than the one this
+// replaced.
+const COLLECTOR_STALE_AFTER_SEC = 180;
+
+async function collectorStatus() {
+  try {
+    const { rows } = await pool.query(
+      `SELECT value, EXTRACT(EPOCH FROM (NOW() - updated_at))::int AS age_sec
+         FROM app_settings WHERE key = 'collector_status'`
+    );
+    if (!rows.length) return { status: 'unknown', reason: 'no heartbeat recorded yet' };
+
+    const age_seconds = rows[0].age_sec;
+    let payload = {};
+    try { payload = JSON.parse(rows[0].value) || {}; } catch { /* treat as empty */ }
+    const listeners = Array.isArray(payload.listeners) ? payload.listeners : [];
+    const down = listeners.filter((l) => !l.ok);
+
+    // Only an explicit 'running' can produce 'ok'. A row that exists but whose
+    // value this code cannot understand - a hand-edited value, a seeded
+    // placeholder, a payload from a future version - must read 'unknown', never
+    // 'ok'. Defaulting the unrecognised case to healthy is how the bug this
+    // whole change fixes got written in the first place.
+    let status;
+    if (payload.state === 'stopped') status = 'stopped';
+    else if (age_seconds > COLLECTOR_STALE_AFTER_SEC) status = 'down';
+    else if (payload.state !== 'running') status = 'unknown';
+    else if (down.length) status = 'degraded';
+    else status = 'ok';
+
+    return {
+      status,
+      age_seconds,
+      listeners,
+      listeners_down: down.map((l) => `${l.proto}/${l.port}`),
+    };
+  } catch (err) {
+    // This must never be able to break /api/health. The endpoint's EXISTING
+    // failure semantics are load-bearing elsewhere: the Settings update overlay
+    // waits for the API to go down and come back, and Test-NocVault-Suite.ps1
+    // requires HTTP 200 plus a parseable version. A collector-side problem must
+    // not be able to disturb either, so it degrades to 'unknown' in the body
+    // instead of changing the status code.
+    console.error('[API /api/health collector]', err.message);
+    return { status: 'unknown', reason: 'status unavailable' };
+  }
+}
+
 app.get('/api/health', asyncHandler(async (req, res) => {
   const { rows } = await pool.query(`SELECT COUNT(*) AS total FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => 1)`);
-  res.json({ status: 'ok', version, logs_last_hour: parseInt(rows[0].total) });
+  res.json({ status: 'ok', version, logs_last_hour: parseInt(rows[0].total), collector: await collectorStatus() });
 }));
 
 // ── PUBLIC STATS ──────────────────────────────────────────────

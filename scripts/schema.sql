@@ -1111,9 +1111,18 @@ $$;
 -- app_settings, inherited from the blanket GRANT above — live-verified
 -- readable). Only add a key here once you've confirmed it's genuinely safe
 -- for every other app / diagnostic session to read.
+-- collector_status is deliberately included per the allowlist rule above: it is
+-- the collector heartbeat (state, pid, and each listener's proto/port/bind error)
+-- written every 60s and read back by /api/health. It carries no credential and no
+-- customer data, and exposing it is what lets a diagnostic session confirm the
+-- collector is actually alive rather than inferring it from the API answering.
+-- NOTE: it is intentionally NOT seeded by this file. A seeded row would be fresh
+-- and unparseable at install time, which reads as a healthy collector before one
+-- has ever run; absent is correctly reported as 'unknown' instead.
 CREATE OR REPLACE VIEW app_settings_public AS
 SELECT key, value, updated_at FROM app_settings
-WHERE key IN ('app_name', 'app_subtitle', 'logo_url', 'primary_color', 'sidebar_color');
+WHERE key IN ('app_name', 'app_subtitle', 'logo_url', 'primary_color', 'sidebar_color',
+              'collector_status');
 
 -- REVOKE must run for each role that exists — GRANT/REVOKE against a role
 -- that doesn't exist on this server errors, same guard pattern as the

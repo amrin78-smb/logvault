@@ -194,6 +194,18 @@ function SecuritySubNav({ view, onChange }: { view: SecView; onChange: (v: SecVi
   );
 }
 
+// Ingestion-card palette, keyed by the collector status /api/health reports.
+// Mirrors Header.tsx's pill so the sidebar and the header can never disagree.
+// Green is reserved for a genuinely running collector; anything else must not
+// render as healthy just because the API answered.
+const INGEST_TINT: Record<string, { color: string; muted: string; tint: string; edge: string }> = {
+  ok:       { color: '#22c55e', muted: '#4ade80', tint: 'rgba(22,163,74,0.08)',   edge: 'rgba(22,163,74,0.2)'   },
+  degraded: { color: '#f59e0b', muted: '#fbbf24', tint: 'rgba(245,158,11,0.08)',  edge: 'rgba(245,158,11,0.2)'  },
+  down:     { color: '#ef4444', muted: '#f87171', tint: 'rgba(239,68,68,0.08)',   edge: 'rgba(239,68,68,0.2)'   },
+  stopped:  { color: '#94a3b8', muted: '#cbd5e1', tint: 'rgba(148,163,184,0.08)', edge: 'rgba(148,163,184,0.2)' },
+  unknown:  { color: '#94a3b8', muted: '#cbd5e1', tint: 'rgba(148,163,184,0.08)', edge: 'rgba(148,163,184,0.2)' },
+};
+
 export default function Home() {
   const { theme } = useTheme();
   const { data: session } = useSession();
@@ -209,6 +221,8 @@ export default function Home() {
   const [hours, setHours]                   = useState(24);
   const [summary, setSummary]               = useState<any[]>([]);
   const [health, setHealth]                 = useState<any>(null);
+  // Unrecognised/absent status falls back to 'unknown' (grey), never to green.
+  const ingest = INGEST_TINT[health?.collector?.status] ?? INGEST_TINT.unknown;
   const [explorerFilter, setExplorerFilter] = useState<ExplorerFilter>({});
   const [alertTechnique, setAlertTechnique] = useState<string | undefined>(undefined);
   const [refreshInterval, setRefreshInterval] = useState(30);
@@ -371,14 +385,21 @@ export default function Home() {
 
           {!collapsed && <div style={{ margin: '14px 16px 10px', borderTop: '1px solid rgba(255,255,255,0.08)' }} />}
 
+          {/* Ingestion card. Every colour here used to be hardcoded green, so this
+              rendered a green "Ingestion / 0 logs/hr" next to a correctly-grey
+              collector pill — the same lie the pill itself carried, in a second
+              place. It now follows the collector state so the two agree.
+              logs_last_hour is also guarded: it was called unconditionally as
+              .toLocaleString(), which throws inside render if /api/health ever
+              returns a body without it. */}
           {health && !collapsed && (
-            <div style={{ margin: '12px 14px', padding: '8px 12px', background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 'var(--radius)' }}>
+            <div style={{ margin: '12px 14px', padding: '8px 12px', background: ingest.tint, border: `1px solid ${ingest.edge}`, borderRadius: 'var(--radius)' }}>
               <div style={{ fontSize: 'var(--text-xs)', color: 'rgba(255,255,255,0.35)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700 }}>Ingestion</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 {/* intentional: 50% keeps the ingestion status dot circular */}
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 5px #22c55e' }} />
-                <span style={{ fontSize: 'var(--text-sm)', color: '#22c55e', fontWeight: 600 }}>{health.logs_last_hour.toLocaleString()}</span>
-                <span style={{ fontSize: 'var(--text-xs)', color: '#4ade80' }}>logs/hr</span>
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: ingest.color, boxShadow: `0 0 5px ${ingest.color}` }} />
+                <span style={{ fontSize: 'var(--text-sm)', color: ingest.color, fontWeight: 600 }}>{(health.logs_last_hour ?? 0).toLocaleString()}</span>
+                <span style={{ fontSize: 'var(--text-xs)', color: ingest.muted }}>logs/hr</span>
               </div>
             </div>
           )}

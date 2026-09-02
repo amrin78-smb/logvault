@@ -244,6 +244,33 @@ const UDP_RECV_BUFFER_BYTES = parseInt(process.env.SYSLOG_RECV_BUFFER_BYTES || '
 // Live state of every listener, so a failed bind stays visible long after the
 // line reporting it has scrolled out of the log.
 const listeners = [];
+
+// ── Collector heartbeat ──────────────────────────────────────
+// The API and this process share NOTHING but Postgres - there is no IPC between
+// them - so "is the collector alive" has to travel through a table. Until this
+// existed the header pill only proved the API could answer, which it can do
+// perfectly well with the collector dead; the pill read COLLECTOR either way.
+//
+// Written every 60s from the aggregate-drop timer, once immediately after the
+// listeners bind, and once as 'stopped' on a clean shutdown. A hard kill writes
+// nothing at all, which is precisely why the API infers death from STALENESS and
+// treats the stopped marker as a nicety rather than the mechanism.
+//
+// Deliberately fire-and-forget at every call site: a heartbeat is strictly less
+// important than the ingest path it rides along with, and must never be able to
+// reject into the collector's unhandledRejection handler or delay a shutdown.
+async function writeCollectorStatus(state) {
+  const payload = JSON.stringify({
+    state,
+    pid: process.pid,
+    listeners: listeners.map((l) => ({ proto: l.proto, port: l.port, ok: l.ok, error: l.error })),
+  });
+  await pool.query(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES ('collector_status', $1, NOW())
+     ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+    [payload],
+  );
+}
 const fmtBytes = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
 
 // ── Crash resilience ──────────────────────────────────────────
@@ -1467,6 +1494,11 @@ async function main() {
 
   // Flush the DB buffer and durable-sync the spool on the same cadence.
   flushTimer = trackInterval(() => { spoolFsync(); flushBuffer(); }, BATCH_INTERVAL);
+  // Publish state immediately rather than waiting for the first 60s tick - a
+  // deploy restarts this service, and a minute of a grey "OFFLINE" pill after
+  // every deploy would train people to ignore it.
+  writeCollectorStatus('running').catch(() => {});
+
   await getAlertRules();
 
   // Prime ingestion-guard settings + keep the cache warm (5-min TTL).
@@ -1493,6 +1525,7 @@ async function main() {
         ' — traffic to these ports is being discarded by the OS, not by LogVault.'
       );
     }
+    writeCollectorStatus('running').catch(() => {});
     // Prune rate buckets older than the current second to cap memory.
     const sec = Math.floor(Date.now() / 1000);
     for (const [ip, b] of rateBuckets) { if (b.sec < sec) rateBuckets.delete(ip); }
@@ -1572,6 +1605,9 @@ async function main() {
     clearInterval(flushTimer);
     // Stop every other scheduled job too, BEFORE the pool closes.
     for (const t of timers) { clearInterval(t); clearTimeout(t); }
+    // Distinguish "stopped on purpose" from "died" while the pool is still open.
+    // Best-effort only - staleness already covers us if this never lands.
+    await writeCollectorStatus('stopped').catch(() => {});
     spoolFsync();
     await flushBuffer();
     if (spoolFd !== null) { try { fs.fsyncSync(spoolFd); fs.closeSync(spoolFd); } catch (_) {} spoolFd = null; }

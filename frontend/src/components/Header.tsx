@@ -102,6 +102,44 @@ function SearchRow({ dot, primary, secondary, meta, onClick }: {
   );
 }
 
+// Collector states as reported by /api/health. 'stopped' means a clean service
+// stop; 'down' means the heartbeat went stale, which is how a hard kill or a
+// crash presents (a killed process never gets to write a marker).
+type CollectorState = 'ok' | 'degraded' | 'down' | 'stopped' | 'unknown';
+
+// One lookup instead of a ternary per style property. Amber deliberately keeps
+// the pulse: a degraded collector is bound on some ports and silently dropping
+// traffic on others, which is an active fault, not a resting state.
+const COLLECTOR_PILL: Record<CollectorState, {
+  color: string; tint: string; edge: string; label: string; pulse: boolean;
+}> = {
+  ok:       { color: '#22c55e', tint: 'rgba(34,197,94,0.12)',   edge: 'rgba(34,197,94,0.25)',   label: 'COLLECTOR', pulse: true  },
+  degraded: { color: '#f59e0b', tint: 'rgba(245,158,11,0.12)',  edge: 'rgba(245,158,11,0.25)',  label: 'DEGRADED',  pulse: true  },
+  down:     { color: '#ef4444', tint: 'rgba(239,68,68,0.12)',   edge: 'rgba(239,68,68,0.25)',   label: 'OFFLINE',   pulse: false },
+  stopped:  { color: '#94a3b8', tint: 'rgba(148,163,184,0.12)', edge: 'rgba(148,163,184,0.25)', label: 'STOPPED',   pulse: false },
+  unknown:  { color: '#94a3b8', tint: 'rgba(148,163,184,0.12)', edge: 'rgba(148,163,184,0.25)', label: 'UNKNOWN',   pulse: false },
+};
+
+// Tooltip text. Says what it MEANS operationally, not just the state name — the
+// useful thing about a degraded collector is which ports are being dropped by
+// the OS, and that is not inferable from the word "degraded".
+function describeCollector(c: any): string {
+  const age = typeof c.age_seconds === 'number' ? ` Last heartbeat ${c.age_seconds}s ago.` : '';
+  switch (c.status) {
+    case 'ok':
+      return `Collector running; every syslog listener is bound.${age}`;
+    case 'degraded':
+      return `Collector running, but not listening on ${(c.listeners_down || []).join(', ') || 'one or more ports'}` +
+             ` — traffic to those ports is being discarded by the OS, not by LogVault.${age}`;
+    case 'stopped':
+      return 'Collector was stopped cleanly. No syslog is being received.';
+    case 'down':
+      return `No collector heartbeat.${age} The collector is not running, so no syslog is being received.`;
+    default:
+      return c.reason ? `Collector status unavailable: ${c.reason}` : 'Collector status unavailable.';
+  }
+}
+
 export default function Header() {
   const { theme, toggle } = useTheme();
   // Computed per-render (cheap) so it reflects the current window.location
@@ -117,9 +155,11 @@ export default function Header() {
     : { label: 'User', bg: 'rgba(148,163,184,0.18)', fg: '#94a3b8' };
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [collectorOnline, setCollectorOnline] = useState(false);
+  const [collector, setCollector] = useState<CollectorState>('unknown');
+  const [collectorDetail, setCollectorDetail] = useState('');
   const [unacked, setUnacked] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const pill = COLLECTOR_PILL[collector] ?? COLLECTOR_PILL.unknown;
   const searchRef = useRef<HTMLInputElement>(null);
   const [results, setResults] = useState<SearchResults>(EMPTY_RESULTS);
   const [searching, setSearching] = useState(false);
@@ -203,11 +243,22 @@ export default function Header() {
   // 2.22.1 added Cache-Control headers, and that entry can outlive the fix
   // indefinitely since our headers only stop NEW caching, not evict what's
   // already stored. A per-request unique URL can never hit that entry.
+  // Read the collector field out of the BODY. This used to be `setCollectorOnline(r.ok)`,
+  // i.e. the pill was driven entirely by whether the API answered — but the API and
+  // the collector are different processes, and the API answers 200 perfectly well
+  // with the collector dead. The pill therefore read "COLLECTOR" during exactly the
+  // outage it exists to show. A 2xx here now means only that the question was
+  // answered; the answer itself is d.collector.
   const pollHealth = useCallback(async () => {
     try {
       const r = await fetch(`/api/health?_=${Date.now()}`);
-      setCollectorOnline(r.ok);
-    } catch { setCollectorOnline(false); }
+      if (!r.ok) { setCollector('unknown'); setCollectorDetail('LogVault API is not responding'); return; }
+      const d = await r.json();
+      const c = d?.collector;
+      if (!c?.status) { setCollector('unknown'); setCollectorDetail('This LogVault build does not report collector status'); return; }
+      setCollector(c.status as CollectorState);
+      setCollectorDetail(describeCollector(c));
+    } catch { setCollector('unknown'); setCollectorDetail('LogVault API is not responding'); }
   }, []);
 
   // Poll unacknowledged alert count every 30s (same cache-busting as above).
@@ -408,19 +459,20 @@ export default function Header() {
           {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
         </button>
 
-        {/* Collector status pill */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6,
-          background: collectorOnline ? 'rgba(34,197,94,0.12)' : 'rgba(148,163,184,0.12)',
-          border: `1px solid ${collectorOnline ? 'rgba(34,197,94,0.25)' : 'rgba(148,163,184,0.25)'}`,
+        {/* Collector status pill. Raw rgba/hex rather than the --tint-* tokens is
+            deliberate here: this pill sits on the navy header, not on a card. */}
+        <div title={collectorDetail} style={{ display: 'flex', alignItems: 'center', gap: 6,
+          background: pill.tint,
+          border: `1px solid ${pill.edge}`,
           borderRadius: 'var(--radius-pill)', padding: '5px 12px' }}>
           {/* intentional: a true circle, not a corner radius — the status dot stays
               round in both corner styles. */}
           <div style={{ width: 7, height: 7, borderRadius: '50%',
-            background: collectorOnline ? '#22c55e' : '#94a3b8',
-            boxShadow: collectorOnline ? '0 0 6px #22c55e' : 'none',
-            animation: collectorOnline ? 'pulse 1.6s ease-in-out infinite' : 'none' }} />
-          <span style={{ fontSize: 'var(--text-xs)', color: collectorOnline ? '#22c55e' : '#94a3b8', fontWeight: 600, letterSpacing: '0.5px' }}>
-            {collectorOnline ? 'COLLECTOR' : 'OFFLINE'}
+            background: pill.color,
+            boxShadow: pill.pulse ? `0 0 6px ${pill.color}` : 'none',
+            animation: pill.pulse ? 'pulse 1.6s ease-in-out infinite' : 'none' }} />
+          <span style={{ fontSize: 'var(--text-xs)', color: pill.color, fontWeight: 600, letterSpacing: '0.5px' }}>
+            {pill.label}
           </span>
         </div>
 

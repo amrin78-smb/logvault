@@ -34,7 +34,7 @@ alert_events  id(PK,BIGSERIAL) | rule_id(FK->alert_rules,ON DELETE CASCADE) | fi
 
 ## Settings / audit
 
-app_settings  key(PK,TEXT) | value(TEXT,NOT NULL) | updated_at — includes SMTP creds, AbuseIPDB API key, DNS settings, email-notify prefs, collector ingestion guard settings
+app_settings  key(PK,TEXT) | value(TEXT,NOT NULL) | updated_at — includes SMTP creds, AbuseIPDB API key, DNS settings, email-notify prefs, collector ingestion guard settings, collector_status (collector heartbeat: state/pid/per-listener bind state, rewritten every 60s; NOT seeded by schema.sql — absent must read as unknown, a seeded row would read as healthy before the collector ever ran)
 audit_log  id(PK,BIGSERIAL) | occurred_at | actor_user_id(TEXT) | actor_role(TEXT) | action(TEXT,NOT NULL) | target(TEXT) | detail(JSONB,small context ONLY never secrets) | source_ip(TEXT) | result('success'|'error') — UPDATE/DELETE REVOKEd (append-only)
 
 ## UEBA / anomaly detection (Phase 2 intelligence engine)

@@ -113,7 +113,7 @@ POST /api/settings [super-admin] [db] — app_settings write
 POST /api/settings/test-email [super-admin] [external] — send test SMTP email with unsaved settings
 GET /api/audit [super-admin] [db] — audit_log query (?actor, ?limit)
 GET /api/license-status [public] [external] — license state from NocVault hub (24h server-cached)
-GET /api/health [public] [db] — liveness + version + logs_last_hour
+GET /api/health [public] [db] — liveness + version + logs_last_hour + collector{status,age_seconds,listeners,listeners_down} (staleness-evaluated from the app_settings collector_status heartbeat; ALWAYS HTTP 200 — the collector field degrades to status:unknown rather than changing the status code)
 GET /api/system/update-available [public] [external] — git-commit-hash update check (git transport, not GitHub API)
 GET /api/system/update-status [super-admin] [external] — in-progress update status
 GET /api/system/last-update-status [public] [db=file] — reads logs/last-update-status.json written by Update-LogVault.ps1's Write-StatusJson (BOM-stripped defensively); {exists:false} if the file doesn't exist yet. Feeds UpdateFailureBanner.
