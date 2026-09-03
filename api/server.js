@@ -2780,6 +2780,12 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.37.0': [
+    'The Dashboard is now organised into four sections - Overview, Security, Traffic and Capacity - instead of one long page of seventeen panels. The headline figures and the time-range control stay visible above the sections, so nothing you check at a glance has moved behind a tab.',
+    'This also makes the page noticeably quicker to open. Every panel fetches its own data when it appears, so previously opening the Dashboard requested all seventeen at once. Now only the panels in the section you are looking at are requested.',
+    'The section you were last on is remembered, so returning to the Dashboard puts you back where you were.',
+    'No panel was removed or changed - they have only been grouped. Everything that was on the Dashboard before is still there, under one of the four sections.',
+  ],
   '2.36.0': [
     'Fixed: the COLLECTOR indicator in the header showed green whenever the application was reachable, including when the collector was not running at all. It reported that the web application had answered, not that anything was still receiving logs - so during the one failure it exists to warn about, it showed healthy.',
     'The collector and the web application are separate services that share only the database, so the collector now records a heartbeat every minute and the indicator reads that. If the heartbeat stops arriving the indicator goes red, which also covers the collector being killed outright rather than stopped cleanly.',

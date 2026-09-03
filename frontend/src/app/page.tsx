@@ -58,6 +58,24 @@ const ThreatMap        = dynamic(() => import('@/components/ThreatMap'),        
 
 type Tab = 'dashboard' | 'explorer' | 'alerts' | 'health' | 'security' | 'intelligence' | 'entities' | 'hosts' | 'reports' | 'settings';
 
+// Dashboard sub-sections. The dashboard had grown to 17 widgets in 7 stacked rows,
+// which is a lot of scrolling AND a lot of work on first paint: every widget fetches
+// its own endpoint from its own useEffect on mount, so rendering all of them meant
+// firing all of them. Splitting into sections means only the active section's widgets
+// mount, so only its endpoints are called - the same win SecurityAnalysis.tsx already
+// got by going from one fetchAll() to fetchCore() + fetchSection() (13 requests -> 4).
+//
+// The KPI tiles and the time-range picker stay ABOVE this bar deliberately: the
+// at-a-glance numbers must never be hidden behind a tab.
+type DashSection = 'overview' | 'security' | 'traffic' | 'capacity';
+
+const DASH_SECTIONS: { id: DashSection; label: string; subtitle: string }[] = [
+  { id: 'overview', label: 'Overview', subtitle: 'Severity mix, active alerts, interface events and the ingest timeline' },
+  { id: 'security', label: 'Security', subtitle: 'Security events, VPN activity, blocked destinations and known-bad sources' },
+  { id: 'traffic',  label: 'Traffic',  subtitle: 'Top talkers and destinations, connection failures, firewall actions and vendor mix' },
+  { id: 'capacity', label: 'Capacity', subtitle: 'Ingestion forecast, what changed recently, and storage consumption' },
+];
+
 // Security is one tab with three views. They used to be three sibling top-level
 // tabs (Security Overview / Security / Threat Map) covering the same subject —
 // Threat Map was an entire tab for a single endpoint that Security already
@@ -238,6 +256,21 @@ export default function Home() {
     try { localStorage.setItem('logvault-sidebar-collapsed', String(next)); } catch {}
     return next;
   });
+
+  // Same shape as the sidebar-collapse persistence above: default on the server,
+  // hydrate from localStorage after mount. Reading localStorage in the useState
+  // initialiser would differ between the SSR pass and the first client render.
+  const [dashSection, setDashSection] = useState<DashSection>('overview');
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('logvault-dash-section') as DashSection | null;
+      if (saved && DASH_SECTIONS.some(d => d.id === saved)) setDashSection(saved);
+    } catch {}
+  }, []);
+  const selectDashSection = (id: DashSection) => {
+    setDashSection(id);
+    try { localStorage.setItem('logvault-dash-section', id); } catch {}
+  };
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -451,7 +484,7 @@ export default function Home() {
           {tab === 'dashboard' && (
             <>
               {/* Header row */}
-              <PageHeader title="Dashboard" subtitle="Real-time syslog overview & traffic analysis">
+              <PageHeader title="Dashboard" subtitle={DASH_SECTIONS.find(d => d.id === dashSection)?.subtitle || 'Real-time syslog overview & traffic analysis'}>
                 <ErrorBoundary name="Time Range Picker">
                   <TimeRangePicker
                     hours={hours}
@@ -481,113 +514,121 @@ export default function Home() {
                 ))}
               </div>
 
-              {/* Row 2: Severity + Active Alerts + Network Health — 3 equal */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
-                {[
-                  <ErrorBoundary name="Severity Chart">
-                    <SeverityChart summary={summary} onSeverityClick={(sev) => openExplorer({ severity: sev })} compact />
-                  </ErrorBoundary>,
-                  <ErrorBoundary name="Active Alerts">
-                    <ActiveAlertsSummary onNavigate={() => setTab('alerts')} />
-                  </ErrorBoundary>,
-                  <ErrorBoundary name="Network Health">
-                    <InterfaceEventsSummary hours={hours} onNavigate={() => setTab('health')} />
-                  </ErrorBoundary>,
-                ].map((widget, i) => (
-                  <div key={i} style={{ height: 260, overflow: 'hidden' }}>
-                    {widget}
-                  </div>
+              {/* Section sub-tabs. Underline bar matching Settings.tsx — LogVault builds
+                  this inline rather than via a .settings-tabs class, which only exists in
+                  ddivault. Kept consistent with this app rather than importing a new idiom. */}
+              <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14, flexWrap: 'wrap' }}>
+                {DASH_SECTIONS.map(sec => (
+                  <button key={sec.id} onClick={() => selectDashSection(sec.id)}
+                    style={{ background: 'none', border: 'none', padding: '8px 14px', fontSize: 'var(--text-base)',
+                      borderBottom: '2px solid transparent', marginBottom: -1, cursor: 'pointer',
+                      color: dashSection === sec.id ? 'var(--primary)' : 'var(--text-muted)',
+                      fontWeight: dashSection === sec.id ? 600 : 500,
+                      borderBottomColor: dashSection === sec.id ? 'var(--primary)' : 'transparent' }}>
+                    {sec.label}
+                  </button>
                 ))}
               </div>
 
-              {/* Row 3: Top Security Events + VPN Status + Firewall Actions — 3 equal columns */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
-                <ErrorBoundary name="Top Security Events">
-                  <TopSecurityEvents hours={hours} onNavigate={() => setTab('security')} />
-                </ErrorBoundary>
-                <ErrorBoundary name="VPN Status">
-                  <VPNStatus hours={hours} onNavigate={() => setTab('security')} />
-                </ErrorBoundary>
-                <ErrorBoundary name="Firewall Actions">
-                  <FirewallActions hours={hours} />
-                </ErrorBoundary>
-              </div>
+              {/* Only the active section mounts. Every widget fetches from its own useEffect
+                  on mount, so an unmounted section costs nothing — that is the whole point. */}
+              {dashSection === 'overview' && (<>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+                  {[
+                    <ErrorBoundary name="Severity Chart">
+                      <SeverityChart summary={summary} onSeverityClick={(sev) => openExplorer({ severity: sev })} compact />
+                    </ErrorBoundary>,
+                    <ErrorBoundary name="Active Alerts">
+                      <ActiveAlertsSummary onNavigate={() => setTab('alerts')} />
+                    </ErrorBoundary>,
+                    <ErrorBoundary name="Network Health">
+                      <InterfaceEventsSummary hours={hours} onNavigate={() => setTab('health')} />
+                    </ErrorBoundary>,
+                  ].map((widget, i) => (
+                    <div key={i} style={{ height: 260, overflow: 'hidden' }}>{widget}</div>
+                  ))}
+                </div>
+                {/* Timeline gets the full width here rather than a third of a row — it is a
+                    time series, and width is the axis that actually carries information. */}
+                <div style={{ height: 260, overflow: 'hidden', marginBottom: 10 }}>
+                  <ErrorBoundary name="Timeline Chart"><TimelineChart hours={hours} compact /></ErrorBoundary>
+                </div>
+              </>)}
 
-              {/* Row 4: Top Blocked + Top Connection Failures + Top Destinations — 3 equal,
-                  all single-line IP + flag/country/ASN/known-bad widgets */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
-                {[
+              {dashSection === 'security' && (<>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+                  <ErrorBoundary name="Top Security Events">
+                    <TopSecurityEvents hours={hours} onNavigate={() => setTab('security')} />
+                  </ErrorBoundary>
+                  <ErrorBoundary name="VPN Status">
+                    <VPNStatus hours={hours} onNavigate={() => setTab('security')} />
+                  </ErrorBoundary>
                   <ErrorBoundary name="Top Blocked">
                     <TopBlockedDestinations hours={hours} onNavigate={() => setTab('security')} />
-                  </ErrorBoundary>,
-                  <ErrorBoundary name="Top Connection Failures">
-                    <TopConnectionFailures hours={hours} />
-                  </ErrorBoundary>,
-                  <ErrorBoundary name="Top Destinations">
-                    {/* Drill into the destination IP via the existing host filter — it
-                        already matches structured_data.dstip, so this mirrors Top Talkers'
-                        source drill-down without a separate (riskier) dst filter path. */}
-                    <TopDestinations hours={hours} onHostClick={(host) => openExplorer({ host })} />
-                  </ErrorBoundary>,
-                ].map((widget, i) => (
-                  <div key={i} style={{ height: 220, overflow: 'hidden' }}>
-                    {widget}
-                  </div>
-                ))}
-              </div>
+                  </ErrorBoundary>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                  {[
+                    <ErrorBoundary name="Riskiest Entities">
+                      <RiskiestEntities openExplorer={openExplorer} onNavigate={() => setTab('intelligence')} />
+                    </ErrorBoundary>,
+                    <ErrorBoundary name="Known-Bad Sources">
+                      <KnownBadSources onNavigate={(ip) => openExplorer({ host: ip })} />
+                    </ErrorBoundary>,
+                  ].map((widget, i) => (
+                    <div key={i} style={{ height: 320, overflow: 'hidden' }}>{widget}</div>
+                  ))}
+                </div>
+              </>)}
 
-              {/* Row 5: Timeline + Top Talkers (source) + Vendor Breakdown — 3 equal */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
-                {[
-                  <ErrorBoundary name="Timeline Chart">
-                    <TimelineChart hours={hours} compact />
-                  </ErrorBoundary>,
-                  <ErrorBoundary name="Top Talkers">
-                    <TopTalkers hours={hours} onHostClick={(host) => openExplorer({ host })} compact />
-                  </ErrorBoundary>,
-                  <ErrorBoundary name="Vendor Breakdown">
-                    <VendorBreakdown hours={hours} onVendorClick={(vendor) => openExplorer({ vendor })} compact />
-                  </ErrorBoundary>,
-                ].map((widget, i) => (
-                  <div key={i} style={{ height: 220, overflow: 'hidden' }}>
-                    {widget}
-                  </div>
-                ))}
-              </div>
+              {dashSection === 'traffic' && (<>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+                  {[
+                    <ErrorBoundary name="Top Talkers">
+                      <TopTalkers hours={hours} onHostClick={(host) => openExplorer({ host })} compact />
+                    </ErrorBoundary>,
+                    <ErrorBoundary name="Top Destinations">
+                      {/* Drill into the destination IP via the existing host filter — it
+                          already matches structured_data.dstip, so this mirrors Top Talkers'
+                          source drill-down without a separate (riskier) dst filter path. */}
+                      <TopDestinations hours={hours} onHostClick={(host) => openExplorer({ host })} />
+                    </ErrorBoundary>,
+                    <ErrorBoundary name="Top Connection Failures">
+                      <TopConnectionFailures hours={hours} />
+                    </ErrorBoundary>,
+                  ].map((widget, i) => (
+                    <div key={i} style={{ height: 220, overflow: 'hidden' }}>{widget}</div>
+                  ))}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                  {[
+                    <ErrorBoundary name="Firewall Actions">
+                      <FirewallActions hours={hours} />
+                    </ErrorBoundary>,
+                    <ErrorBoundary name="Vendor Breakdown">
+                      <VendorBreakdown hours={hours} onVendorClick={(vendor) => openExplorer({ vendor })} compact />
+                    </ErrorBoundary>,
+                  ].map((widget, i) => (
+                    <div key={i} style={{ height: 220, overflow: 'hidden' }}>{widget}</div>
+                  ))}
+                </div>
+              </>)}
 
-              {/* Row 6: Capacity & Ingestion Health + What's New / Changed — 2 equal columns */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-                {[
-                  <ErrorBoundary name="Capacity & Ingestion Health">
-                    <CapacityIngestionHealth openExplorer={openExplorer} />
-                  </ErrorBoundary>,
-                  <ErrorBoundary name="What's New / Changed">
-                    <WhatsChanged openExplorer={openExplorer} />
-                  </ErrorBoundary>,
-                ].map((widget, i) => (
-                  <div key={i} style={{ height: 340, overflow: 'hidden' }}>
-                    {widget}
-                  </div>
-                ))}
-              </div>
-
-              {/* Row 7: Intelligence — riskiest entities (UEBA) + known-bad external sources */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-                {[
-                  <ErrorBoundary name="Riskiest Entities">
-                    <RiskiestEntities openExplorer={openExplorer} onNavigate={() => setTab('intelligence')} />
-                  </ErrorBoundary>,
-                  <ErrorBoundary name="Known-Bad Sources">
-                    <KnownBadSources onNavigate={(ip) => openExplorer({ host: ip })} />
-                  </ErrorBoundary>,
-                ].map((widget, i) => (
-                  <div key={i} style={{ height: 320, overflow: 'hidden' }}>
-                    {widget}
-                  </div>
-                ))}
-              </div>
-
-              <ErrorBoundary name="Storage Widget"><StorageWidget /></ErrorBoundary>
+              {dashSection === 'capacity' && (<>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                  {[
+                    <ErrorBoundary name="Capacity & Ingestion Health">
+                      <CapacityIngestionHealth openExplorer={openExplorer} />
+                    </ErrorBoundary>,
+                    <ErrorBoundary name="What's New / Changed">
+                      <WhatsChanged openExplorer={openExplorer} />
+                    </ErrorBoundary>,
+                  ].map((widget, i) => (
+                    <div key={i} style={{ height: 340, overflow: 'hidden' }}>{widget}</div>
+                  ))}
+                </div>
+                <ErrorBoundary name="Storage Widget"><StorageWidget /></ErrorBoundary>
+              </>)}
             </>
           )}
 
