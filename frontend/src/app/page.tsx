@@ -70,10 +70,10 @@ type Tab = 'dashboard' | 'explorer' | 'alerts' | 'health' | 'security' | 'intell
 type DashSection = 'overview' | 'security' | 'traffic' | 'capacity';
 
 const DASH_SECTIONS: { id: DashSection; label: string; subtitle: string }[] = [
-  { id: 'overview', label: 'Overview', subtitle: 'Severity mix, active alerts, interface events and the ingest timeline' },
+  { id: 'overview', label: 'Overview', subtitle: 'Severity mix, active alerts, interface events and what changed recently' },
   { id: 'security', label: 'Security', subtitle: 'Security events, VPN activity, blocked destinations and known-bad sources' },
   { id: 'traffic',  label: 'Traffic',  subtitle: 'Top talkers and destinations, connection failures, firewall actions and vendor mix' },
-  { id: 'capacity', label: 'Capacity', subtitle: 'Ingestion forecast, what changed recently, and storage consumption' },
+  { id: 'capacity', label: 'Capacity', subtitle: 'Ingestion forecast, log volume over time, and storage consumption' },
 ];
 
 // Security is one tab with three views. They used to be three sibling top-level
@@ -548,10 +548,10 @@ export default function Home() {
                     <div key={i} style={{ height: 260, overflow: 'hidden' }}>{widget}</div>
                   ))}
                 </div>
-                {/* Timeline gets the full width here rather than a third of a row — it is a
-                    time series, and width is the axis that actually carries information. */}
-                <div style={{ height: 260, overflow: 'hidden', marginBottom: 10 }}>
-                  <ErrorBoundary name="Timeline Chart"><TimelineChart hours={hours} compact /></ErrorBoundary>
+                {/* Full width: four counters plus a drill-down list do not fit a third
+                    of a row, and this is the panel people actually scan on arrival. */}
+                <div style={{ height: 340, overflow: 'hidden', marginBottom: 10 }}>
+                  <ErrorBoundary name="What's New / Changed"><WhatsChanged openExplorer={openExplorer} /></ErrorBoundary>
                 </div>
               </>)}
 
@@ -620,8 +620,8 @@ export default function Home() {
                     <ErrorBoundary name="Capacity & Ingestion Health">
                       <CapacityIngestionHealth openExplorer={openExplorer} />
                     </ErrorBoundary>,
-                    <ErrorBoundary name="What's New / Changed">
-                      <WhatsChanged openExplorer={openExplorer} />
+                    <ErrorBoundary name="Timeline Chart">
+                      <TimelineChart hours={hours} compact />
                     </ErrorBoundary>,
                   ].map((widget, i) => (
                     <div key={i} style={{ height: 340, overflow: 'hidden' }}>{widget}</div>

@@ -2780,6 +2780,10 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.37.1': [
+    'Swapped two Dashboard panels between sections. Log Volume Over Time moved from Overview to Capacity, where it sits alongside the ingestion forecast it is the underlying measure for.',
+    'What\'s New / Changed moved the other way, from Capacity to Overview, and now spans the full width. Newly seen sources, accounts, services and countries are something to notice on arrival rather than something to go looking for.',
+  ],
   '2.37.0': [
     'The Dashboard is now organised into four sections - Overview, Security, Traffic and Capacity - instead of one long page of seventeen panels. The headline figures and the time-range control stay visible above the sections, so nothing you check at a glance has moved behind a tab.',
     'This also makes the page noticeably quicker to open. Every panel fetches its own data when it appears, so previously opening the Dashboard requested all seventeen at once. Now only the panels in the section you are looking at are requested.',
