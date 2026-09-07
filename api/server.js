@@ -2780,6 +2780,11 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.37.2': [
+    'Fixed: Live Tail could replay old log entries as though they were arriving now. Opening it after a period with nobody watching would start streaming from wherever the last viewer left off, scrolling roughly twenty-five historical entries per second. On this server it was seventy-two thousand entries behind, about forty-eight minutes of replay.',
+    'It was only obvious because the firewall that had been sending logs was decommissioned, so a busy live feed alongside a reading of two logs per hour did not add up. With a normally active feed the replay is indistinguishable from real traffic, which is why it went unnoticed.',
+    'Live Tail now anchors to the newest entry when the first viewer connects, so it always begins from the present. A second viewer joining an existing session is unaffected and will not miss entries.',
+  ],
   '2.37.1': [
     'Swapped two Dashboard panels between sections. Log Volume Over Time moved from Overview to Capacity, where it sits alongside the ingestion forecast it is the underlying measure for.',
     'What\'s New / Changed moved the other way, from Capacity to Overview, and now spans the full width. Newly seen sources, accounts, services and countries are something to notice on arrival rather than something to go looking for.',
@@ -3915,6 +3920,13 @@ app.use((err, req, res, _next) => {
 const server = http.createServer(app);
 const wss    = new WebSocketServer({ server, path: '/ws/live' });
 
+// Live Tail stream cursor. Declared ABOVE the connection handler because that
+// handler re-anchors it on first connect — it is only ever read from callbacks
+// that run after module evaluation, but keeping the declaration first removes
+// the temporal-dead-zone footgun for anyone reading top to bottom.
+let lastId    = BigInt(0);
+let lastIdSet = false;
+
 // Authenticate + scope every Live Tail client via its signed ticket. Fail
 // CLOSED: a missing/invalid/expired ticket, or any error resolving the client's
 // site scope, disconnects the socket rather than streaming logs.
@@ -3938,15 +3950,45 @@ wss.on('connection', async (ws, req) => {
       );
       ws.allowedIps = new Set(rows.map(r => r.ip));
     }
+    // ── Re-anchor the stream so "Live Tail" actually means live ──────────
+    // lastId is a module-level global that only advances while somebody is
+    // watching: broadcastNewLogs() returns early when wss.clients.size === 0, so
+    // between viewers it FREEZES at wherever the last viewer left off (or at the
+    // API's startup MAX(id)). Reconnecting later then replayed everything since
+    // that point at LIMIT 50 every 2s — 25 rows/second of history scrolling past
+    // as though it were arriving now.
+    //
+    // Measured on the live server 2026-09-07: lastId sat at 23,311,409 against a
+    // MAX(id) of 23,383,915 — 72,506 rows, about 48 minutes of replay. It was
+    // reported as "logs in live tail from I don't know when", with the sidebar
+    // correctly showing 2 logs/hr at the same moment. The decommissioned firewall
+    // made it obvious; with a live feed the replay just looks like busy traffic,
+    // which is why this went unnoticed.
+    //
+    // Anchor to the newest id when the FIRST client connects. Deliberately not on
+    // every connect: a second viewer joining must not skip rows an existing
+    // viewer has not been sent yet.
+    if (wss.clients.size === 1) {
+      try {
+        const { rows } = await pool.query('SELECT MAX(id) AS max_id FROM syslog_entries');
+        if (rows[0].max_id) {
+          lastId = BigInt(rows[0].max_id);
+          lastIdSet = true;
+          console.log(`[WS] Live Tail re-anchored to log ID ${lastId} (first client connected)`);
+        }
+      } catch (err) {
+        // Non-fatal: fall back to whatever lastId already held. A replay is worse
+        // than ideal but better than refusing the connection.
+        console.error('[WS] Failed to re-anchor lastId:', err.message);
+      }
+    }
+
     ws.ready = true;
   } catch (err) {
     console.error('[WS] Failed to resolve site scope:', err.message);
     try { ws.close(1011, 'Server error'); } catch { /* already closed */ }
   }
 });
-
-let lastId    = BigInt(0);
-let lastIdSet = false;
 
 async function initLastId() {
   try {
