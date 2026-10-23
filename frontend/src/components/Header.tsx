@@ -290,21 +290,34 @@ export default function Header() {
 
       {/* Logo + divider + subtitle */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 195 46" height="44" style={{ display: 'block' }}>
-              {/* Three stacked log layers dissolving into pixels. Flat fills, no
-                  gradient (dark shell in both themes). Keep in sync with
-                  /logvault-logo.svg in net-vault/public and nocvault-website. */}
-              <g fill="#2563eb">
-                <path d="M18 5 L34 12 L18 19 L2 12 Z"/>
-                <path d="M18 17 L34 24 L18 31 L2 24 Z" opacity="0.8"/>
-                <path d="M18 29 L34 36 L18 43 L2 36 Z" opacity="0.6"/>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 206 46" height="44" style={{ display: 'block' }}>
+              <defs>
+              <linearGradient id="lv-hdr-lvTop" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#7FB2FF"/><stop offset="100%" stopColor="#2563eb"/>
+              </linearGradient>
+              <linearGradient id="lv-hdr-lvSide" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#2E6BEE"/><stop offset="100%" stopColor="#143F91"/>
+              </linearGradient>
+              </defs>
+              <g>
+              <path d="M20 29 L35 36.2 L20 43.4 L5 36.2 Z" fill="url(#lv-hdr-lvTop)" opacity="0.62"/>
+              <path d="M5 36.2 L20 43.4 L20 40.2 L5 33 Z" fill="url(#lv-hdr-lvSide)" opacity="0.62"/>
+              <path d="M35 36.2 L20 43.4 L20 40.2 L35 33 Z" fill="url(#lv-hdr-lvSide)" opacity="0.45"/>
+              <path d="M20 17 L35 24.2 L20 31.4 L5 24.2 Z" fill="url(#lv-hdr-lvTop)" opacity="0.82"/>
+              <path d="M5 24.2 L20 31.4 L20 28.2 L5 21 Z" fill="url(#lv-hdr-lvSide)" opacity="0.82"/>
+              <path d="M35 24.2 L20 31.4 L20 28.2 L35 21 Z" fill="url(#lv-hdr-lvSide)" opacity="0.6"/>
+              <path d="M20 5 L35 12.2 L20 19.4 L5 12.2 Z" fill="url(#lv-hdr-lvTop)"/>
+              <path d="M5 12.2 L20 19.4 L20 16.2 L5 9 Z" fill="url(#lv-hdr-lvSide)"/>
+              <path d="M35 12.2 L20 19.4 L20 16.2 L35 9 Z" fill="url(#lv-hdr-lvSide)" opacity="0.75"/>
+              <path d="M20 5 L35 12.2 L20 19.4 L5 12.2 Z" fill="none" stroke="#BBD5FF" strokeOpacity="0.55" strokeWidth="0.8"/>
               </g>
-              <g fill="#2563eb">
-                <rect x="37" y="9" width="4" height="4" rx="1"/>
-                <rect x="43" y="15" width="3" height="3" rx="0.8" opacity="0.75"/>
-                <rect x="37" y="21" width="4" height="4" rx="1" opacity="0.85"/>
-                <rect x="44" y="27" width="3" height="3" rx="0.8" opacity="0.6"/>
-                <rect x="37" y="32" width="4" height="4" rx="1" opacity="0.7"/>
+              <g fill="#5A9BFF">
+              <rect x="38.5" y="7"  width="4.6" height="4.6" rx="1.1"/>
+              <rect x="45.5" y="12" width="3.4" height="3.4" rx="0.9" opacity="0.8"/>
+              <rect x="38.5" y="17" width="4"   height="4"   rx="1"   opacity="0.9"/>
+              <rect x="46.5" y="22" width="3"   height="3"   rx="0.8" opacity="0.62"/>
+              <rect x="39"   y="26" width="3.4" height="3.4" rx="0.9" opacity="0.72"/>
+              <rect x="45"   y="31" width="2.6" height="2.6" rx="0.7" opacity="0.5"/>
               </g>
               <text x="56" y="30" fontSize="26" fontWeight="700" letterSpacing="-0.3" fontFamily="'Rubik','Helvetica Neue',Helvetica,Arial,sans-serif">
             <tspan fill="#ffffff">Log</tspan>
