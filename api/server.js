@@ -2780,6 +2780,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.37.3': [
+    'Refreshed the app logos across the suite. The marks are redrawn as solid shapes instead of thin outlines - the old ones were 1.5-2.5px strokes that thinned out and lost definition at the size the header actually renders them. Colours are unchanged, and every place a mark appears (header, launcher tiles, suite-health pills, login screen) now uses the same drawing.',
+  ],
   '2.37.2': [
     'Fixed: Live Tail could replay old log entries as though they were arriving now. Opening it after a period with nobody watching would start streaming from wherever the last viewer left off, scrolling roughly twenty-five historical entries per second. On this server it was seventy-two thousand entries behind, about forty-eight minutes of replay.',
     'It was only obvious because the firewall that had been sending logs was decommissioned, so a busy live feed alongside a reading of two logs per hour did not add up. With a normally active feed the replay is indistinguishable from real traffic, which is why it went unnoticed.',
