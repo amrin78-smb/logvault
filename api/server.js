@@ -2780,6 +2780,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.37.6': [
+    "Hardening: a failed update whose own rollback also failed left behind the last intact copy of the working install - and the next update attempt deleted it before snapshotting its own broken copy. The next attempt now stops and says where that copy is instead.",
+  ],
   '2.37.5': [
     "Fixed: if an update failed partway through, the shared HTTPS front door could be left stopped - which takes ALL FOUR consoles off the air, not just this app's. The front door is now restored on every path out of an update, including an unexpected error and an abandoned rollback.",
     "Fixed: an update could report success while the HTTPS front door had failed to come back and every public port was dead. The health check it relied on talks to this app directly, behind the front door, so it answered either way. The update now waits for the front door to be running and checks the public port itself before declaring success.",
