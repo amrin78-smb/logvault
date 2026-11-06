@@ -47,3 +47,33 @@
 - **The header "COLLECTOR" pill reports a DIFFERENT PROCESS than the one answering the request — never drive it from the response status alone.** Until 2.35.2 `Header.tsx`'s `pollHealth` did `setCollectorOnline(r.ok)`, so the pill turned green whenever `/api/health` returned 200 — which the API does perfectly well with the collector dead, since they are separate services sharing only Postgres. The pill therefore read COLLECTOR during precisely the outage it exists to surface. `/api/health` now carries a `collector` field derived from a heartbeat the collector writes to `app_settings.collector_status` every 60s; that row IS the channel, there is no IPC. **A hard-killed collector never writes anything, so STALENESS is the detection mechanism** and the `stopped` marker is only a nicety layered on top. Three constraints on any change here: (1) the staleness threshold is 3x the write interval (180s) — tightening it toward 60s makes one slow write flap the pill, a worse lie than the original; (2) `/api/health` must stay **HTTP 200 regardless of collector state** — Settings' `UpdateOverlay` waits for the API to go down and come back, and `Test-NocVault-Suite.ps1` requires 200 + a parseable `version`, so a 503-on-degraded would hang the update overlay for its full 10-minute timeout; (3) only an explicit `state:'running'` may render as healthy — an unparseable or unrecognised payload must read `unknown`, because defaulting the unrecognised case to healthy is how the original bug was written. The sidebar Ingestion card in `page.tsx` was a second copy of the same lie (every colour hardcoded green) and now follows the same status.
 - **The Dashboard tab is itself split into four sections, and only the active one is mounted — that is load-bearing, not cosmetic.** `page.tsx` holds `dashSection` (`overview`/`security`/`traffic`/`capacity`, persisted to `localStorage['logvault-dash-section']`), and each section is rendered behind a `dashSection === '...'` guard. Every dashboard widget fetches its own endpoint from its own `useEffect` on mount, so an unmounted section issues **zero** requests — this is the same mechanism that took `SecurityAnalysis` from 13 requests to 4, applied to the Dashboard. **If you add a widget, put it inside a section, not above the section bar** — anything rendered above the bar loads on every Dashboard visit regardless of section. The KPI tiles and `TimeRangePicker` sit above the bar deliberately (at-a-glance numbers must never hide behind a tab), and that is the only content that should. Note switching sections REMOUNTS its widgets, so they refetch — acceptable and intentional (it doubles as a refresh); don't add caching without a measured reason. `TimeRangePicker` already holds `onRefreshNow` in a ref (2.31.2), so the section-aware stale-closure bug that bit `SecurityAnalysis` cannot recur here.
 - **Live Tail's `lastId` cursor only advances while a client is connected — so it goes STALE between viewers and replays history as if live.** `broadcastNewLogs()` in `api/server.js` starts with `if (wss.clients.size === 0) return;`, which returns *before* advancing the module-level `lastId`. With nobody watching, the cursor freezes at the last viewer's position (or the API's startup `MAX(id)`); the next viewer then gets everything since, at `LIMIT 50` every 2s = **25 rows/second of history presented as a live feed**. Measured 2026-09-07: cursor at 23,311,409 vs `MAX(id)` 23,383,915 — 72,506 rows, ~48 min of replay. Fixed in 2.37.2 by re-anchoring to `MAX(id)` when the FIRST client connects (`wss.clients.size === 1`). **Do not re-anchor on every connect** — a second viewer joining would then skip rows the first viewer has not been sent. **This class of bug is invisible while a feed is healthy**: replayed traffic looks exactly like live traffic. It only surfaced because the sending firewall was decommissioned, so a scrolling Live Tail next to a sidebar reading `2 logs/hr` was self-contradictory. If you touch this cursor, test with a QUIET feed, not a busy one.
+
+### The shared TLS front door must come back on EVERY path out of an update
+
+`installer/Update-LogVault.ps1` stops `NocVault-Tls` only when that service
+actually declares a dependency on this app's service — but once stopped, it
+fronts **all four** consoles, so failing to restart it is a suite-wide outage,
+not an app-level one. Three real holes, all fixed 2026-11-07:
+
+1. **The Stop/Start pair sat inside the main `try` with no `finally`.** An
+   exception, an `exit`, or an early `return` from the rollback skipped the
+   Start. (LogVault's rollback had exactly that shape: `return $false` on an
+   un-revertable source, several lines above its own Start call.) The Start now
+   runs from the script-level `finally`, and is idempotent — it returns at once
+   unless THIS run stopped the service.
+2. **The start's exit code was discarded, and nothing downstream could
+   notice.** `Wait-Healthy` probes this app's API on `127.0.0.1`, which sits
+   BEHIND the front door and answers whether or not it is up — so a terminator
+   that failed to start still printed "health check passed", wrote
+   `success:true` and exited 0 with every public port dead. The start now waits
+   for `Running` and probes the PUBLIC port.
+3. **The stop slept 2 seconds instead of waiting for `Stopped`.** The cutover
+   sets `AppStopMethodConsole 15000` on that service deliberately, because it
+   drains every live socket (upgraded WebSockets included) before exiting — so
+   at t+2s it is routinely still `STOP_PENDING`, this app's own `sc stop` is
+   then refused with **1051**, and the `npm install`/build that follows rewrites
+   `node_modules` underneath a live process.
+
+⛔ Only a parse gate on **PowerShell 5.1** can validate these scripts, and a
+parse gate cannot catch an undefined function — check that every `Write-*`
+helper a new line calls is actually defined in that same file.
