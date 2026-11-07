@@ -2907,6 +2907,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.39.0': [
+    "The updater now provisions the tamper-evidence key for the log hash chain if this installation does not have one, and never replaces a key that is already in use. An installation provisioned before the key existed, and only ever updated since, had the hash chain silently disabled - so the integrity check had nothing to verify. The key is reported by location only, never by value.",
+  ],
   '2.38.0': [
     "Security: acknowledging alerts and anomalies now requires an administrator and is restricted to your assigned sites. Previously any signed-in user - including a read-only one scoped to a single site - could acknowledge an alert for a site they cannot even see, and acknowledging with no selection cleared every open alert in the whole estate in one call.",
     "Security: an alert rule's match pattern is now checked for the kind of expression that can take exponential time, instead of only being checked for valid syntax. One such pattern stored in a rule would pin a CPU core on every single log line arriving afterwards and stall ingestion - a monitoring system blinded by a settings change. Patterns are also time-budgeted while matching and set aside if one proves slow in practice. The host-match field is checked the same way.",

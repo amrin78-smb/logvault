@@ -953,6 +953,173 @@ if ($ServerIp -and (Test-Path $rootEnvPath) -and -not (Get-Content $rootEnvPath 
     Write-OK "Wrote SERVER_IP=$ServerIp to .env.local"
 }
 
+# Step 4.4: LOG_INTEGRITY_KEY (parity with the suite installer)
+Write-Step "Checking LogVault integrity key"
+
+# ⛔ THIS UPDATER CARRIED NO REFERENCE TO LOG_INTEGRITY_KEY AT ALL. The suite
+# installer (net-vault\installer\Install-NocVault-Suite.ps1) generates one per
+# install and writes it to both .env.local files and the LogVault-Collector service
+# environment, where it keys the tamper-evident HMAC chain over syslog_entries. A
+# LogVault provisioned BEFORE the installer gained that key - and thereafter only
+# ever updated from here - never gets one: collector.js takes the
+# INTEGRITY_ENABLED=false path, stores NULL prev_hash/entry_hash on every row, and
+# warns once into a log nobody reads. The compliance feature is silently off for the
+# whole life of that install. Converge it here instead.
+#
+# ⛔ RESOLUTION ORDER IS LOAD-BEARING, AND AN EXISTING KEY IS NEVER REPLACED.
+# collector.js loads .env.local with override:false, so a value pinned in the NSSM
+# service environment is the RUNTIME authority and the files must never contradict
+# it - hence service env, then root .env.local, then the suite secrets file, and
+# only then mint. Re-minting a key that is already in use is the one unrecoverable
+# mistake available here: initHashChain() resumes from the last persisted entry_hash
+# REGARDLESS of key, so a different key makes scripts/verify-integrity.js report
+# every pre-existing row as tampered, permanently - syslog_entries has UPDATE/DELETE
+# revoked by design, so there is no repair path.
+$lvSecretsFile  = 'C:\ProgramData\NocVault\secrets.env'
+$lvIntegrityKey = ''
+$lvIntegritySrc = ''
+
+$lvNssmForKey = Get-NssmForService 'LogVault-Collector'
+if ($lvNssmForKey) {
+    $lvRawEnv = ''
+    # nssm emits UTF-16 and the NULs survive the capture - same handling as
+    # Clear-NssmEnvKeys above, for the same reason.
+    try { $lvRawEnv = (& $lvNssmForKey get LogVault-Collector AppEnvironmentExtra 2>&1 | Out-String) } catch { $lvRawEnv = '' }
+    $lvRawEnv = $lvRawEnv -replace "`0", ''
+    foreach ($lvLine in @($lvRawEnv -split "`r?`n")) {
+        if ($lvLine.Trim() -match '^LOG_INTEGRITY_KEY\s*=\s*(\S+)$') {
+            $lvIntegrityKey = $Matches[1]
+            $lvIntegritySrc = 'the LogVault-Collector service environment'
+        }
+    }
+}
+# Split on \r?\n and Trim per line: the suite installer writes these files LF-only
+# while later Add-Content/Set-Content edits write CRLF, and an anchored regex tested
+# against a line still carrying its trailing \r stops matching.
+if (-not $lvIntegrityKey -and (Test-Path -LiteralPath $rootEnvPath)) {
+    $lvRaw = ''
+    try { $lvRaw = (Get-Content -LiteralPath $rootEnvPath -Raw) } catch { $lvRaw = '' }
+    foreach ($lvLine in @("$lvRaw" -split "`r?`n")) {
+        if ($lvLine.Trim() -match '^LOG_INTEGRITY_KEY\s*=\s*(\S+)$') {
+            $lvIntegrityKey = $Matches[1]
+            $lvIntegritySrc = $rootEnvPath
+        }
+    }
+}
+if (-not $lvIntegrityKey -and (Test-Path -LiteralPath $lvSecretsFile)) {
+    $lvRaw = ''
+    try { $lvRaw = (Get-Content -LiteralPath $lvSecretsFile -Raw) } catch { $lvRaw = '' }
+    foreach ($lvLine in @("$lvRaw" -split "`r?`n")) {
+        if ($lvLine.Trim() -match '^LOG_INTEGRITY_KEY\s*=\s*(\S+)$') {
+            $lvIntegrityKey = $Matches[1]
+            $lvIntegritySrc = $lvSecretsFile
+        }
+    }
+}
+if (-not $lvIntegrityKey) {
+    # 32 CSPRNG bytes as 64 lowercase hex chars - the same shape New-HexSecret
+    # produces in the suite installer. On PowerShell 5.1 (.NET Framework) only the
+    # INSTANCE GetBytes([byte[]]) exists; ::Fill()/::GetInt32() are .NET Core only.
+    # Get-Random is System.Random, seeded from the clock, and must never key an HMAC.
+    $lvKeyBytes = New-Object byte[] 32
+    $lvRng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $lvRng.GetBytes($lvKeyBytes) } finally { $lvRng.Dispose() }
+    $lvIntegrityKey = -join ($lvKeyBytes | ForEach-Object { '{0:x2}' -f $_ })
+    $lvIntegritySrc = 'newly generated'
+}
+
+# Write it wherever it is missing or stale. The SERVICE environment is deliberately
+# left alone: when the key came from there it is the authority and the files are
+# merely brought into line, and when it did not, nothing is pinned that could shadow
+# these files on a later run.
+$lvKeyWrites = @()
+foreach ($lvEnvFile in @($rootEnvPath, $frontendEnvPath)) {
+    if (-not $lvEnvFile) { continue }
+    if (-not (Test-Path -LiteralPath $lvEnvFile)) { continue }
+    $lvRaw = ''
+    try { $lvRaw = (Get-Content -LiteralPath $lvEnvFile -Raw) } catch { continue }
+    $lvRaw = "$lvRaw"
+    $lvAlready = $false
+    foreach ($lvLine in @($lvRaw -split "`r?`n")) {
+        if ($lvLine.Trim() -eq "LOG_INTEGRITY_KEY=$lvIntegrityKey") { $lvAlready = $true }
+    }
+    if ($lvAlready) { continue }
+    # Rebuilt line by line rather than with a regex replacement: .NET expands $ in a
+    # replacement string, and a key read back from a file is not guaranteed to be hex.
+    $lvKept  = @()
+    $lvWrote = $false
+    foreach ($lvLine in @($lvRaw -split "`r?`n")) {
+        if ($lvLine.Trim() -match '^LOG_INTEGRITY_KEY\s*=') {
+            if (-not $lvWrote) { $lvKept += "LOG_INTEGRITY_KEY=$lvIntegrityKey"; $lvWrote = $true }
+            continue
+        }
+        $lvKept += $lvLine
+    }
+    if (-not $lvWrote) {
+        # Drop one trailing empty element first, so appending to a file that ends in
+        # a newline does not leave a blank line in the middle of the env block.
+        # Count -eq 1 is handled separately: 0..-1 is the range 0,-1 in PowerShell,
+        # which would index the first AND last element and duplicate it.
+        if (@($lvKept).Count -eq 1 -and $lvKept[0] -eq '') { $lvKept = @() }
+        elseif (@($lvKept).Count -gt 1 -and $lvKept[$lvKept.Count - 1] -eq '') { $lvKept = @($lvKept[0..($lvKept.Count - 2)]) }
+        $lvKept += "LOG_INTEGRITY_KEY=$lvIntegrityKey"
+    }
+    # Keep the file's existing newline style. The suite installer writes these LF-only
+    # and later Add-Content edits write CRLF; rewriting the whole file in the other
+    # style is a pointless diff for every other reader of it to cope with.
+    $lvEol = "`n"
+    if ($lvRaw.Contains("`r`n")) { $lvEol = "`r`n" }
+    try {
+        Set-Content -LiteralPath $lvEnvFile -Value ($lvKept -join $lvEol) -NoNewline
+        $lvKeyWrites += $lvEnvFile
+    } catch {
+        Write-Warn "Could not write LOG_INTEGRITY_KEY to $lvEnvFile - the tamper-evident hash chain stays disabled there: $($_.Exception.Message)"
+    }
+}
+
+# Record it in the suite secrets file as well when one exists: that file is where
+# the installer, the uninstaller and the suite tester look, and it is ACL'd to
+# Administrators+SYSTEM. APPEND ONLY - an entry already there is never rewritten,
+# because secrets.env is what a rebuilt server would be restored from, and a key
+# that disagrees with the one the chain was built under is worse than no record.
+if (Test-Path -LiteralPath $lvSecretsFile) {
+    $lvSecRaw = ''
+    try { $lvSecRaw = (Get-Content -LiteralPath $lvSecretsFile -Raw) } catch { $lvSecRaw = '' }
+    $lvSecHas   = $false
+    $lvSecAgrees = $false
+    foreach ($lvLine in @("$lvSecRaw" -split "`r?`n")) {
+        if ($lvLine.Trim() -match '^LOG_INTEGRITY_KEY\s*=\s*(\S+)$') {
+            $lvSecHas = $true
+            if ($Matches[1] -eq $lvIntegrityKey) { $lvSecAgrees = $true }
+        }
+    }
+    if (-not $lvSecHas) {
+        try { Add-Content -LiteralPath $lvSecretsFile -Value "LOG_INTEGRITY_KEY=$lvIntegrityKey" } catch {
+            Write-Warn "Could not record LOG_INTEGRITY_KEY in $lvSecretsFile - back up $rootEnvPath instead; this key cannot be re-minted without invalidating every existing hash."
+        }
+    } elseif (-not $lvSecAgrees) {
+        # Left as it is on purpose, but it must not pass unremarked: the key the
+        # collector will actually use is the one resolved above, so a different value
+        # in secrets.env is a restore that would silently break every existing hash.
+        # Named by LOCATION only - never print either value.
+        Write-Warn "LOG_INTEGRITY_KEY in $lvSecretsFile does NOT match the key LogVault is running with (resolved from $lvIntegritySrc). secrets.env was left untouched - reconcile it by hand, because restoring a server from the wrong one makes every existing syslog_entries hash read as tampered."
+    }
+}
+
+# Reported by LOCATION, never by value - the transcript this writes to is the least
+# private place on the box.
+if ($lvIntegritySrc -eq 'newly generated') {
+    if (@($lvKeyWrites).Count -gt 0) {
+        Write-OK "LOG_INTEGRITY_KEY was not configured - generated one (stored in $($lvKeyWrites -join ', ')); the tamper-evident hash chain starts at the next entry. Rows written before this stay unhashed."
+    } else {
+        Write-Warn "LOG_INTEGRITY_KEY is not configured and no .env.local could be written - LogVault's tamper-evident hash chain stays DISABLED."
+    }
+} elseif (@($lvKeyWrites).Count -gt 0) {
+    Write-OK "LOG_INTEGRITY_KEY synced from $lvIntegritySrc into $($lvKeyWrites -join ', ')"
+} else {
+    Write-OK "LOG_INTEGRITY_KEY already configured ($lvIntegritySrc) - unchanged"
+}
+
 # Step 4.5: Apply database schema (idempotent) - mirrors the SpanVault pattern
 Write-Step "Applying database schema"
 $currentStage = 'schema-apply'
