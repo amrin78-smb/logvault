@@ -15,7 +15,18 @@ api/auditLog.js
   writeAudit(pool, req, action, details) — insert into append-only audit_log; detail must never carry secrets/full payloads
 
 api/csv.js
-  escapeCsvCell(value) — CSV injection-safe cell escaping for /api/logs/export
+  escapeCsvCell(value) — CSV injection-safe cell escaping (formula guard for a leading = + - @ TAB CR, then RFC-4180 quoting). Ported from DDIVault, with one deliberate divergence: \r is also in the quoting test, because syslog messages carry bare CRs
+  buildLogsExportCsv(rows) — the /api/logs/export body (header + rows). Lives here ON PURPOSE: server.js used to hand-roll its own esc() with no formula guard while never importing this module, so an attacker-planted `=cmd|...` syslog message was emitted raw. Keeping the column layout next to the escaper means a new column cannot reintroduce a parallel escaper
+  LOGS_EXPORT_HEADER — the export's header line (no trailing newline)
+
+api/paging.js
+  safePage(val, limit) -> {page, offset, clamped} — clamps the OFFSET (not the page number) to MAX_OFFSET_ROWS. `page` on /api/logs had a floor but no ceiling, so ?page=100000000 walked the whole received_at index across every partition, and a float page (?page=1e20) 500'd as an invalid bigint
+  MAX_OFFSET_ROWS — the row cap (100000)
+
+api/ackScope.js
+  parseAckId(raw) -> int|null — one acknowledge id; digits only, 1..int4max (parseInt('7abc') is a DIFFERENT valid row, so a loose parse is not a parse)
+  parseAckIds(body) -> {ids}|{error} — the bulk-ack id list; an empty/missing list is an ERROR, never "all"
+  buildAckUpdate(table, ids, ackBy, siteFilter) -> {sql, params} — the site-scoped acknowledge UPDATE for alert_events/anomaly_events. The caller passes the filter so the choice stays beside its read twin: alert_events MUST use getAlertSiteFilter (source_host), NOT getSiteFilter (source_ip collapses to zero rows) [SENSITIVE]
 
 api/licenseCheck.js
   getLicense(forceRefresh) — fetch/cache license state from NocVault hub, 24h server cache [SENSITIVE][external]
@@ -34,6 +45,16 @@ api/reports.js
 
 api/soc.js
   createSocRouter(pool) — Express router factory mounted at /api/soc; composes existing stats/security/ueba/anomaly/alert/threat aggregates into SOC-console payloads (overview, deterministic NLG digest, alert killchain, entity timeline). No new tables — compute-on-read only. Uses ./rbac site filters + a local anomalySiteFilter/getCached/rbacCacheKey copy (those are module-private in server.js)
+
+## Backend (collector/)
+
+collector/safeRegex.js
+  unsafePatternReason(pattern, flags) -> reason|null — the WRITE-time gate for operator-supplied alert-rule regexes: syntax, then a static nested-quantifier/huge-repeat screen, then a RAMPED empirical probe (10/14/18/22/26-char adversarial inputs, 15ms per step). The ramp is what keeps the screen itself bounded
+  staticScreen / probe / syntaxError — the three stages, separately testable
+  hostPatternToRegexSource(matchHost) — '%' -> '.*', the expansion the collector compiles. Screen THIS, not the raw match_host, or you validate a different pattern than the one that runs
+  testWithBudget(pattern, input, label, flags) -> {matched, skipped, ms} — MATCH-time: compile-once cache + per-message time budget; the first message that blows MATCH_BUDGET_MS quarantines the pattern so later messages skip it. `skipped` means NOT EVALUATED — treat as a non-match, never as a match
+  isQuarantined / quarantineReport / compile / _resetState
+  Required by BOTH api/server.js (write gate) and collector/collector.js (hot path). Does not import anything. [SENSITIVE]
 
 ## Frontend (frontend/src/lib/)
 

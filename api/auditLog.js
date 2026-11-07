@@ -17,16 +17,42 @@
  * update log the list of changed KEYS, never the values / SMTP password).
  */
 
-// Best-effort client IP. With the Next.js proxy in front, x-forwarded-for is
-// the most reliable source; fall back to the socket peer (likely the proxy).
+// Best-effort client IP for the audit row.
+//
+// ⛔ DO NOT go back to `String(fwd).split(',')[0]`. The FIRST hop of
+// x-forwarded-for is whatever the CLIENT sent: a browser can set the header
+// itself, and frontend/src/proxy.ts copies the inbound headers through
+// verbatim, so any authenticated user could make an append-only audit_log row
+// for their own settings.update / logs.export / alert.acknowledge attribute to
+// someone else's IP. An append-only trail that records a forgeable actor
+// address is worse than one that records none, because it is trusted.
+//
+// Taking [0] is wrong even behind a trusted proxy that APPENDS: a proxy appends
+// the peer it saw to the end of the chain, so the trustworthy value is the LAST
+// hop, and everything before it is client-supplied. We prefer the socket peer
+// (unforgeable, though with the Next.js proxy in front it is the proxy itself
+// on loopback) and fall back to the last x-forwarded-for hop when there is no
+// socket address to read.
+//
+// NET EFFECT TO BE AWARE OF: because proxy.ts is the only caller of port 3005,
+// the recorded address is now the proxy's own loopback address rather than the
+// browser's. That is the honest answer — the true browser IP is simply not
+// recoverable here today, since nothing in the chain stamps it in a way a
+// client cannot overwrite. Capturing it properly means proxy.ts DERIVING a
+// value itself (and stripping the inbound x-forwarded-for the way it already
+// strips x-user-*), which is a separate change, deliberately not made here.
+// The actor identity in the row (actor_user_id / actor_role) comes from the
+// proxy-verified session and was never forgeable.
 function clientIp(req) {
   try {
+    const peer = (req && req.socket && req.socket.remoteAddress) || null;
+    if (peer) return peer;
     const fwd = req && req.headers && req.headers['x-forwarded-for'];
     if (fwd) {
-      // x-forwarded-for can be a comma-separated chain; take the first hop.
-      return String(fwd).split(',')[0].trim();
+      const hops = String(fwd).split(',');
+      return hops[hops.length - 1].trim() || null;
     }
-    return (req && req.socket && req.socket.remoteAddress) || null;
+    return null;
   } catch (_e) {
     return null;
   }

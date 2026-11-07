@@ -131,9 +131,42 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
 
   const totalUnacked = events.filter(e => !e.acknowledged).length;
 
+  // PATCH one id and report whether it actually landed.
+  //
+  // These handlers used to fire-and-forget: `await fetch(...)` with no status
+  // check, then paint the row acknowledged and toast success unconditionally.
+  // That was already a lie for any request the server rejected, and it became a
+  // visible one when the acknowledge endpoints gained their missing guards
+  // (requireAdmin + site scoping — see api/ackScope.js): a read-only `user`, or
+  // an alert outside the caller's sites, now gets 403/404, and the UI must say
+  // so rather than show a success it did not get. Only ids the server confirms
+  // are marked acknowledged locally.
+  const ackOne = async (id: number): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/alerts/events/${id}/acknowledge`, { method: 'PATCH' });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const ackMany = async (ids: number[]): Promise<Set<number>> => {
+    const results = await Promise.all(ids.map(async id => [id, await ackOne(id)] as const));
+    return new Set(results.filter(([, ok]) => ok).map(([id]) => id));
+  };
+
+  const reportPartial = (done: number, asked: number, successMsg: string) => {
+    if (done === asked)  toast(successMsg, 'success');
+    else if (done === 0) toast('Could not acknowledge — you may not have permission', 'error');
+    else                 toast(`Acknowledged ${done} of ${asked} — the rest were not permitted`, 'error');
+  };
+
   // Acknowledge single
   const acknowledge = async (id: number) => {
-    await fetch(`/api/alerts/events/${id}/acknowledge`, { method: 'PATCH' });
+    if (!await ackOne(id)) {
+      toast('Could not acknowledge this alert — you may not have permission', 'error');
+      return;
+    }
     setEvents(prev => prev.map(e => e.id === id ? { ...e, acknowledged: true } : e));
     setSelected(prev => { const s = new Set(prev); s.delete(id); return s; });
     setDetailAlert(prev => prev && prev.id === id ? { ...prev, acknowledged: true } : prev);
@@ -144,9 +177,10 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
   const acknowledgeSelected = async () => {
     if (selected.size === 0) return;
     setLoading(true);
-    await Promise.all([...selected].map(id => fetch(`/api/alerts/events/${id}/acknowledge`, { method: 'PATCH' })));
-    setEvents(prev => prev.map(e => selected.has(e.id) ? { ...e, acknowledged: true } : e));
-    toast(`${selected.size} alert(s) acknowledged`, 'success');
+    const ids  = [...selected];
+    const done = await ackMany(ids);
+    setEvents(prev => prev.map(e => done.has(e.id) ? { ...e, acknowledged: true } : e));
+    reportPartial(done.size, ids.length, `${done.size} alert(s) acknowledged`);
     setSelected(new Set());
     setLoading(false);
   };
@@ -154,20 +188,20 @@ export default function AlertEvents({ initialTechnique, hours, onTechniqueConsum
   // Acknowledge all in a group
   const acknowledgeGroup = async (rule_name: string) => {
     setLoading(true);
-    const ids = events.filter(e => e.rule_name === rule_name && !e.acknowledged).map(e => e.id);
-    await Promise.all(ids.map(id => fetch(`/api/alerts/events/${id}/acknowledge`, { method: 'PATCH' })));
-    setEvents(prev => prev.map(e => e.rule_name === rule_name ? { ...e, acknowledged: true } : e));
-    toast(`All "${rule_name}" alerts acknowledged`, 'success');
+    const ids  = events.filter(e => e.rule_name === rule_name && !e.acknowledged).map(e => e.id);
+    const done = await ackMany(ids);
+    setEvents(prev => prev.map(e => done.has(e.id) ? { ...e, acknowledged: true } : e));
+    reportPartial(done.size, ids.length, `All "${rule_name}" alerts acknowledged`);
     setLoading(false);
   };
 
   // Acknowledge ALL
   const acknowledgeAll = async () => {
     setLoading(true);
-    const ids = events.filter(e => !e.acknowledged).map(e => e.id);
-    await Promise.all(ids.map(id => fetch(`/api/alerts/events/${id}/acknowledge`, { method: 'PATCH' })));
-    setEvents(prev => prev.map(e => ({ ...e, acknowledged: true })));
-    toast(`All ${ids.length} alerts acknowledged`, 'success');
+    const ids  = events.filter(e => !e.acknowledged).map(e => e.id);
+    const done = await ackMany(ids);
+    setEvents(prev => prev.map(e => done.has(e.id) ? { ...e, acknowledged: true } : e));
+    reportPartial(done.size, ids.length, `All ${ids.length} alerts acknowledged`);
     setSelected(new Set());
     setLoading(false);
   };

@@ -1,12 +1,13 @@
 {
   "name": "logvault",
-  "version": "2.37.7",
+  "version": "2.38.0",
   "description": "LogVault - NexVault Syslog Analyzer. Windows-native, on-premises syslog collection and analysis.",
   "private": true,
   "scripts": {
     "install:all": "npm install && cd frontend && npm install",
     "collector": "node collector/collector.js",
     "api": "node api/server.js",
+    "test": "node --test",
     "dev:collector": "node collector/collector.js",
     "dev:api": "node api/server.js",
     "dev:frontend": "cd frontend && npm run dev -- --port 3004"

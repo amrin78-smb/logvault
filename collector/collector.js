@@ -33,6 +33,7 @@ const { getCategory }    = require('./taxonomy');
 const { scoreLogExplained } = require('./riskScorer');
 const { mapTechniques }  = require('./mitreMapper');
 const { evaluateCorrelation } = require('./correlationEngine');
+const { testWithBudget, hostPatternToRegexSource, quarantineReport } = require('./safeRegex');
 const { syncFromNetVault }    = require('./netvaultSync');
 const { runCleanup }          = require('../scripts/cleanup');
 // Phase 2 — behavioral baselining + anomaly detection + UEBA (on-prem, pure SQL/JS).
@@ -866,6 +867,16 @@ async function getAlertRules() {
       const { rows } = await pool.query('SELECT * FROM alert_rules WHERE is_enabled = TRUE');
       alertRulesCache = rows;
       lastRulesFetch  = now;
+      // Keep a quarantined rule VISIBLE. A quarantine suppresses that rule's
+      // alerts (see safeRegex.js) — a loud, repeated line is the difference
+      // between "logged once and scrolled away" and an operator knowing a
+      // detection is off, the same reasoning as the listener-down warning.
+      const q = quarantineReport();
+      if (q.length) {
+        console.error(`[Alert] ${q.length} rule pattern(s) QUARANTINED for catastrophic `
+          + `backtracking — their alerts are suppressed: `
+          + q.map((x) => `${x.label} (${x.ms.toFixed(0)}ms)`).join('; '));
+      }
     } catch (err) { console.error('[Alert] Failed to fetch rules:', err.message); }
   }
   return alertRulesCache;
@@ -891,14 +902,23 @@ async function checkAlertRules(entry) {
 
     if (rule.match_severity?.length && !rule.match_severity.includes(entry.severity)) continue;
     if (rule.match_vendor?.length   && !rule.match_vendor.includes(entry.vendor))     continue;
+    // Operator-supplied regexes, executed against EVERY ingested entry. Both go
+    // through safeRegex.testWithBudget: compile-once cache, a per-message time
+    // budget, and quarantine of a pattern that blows it (see
+    // collector/safeRegex.js for the whole rationale — a stored `(a+)+$` used to
+    // pin a core on every message and halt ingestion). `skipped` means the
+    // pattern was NOT evaluated (quarantined or uncompilable); treat that as a
+    // non-match and move on, which is exactly what the previous catch(_) did.
     if (rule.match_host) {
-      try {
-        const pattern = rule.match_host.replace(/%/g, '.*');
-        if (!new RegExp(pattern, 'i').test(entry.source_host || entry.source_ip || '')) continue;
-      } catch (_) { continue; }
+      const hostSrc = hostPatternToRegexSource(rule.match_host);
+      const r = testWithBudget(hostSrc, entry.source_host || entry.source_ip || '',
+                               `rule ${rule.id} (${rule.name}) match_host`);
+      if (r.skipped || !r.matched) continue;
     }
     if (rule.match_pattern) {
-      try { if (!new RegExp(rule.match_pattern, 'i').test(entry.message)) continue; } catch (_) { continue; }
+      const r = testWithBudget(rule.match_pattern, entry.message,
+                               `rule ${rule.id} (${rule.name}) match_pattern`);
+      if (r.skipped || !r.matched) continue;
     }
 
     const windowMs = parseIntervalMs(rule.threshold_window);

@@ -52,12 +52,22 @@ const TOKEN_OPTS = {
 // site-scoped, session-gated data, unlike the bare /api/stats aggregate.
 // Kept in sync with api/server.js's enforceLicense() exemptPaths + the
 // explicit "unauthenticated"/"no-auth" route comments there.
+//
+// ⛔ /api/system/last-update-status is NOT on this list and must not be added
+// "for consistency with /api/system/update-available". update-available returns
+// two version strings; last-update-status spreads the WHOLE status file written
+// by Update-LogVault.ps1 — stage reached, error code, raw updater error text,
+// rollback flag, plus whatever install paths or commit hashes the script wrote.
+// It sat here and was readable with no session at all. Its only two consumers
+// (UpdateFailureBanner, and the Settings update overlay) always have a session
+// and are admin-only in the UI, and the Express route now carries requireAdmin
+// to match. SpanVault's frontend/src/middleware.ts refuses the same route for
+// the same reason — see the ⛔ comment there.
 const PUBLIC_API_PATHS = new Set([
   '/api/license-status',
   '/api/health',
   '/api/stats',
   '/api/system/update-available',
-  '/api/system/last-update-status',
 ]);
 
 // Per-user app-access gate (NocVault suite). `apps` is the list of app slugs the

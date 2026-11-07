@@ -507,9 +507,18 @@ export default function IntelligenceConsole({ openExplorer, hours }: {
   useEffect(() => { fetchEntities(); }, [fetchEntities]);
 
   // Acknowledge a single anomaly.
+  //
+  // The response status is now checked, not just the absence of a thrown error:
+  // the acknowledge endpoints are admin-gated and site-scoped server-side (see
+  // api/ackScope.js), so a rejected request returns 403/404 — a perfectly
+  // successful fetch that must NOT be painted as an acknowledgement.
   const acknowledge = async (id: number) => {
     try {
-      await fetch(`/api/anomalies/${id}/acknowledge`, { method: 'PATCH' });
+      const res = await fetch(`/api/anomalies/${id}/acknowledge`, { method: 'PATCH' });
+      if (!res.ok) {
+        toast('Could not acknowledge — you may not have permission', 'error');
+        return;
+      }
       setAnomalies(prev => prev.map(a => a.id === id ? { ...a, acknowledged: true } : a));
       toast('Anomaly acknowledged', 'success');
       fetchSummary();
@@ -519,18 +528,30 @@ export default function IntelligenceConsole({ openExplorer, hours }: {
     }
   };
 
-  // Acknowledge all currently-listed open anomalies.
+  // Acknowledge all currently-listed open anomalies. `ids` is always explicit
+  // and non-empty here — the API rejects an empty/missing ids with a 400 rather
+  // than treating it as "acknowledge everything", which is what it used to do.
   const acknowledgeAll = async () => {
     const ids = anomalies.filter(a => !a.acknowledged).map(a => a.id);
     if (ids.length === 0) return;
     try {
-      await fetch('/api/anomalies/acknowledge-all', {
+      const res = await fetch('/api/anomalies/acknowledge-all', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids }),
       });
+      if (!res.ok) {
+        toast('Could not acknowledge — you may not have permission', 'error');
+        return;
+      }
+      // Report what the server actually changed: a site-scoped caller may be
+      // able to acknowledge only some of the rows in view.
+      const body = await res.json().catch(() => null);
+      const done = typeof body?.acknowledged === 'number' ? body.acknowledged : ids.length;
       setAnomalies(prev => prev.map(a => ({ ...a, acknowledged: true })));
-      toast(`${ids.length} anomalies acknowledged`, 'success');
+      toast(done === ids.length
+        ? `${ids.length} anomalies acknowledged`
+        : `Acknowledged ${done} of ${ids.length} anomalies`, done === ids.length ? 'success' : 'error');
       fetchSummary();
       if (!showAcked) fetchAnomalies();
     } catch {

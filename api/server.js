@@ -16,6 +16,13 @@ const { testEmail } = require('../collector/emailer');
 const { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter, getStatsSiteFilter, getAlertSiteFilter, getRollupSiteFilter } = require('./rbac');
 const { getLicense, getLicenseState } = require('./licenseCheck');
 const { writeAudit } = require('./auditLog');
+const { safePage } = require('./paging');
+const { parseAckId, parseAckIds, buildAckUpdate } = require('./ackScope');
+const { buildLogsExportCsv } = require('./csv');
+// Write-time ReDoS screen for operator-supplied alert-rule regexes. Lives in
+// collector/ because the hot path it protects is the collector's; same
+// api -> collector direction as the testEmail import above.
+const { unsafePatternReason, hostPatternToRegexSource } = require('../collector/safeRegex');
 const { createReportsRouter } = require('./reports');
 const { gatherSecurityKpis } = require('./securityKpis');
 const { countryAliasCte } = require('./countryAlias');
@@ -831,9 +838,12 @@ app.get('/api/logs', asyncHandler(async (req, res) => {
   // daily partitions, and only a real parameter value lets the planner prune
   // at plan time (~566ms planning -> 2.5ms, measured 2026-08-06).
   const since = new Date(Date.now() - hours * 3600 * 1000);
-  const page   = Math.max(parseInt(req.query.page || '1'), 1);
   const limit  = safeInt(req.query.limit, 100, 500);
-  const offset = (page - 1) * limit;
+  // `page` had a floor but NO ceiling, so ?page=100000000 produced OFFSET
+  // 9,999,999,900 — a full walk-and-discard of the received_at index across
+  // every daily partition of a ~10.5M-row table, on a pool of max 10. See
+  // api/paging.js for the ceiling and for the bigint-overflow 500 it also fixes.
+  const { page, offset, clamped: pageClamped } = safePage(req.query.page, limit);
 
   const conditions = [`se.received_at > $1`];
   const params = [since];
@@ -934,7 +944,17 @@ app.get('/api/logs', asyncHandler(async (req, res) => {
   ]);
 
   const total = parseInt(countRes.rows[0].total);
-  res.json({ total, total_is_capped: !!q && total >= COUNT_CAP, page, limit, data: rows });
+  // `page` echoes the EFFECTIVE page, and page_clamped says so explicitly, so a
+  // script paging past the offset ceiling learns it was capped instead of
+  // silently re-reading the same page forever.
+  res.json({
+    total,
+    total_is_capped: !!q && total >= COUNT_CAP,
+    page,
+    page_clamped: pageClamped,
+    limit,
+    data: rows,
+  });
 }));
 
 app.get('/api/logs/recent-critical', asyncHandler(async (req, res) => {
@@ -998,8 +1018,26 @@ app.post('/api/alerts/rules', requireAdmin, asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'threshold_count must be a positive integer' });
   if (match_severity && (!Array.isArray(match_severity) || match_severity.some(s => s < 0 || s > 7)))
     return res.status(400).json({ error: 'match_severity must be array of integers 0-7' });
+  // match_pattern / match_host are STORED REGEXES the collector executes against
+  // EVERY ingested syslog entry (checkAlertRules()). Validating syntax only —
+  // which is all this used to do — accepted `(a+)+$`, stored it, and then pinned
+  // a CPU core on every subsequent message, stalling the flush loop and halting
+  // ingestion: a stored ReDoS that blinds the SIEM and survives restarts.
+  // collector/safeRegex.js screens both (static shape check + a bounded,
+  // ramped empirical probe) and the collector additionally budgets and
+  // quarantines at match time. Read that module's header before changing this.
   if (match_pattern) {
-    try { new RegExp(match_pattern); } catch { return res.status(400).json({ error: 'Invalid match_pattern regex' }); }
+    const reason = unsafePatternReason(match_pattern, 'i');
+    if (reason) return res.status(400).json({ error: `Invalid match_pattern regex: ${reason}` });
+  }
+  if (match_host != null && match_host !== '') {
+    if (typeof match_host !== 'string' || match_host.length > 500)
+      return res.status(400).json({ error: 'Invalid match_host' });
+    // Screen the EXPANDED source the collector actually compiles ('%' -> '.*'),
+    // not the raw ILIKE-style string — otherwise we would be checking a
+    // different pattern than the one that runs.
+    const reason = unsafePatternReason(hostPatternToRegexSource(match_host), 'i');
+    if (reason) return res.status(400).json({ error: `Invalid match_host pattern: ${reason}` });
   }
   // MITRE technique IDs — technique-level (Txxxx) or sub-technique (Txxxx.yyy).
   let techniques = null;
@@ -1019,11 +1057,23 @@ app.post('/api/alerts/rules', requireAdmin, asyncHandler(async (req, res) => {
 }));
 
 app.patch('/api/alerts/rules/:id', requireAdmin, asyncHandler(async (req, res) => {
-  const { is_enabled } = req.body;
+  // Same class as the acknowledge routes' non-numeric-:id bug, found by the
+  // sweep for siblings: `req.params.id` and an unvalidated `is_enabled` both
+  // went straight to typed columns, so `PATCH /api/alerts/rules/abc` (or a
+  // non-boolean body) answered a 500 from Postgres 22P02 instead of a 400, and
+  // a missing rule answered 200 with `data: undefined` rather than a 404.
+  // Admin-only, so this was a correctness problem rather than an exposure.
+  const id = parseAckId(req.params.id);
+  if (id === null) return res.status(400).json({ error: 'Invalid rule id' });
+  const { is_enabled } = req.body || {};
+  if (typeof is_enabled !== 'boolean') {
+    return res.status(400).json({ error: 'is_enabled must be true or false' });
+  }
   const { rows } = await pool.query(
     'UPDATE alert_rules SET is_enabled=$1, updated_at=NOW() WHERE id=$2 RETURNING *',
-    [is_enabled, req.params.id]
+    [is_enabled, id]
   );
+  if (!rows.length) return res.status(404).json({ error: 'Rule not found' });
   res.json({ data: rows[0] });
 }));
 
@@ -1063,35 +1113,55 @@ app.get('/api/alerts/events', asyncHandler(async (req, res) => {
   res.json({ data: rows });
 }));
 
-app.patch('/api/alerts/events/:id/acknowledge', asyncHandler(async (req, res) => {
+// ── ALERT / ANOMALY ACKNOWLEDGEMENT (write) ──────────────────
+//
+// All four acknowledge routes (two here, two in the anomaly section) were
+// registered BARE until 2026-11: no role gate and — unlike every read path on
+// the same tables — no site filter. `rbacMiddleware` only ATTACHES req.rbac, it
+// never blocks, so "no guard" meant "any authenticated session, any site".
+//
+//   - acknowledge-all with an EMPTY body fell through to
+//     `UPDATE alert_events SET acknowledged=TRUE WHERE acknowledged=FALSE` —
+//     every open alert estate-wide, from a read-only `user` scoped to one site
+//     who could not even READ those alerts.
+//   - the single-id routes were a straight cross-site IDOR.
+//   - a non-numeric :id hit an int column and 500'd (Postgres 22P02).
+//
+// The gate is `requireAdmin` — LogVault's analogue of DDIVault's `requireWrite`
+// admin floor. LogVault has no site-scoped WRITER role (SpanVault's site_admin),
+// and `user` has no write capability anywhere else in this app. The site
+// predicate is applied ON TOP of the role gate anyway (a no-op for admins
+// today) so read scope and write scope are the same rule by construction, the
+// way SpanVault's alertWriteSiteClause argues they must be. Validation,
+// id parsing and the UPDATE itself live in api/ackScope.js — read its header
+// for why alert_events uses getAlertSiteFilter (source_host) and NOT
+// getSiteFilter (source_ip).
+app.patch('/api/alerts/events/:id/acknowledge', requireAdmin, asyncHandler(async (req, res) => {
+  const id = parseAckId(req.params.id);
+  if (id === null) return res.status(400).json({ error: 'Invalid alert id' });
   const ackBy = (req.rbac && req.rbac.userId) ? String(req.rbac.userId) : null;
-  await pool.query(
-    'UPDATE alert_events SET acknowledged=TRUE, acknowledged_at=NOW(), acknowledged_by=$2 WHERE id=$1',
-    [req.params.id, ackBy]
-  );
-  await writeAudit(pool, req, 'alert.acknowledge', { target: req.params.id });
-  res.json({ ok: true });
+  // ids=$1, ackBy=$2 → the site filter's first placeholder is $3.
+  const sf = getAlertSiteFilter(req.rbac, 3, 'ae');
+  const { sql, params } = buildAckUpdate('alert_events', [id], ackBy, sf);
+  const { rows } = await pool.query(sql, params);
+  if (!rows.length) return res.status(404).json({ error: 'Alert not found' });
+  await writeAudit(pool, req, 'alert.acknowledge', { target: String(id) });
+  res.json({ ok: true, acknowledged: rows.length });
 }));
 
-app.patch('/api/alerts/events/acknowledge-all', asyncHandler(async (req, res) => {
-  const { ids } = req.body;
+app.patch('/api/alerts/events/acknowledge-all', requireAdmin, asyncHandler(async (req, res) => {
+  // An empty/missing `ids` is a 400, NEVER "all" — see the block comment above.
+  const parsed = parseAckIds(req.body);
+  if (parsed.error) return res.status(400).json({ error: parsed.error });
   const ackBy = (req.rbac && req.rbac.userId) ? String(req.rbac.userId) : null;
-  let auditTarget;
-  if (ids && Array.isArray(ids) && ids.length > 0) {
-    await pool.query(
-      'UPDATE alert_events SET acknowledged=TRUE, acknowledged_at=NOW(), acknowledged_by=$2 WHERE id = ANY($1::int[])',
-      [ids, ackBy]
-    );
-    auditTarget = ids.join(',');
-  } else {
-    await pool.query(
-      'UPDATE alert_events SET acknowledged=TRUE, acknowledged_at=NOW(), acknowledged_by=$1 WHERE acknowledged=FALSE',
-      [ackBy]
-    );
-    auditTarget = 'all-open';
-  }
-  await writeAudit(pool, req, 'alert.acknowledge', { target: auditTarget });
-  res.json({ ok: true });
+  const sf = getAlertSiteFilter(req.rbac, 3, 'ae');
+  const { sql, params } = buildAckUpdate('alert_events', parsed.ids, ackBy, sf);
+  const { rows } = await pool.query(sql, params);
+  await writeAudit(pool, req, 'alert.acknowledge', {
+    target: parsed.ids.join(','),
+    detail: { requested: parsed.ids.length, acknowledged: rows.length },
+  });
+  res.json({ ok: true, requested: parsed.ids.length, acknowledged: rows.length });
 }));
 
 // Alert banner — most recent unacknowledged alerts
@@ -1267,24 +1337,14 @@ app.get('/api/logs/export', asyncHandler(async (req, res) => {
     LIMIT 10000
   `, params);
 
-  // Build CSV. esc() RFC-4180-quotes any field containing comma/quote/newline;
-  // clean() blanks out the firewall's "N/A" placeholders so columns stay analysis-friendly.
-  const esc = (v) => {
-    if (v == null) return '';
-    const s = String(v);
-    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const clean = (v) => (v == null || v === 'N/A' || v === '') ? '' : v;
-  const header = 'Time,Reporting Device,Reporting Device IP,Remote Source IP,Country,User,Category,Subcategory,Action,Subtype,Dest IP,Severity,Risk Score,Vendor,Program,Reason,Message\n';
-  const csvRows = rows.map(r => [
-    esc(r.received_at), esc(r.source_host), esc(r.source_ip),
-    esc(clean(r.remote_ip)), esc(clean(r.country)), esc(clean(r.usr)),
-    esc(r.category), esc(clean(r.subcategory)), esc(clean(r.action)), esc(clean(r.subtype)), esc(clean(r.dstip)),
-    esc(r.severity_label), r.risk_score != null ? r.risk_score : '',
-    esc(r.vendor), esc(r.program), esc(clean(r.reason)), esc(r.message),
-  ].join(','));
-
-  const csv = header + csvRows.join('\n');
+  // Build CSV via api/csv.js — NOT a local esc(). This route used to hand-roll
+  // its own escaper with RFC-4180 quoting and NO formula guard, while csv.js
+  // (whose docstring says every LogVault export must route through it) sat
+  // unimported here. `message` is attacker-controlled by design: anyone who can
+  // reach the unauthenticated syslog listener on 514 can plant
+  // `=cmd|' /C calc'!A1` and have it execute when an operator opens the export
+  // in Excel. Column order and the N/A-blanking are unchanged.
+  const csv = buildLogsExportCsv(rows);
   const filename = `logvault-export-${new Date().toISOString().slice(0, 10)}.csv`;
 
   // Data-exfiltration audit — record the filters used and how many rows left.
@@ -2179,37 +2239,38 @@ app.get('/api/anomalies/summary', asyncHandler(async (req, res) => {
   });
 }));
 
-// 3) Acknowledge a single anomaly. Mirrors /api/alerts/events/:id/acknowledge.
-app.patch('/api/anomalies/:id/acknowledge', asyncHandler(async (req, res) => {
+// 3) Acknowledge a single anomaly. Mirrors /api/alerts/events/:id/acknowledge —
+//    same requireAdmin gate, same 400-on-bad-id, same read-scope == write-scope
+//    rule. The filter here is anomalySiteFilter (the helper GET /api/anomalies
+//    itself uses: source_ip OR source_ip IS NULL), because user/behavioural
+//    anomalies legitimately have a NULL source_ip and are visible to everyone.
+app.patch('/api/anomalies/:id/acknowledge', requireAdmin, asyncHandler(async (req, res) => {
+  const id = parseAckId(req.params.id);
+  if (id === null) return res.status(400).json({ error: 'Invalid anomaly id' });
   const ackBy = (req.rbac && req.rbac.userId) ? String(req.rbac.userId) : null;
-  await pool.query(
-    'UPDATE anomaly_events SET acknowledged=TRUE, acknowledged_at=NOW(), acknowledged_by=$2 WHERE id=$1',
-    [req.params.id, ackBy]
-  );
-  await writeAudit(pool, req, 'anomaly.acknowledge', { target: req.params.id });
-  res.json({ ok: true });
+  const sf = anomalySiteFilter(req.rbac, 3, 'ae');
+  const { sql, params } = buildAckUpdate('anomaly_events', [id], ackBy, sf);
+  const { rows } = await pool.query(sql, params);
+  if (!rows.length) return res.status(404).json({ error: 'Anomaly not found' });
+  await writeAudit(pool, req, 'anomaly.acknowledge', { target: String(id) });
+  res.json({ ok: true, acknowledged: rows.length });
 }));
 
-// 4) Bulk-acknowledge anomalies. Mirrors /api/alerts/events/acknowledge-all.
-app.patch('/api/anomalies/acknowledge-all', asyncHandler(async (req, res) => {
-  const { ids } = req.body;
+// 4) Bulk-acknowledge anomalies. Mirrors /api/alerts/events/acknowledge-all,
+//    including the empty-`ids` 400 (never "all"). The Intelligence Console
+//    always sends explicit ids and returns early on an empty selection.
+app.patch('/api/anomalies/acknowledge-all', requireAdmin, asyncHandler(async (req, res) => {
+  const parsed = parseAckIds(req.body);
+  if (parsed.error) return res.status(400).json({ error: parsed.error });
   const ackBy = (req.rbac && req.rbac.userId) ? String(req.rbac.userId) : null;
-  let auditTarget;
-  if (ids && Array.isArray(ids) && ids.length > 0) {
-    await pool.query(
-      'UPDATE anomaly_events SET acknowledged=TRUE, acknowledged_at=NOW(), acknowledged_by=$2 WHERE id = ANY($1::int[])',
-      [ids, ackBy]
-    );
-    auditTarget = ids.join(',');
-  } else {
-    await pool.query(
-      'UPDATE anomaly_events SET acknowledged=TRUE, acknowledged_at=NOW(), acknowledged_by=$1 WHERE acknowledged=FALSE',
-      [ackBy]
-    );
-    auditTarget = 'all-open';
-  }
-  await writeAudit(pool, req, 'anomaly.acknowledge', { target: auditTarget });
-  res.json({ ok: true });
+  const sf = anomalySiteFilter(req.rbac, 3, 'ae');
+  const { sql, params } = buildAckUpdate('anomaly_events', parsed.ids, ackBy, sf);
+  const { rows } = await pool.query(sql, params);
+  await writeAudit(pool, req, 'anomaly.acknowledge', {
+    target: parsed.ids.join(','),
+    detail: { requested: parsed.ids.length, acknowledged: rows.length },
+  });
+  res.json({ ok: true, requested: parsed.ids.length, acknowledged: rows.length });
 }));
 
 // 5) UEBA top entities by risk score. Optional entity_type filter. RBAC-with-
@@ -2846,6 +2907,13 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.38.0': [
+    "Security: acknowledging alerts and anomalies now requires an administrator and is restricted to your assigned sites. Previously any signed-in user - including a read-only one scoped to a single site - could acknowledge an alert for a site they cannot even see, and acknowledging with no selection cleared every open alert in the whole estate in one call.",
+    "Security: an alert rule's match pattern is now checked for the kind of expression that can take exponential time, instead of only being checked for valid syntax. One such pattern stored in a rule would pin a CPU core on every single log line arriving afterwards and stall ingestion - a monitoring system blinded by a settings change. Patterns are also time-budgeted while matching and set aside if one proves slow in practice. The host-match field is checked the same way.",
+    "Security: exported CSVs now neutralise values that spreadsheet software would execute as a formula. A log line's text comes from whatever sends syslog, which is not authenticated, so a crafted message could run when an operator opened the export.",
+    "Security: the mail-settings test can no longer be used to probe arbitrary hosts and ports on your network, and no longer returns the target's own error text to the caller. The update-status endpoint now requires an administrator rather than being readable by anyone, and a failed update schedule no longer echoes its command line.",
+    "Fixed: a very large page number on the log list produced a query that scanned and discarded the entire index across every daily partition, which could exhaust the database connection pool. Page numbers are now bounded and the response says when one was adjusted.",
+  ],
   '2.37.7': [
     "Security: the internal API now refuses any request that does not come from this machine. It identifies the signed-in user from headers that the web layer attaches after checking the session, and those headers carry no signature of their own - so anything that could reach that port directly could claim to be an administrator and read settings, including the stored mail password. The port is not opened by the installer, so a correctly set up server was not exposed; this makes that guarantee part of the software rather than something that depends on the firewall staying as it was.",
     "Live Tail is unaffected: it connects to that same port on purpose and authenticates with its own short-lived signed ticket rather than with those headers.",
@@ -3584,12 +3652,32 @@ app.get('/api/system/update-available', (_req, res) => {
 // logs/last-update-status.json on every run (success or failure) - see the
 // script's Write-StatusJson function. This route just surfaces that file so the
 // frontend can show a banner the moment a failed update needs attention, without
-// anyone having to go looking at the updater's log files. Same public access
-// level as /api/system/update-available (no auth required) - matches its sibling
-// exactly, including the enforceLicense exemption below and proxy.ts's
-// PUBLIC_API_PATHS (both must list this path - see CLAUDE.md's "Adding a new
-// intentionally-public API route").
-app.get('/api/system/last-update-status', (_req, res) => {
+// anyone having to go looking at the updater's log files.
+//
+// ⛔ NOT PUBLIC, and NOT "the same access level as /api/system/update-available"
+// — that is what this comment used to claim, and it was wrong in a way that
+// mattered. update-available returns two version strings; THIS route spreads
+// the whole status file (`...status`), i.e. the stage reached, the error code,
+// the RAW updater error text, the rollback flag, and whatever install paths or
+// commit hashes the script happened to write. It was listed in proxy.ts's
+// PUBLIC_API_PATHS, so all of that was readable with no session at all.
+// SpanVault's frontend/src/middleware.ts explicitly REFUSES this exact route
+// for this exact reason — read the ⛔ comment there before re-adding it to any
+// allow-list.
+//
+// Both consumers already carry a session and are admin-only in the UI
+// (UpdateFailureBanner gates on session.user.role; the Settings update overlay
+// lives inside the super-admin-only Settings tab), so requireAdmin costs
+// nothing and makes the gate real at the Express layer too rather than relying
+// on the edge alone.
+//
+// DELIBERATE ASYMMETRY with the two-allow-list rule in CLAUDE.md ("Adding a new
+// intentionally-public API route"): it is no longer in PUBLIC_API_PATHS, but it
+// IS still in enforceLicense()'s exemptPaths. That rule governs routes meant to
+// work with NO SESSION; this one now requires one. The license exemption is
+// kept on purpose so an admin can still see WHY an update failed while the
+// licence is in a disabled state — exactly when they most need to.
+app.get('/api/system/last-update-status', requireAdmin, (_req, res) => {
   const statusPath = path.join(appRoot, 'logs', 'last-update-status.json');
   if (!fs.existsSync(statusPath)) {
     return res.json({ exists: false });
@@ -3754,9 +3842,14 @@ app.post('/api/system/update', requireSuperAdmin, asyncHandler(async (req, res) 
     await writeAudit(pool, req, 'system.update', { detail: { version } });
     res.json({ started: true });
   } catch (err) {
+    // Generic to the client, detail to the log. `err.message` from a failed
+    // execSync embeds the FULL command line — the install path and SERVER_IP —
+    // so echoing it handed back server internals for a failure the caller can
+    // do nothing with anyway. The audit row keeps the real message (audit_log
+    // is super-admin-only) and the server log keeps the stack.
     console.error('[Update] schtasks error:', err.message);
     await writeAudit(pool, req, 'system.update', { result: 'error', detail: { message: err.message } });
-    res.status(500).json({ error: 'Failed to schedule update: ' + err.message });
+    res.status(500).json({ error: 'Failed to schedule the update. Check the API log for details.' });
   }
 }));
 
@@ -3800,14 +3893,47 @@ app.post('/api/settings', requireSuperAdmin, asyncHandler(async (req, res) => {
 }));
 
 // Send a test email immediately using the provided (unsaved) SMTP settings.
+//
+// This endpoint takes a host and port from the request body and opens a
+// connection to them, which makes it an INTERNAL PORT SCANNER unless two
+// things hold. It used to hold neither:
+//   - the host/port went into nodemailer with NO validation at all, so
+//     {"smtp_host":"10.0.0.5","smtp_port":6379} was a perfectly good probe; and
+//   - the failure path returned nodemailer's `err.message` verbatim, and those
+//     messages are distinguishable per outcome (connection refused vs timeout
+//     vs "unexpected greeting" from a non-SMTP service), which is the actual
+//     disclosure: not OUR secret, but the TARGET's banner.
+// The password was already never echoed; that part was fine.
+//
+// Fixed by validating the shape here and returning a GENERIC failure, with the
+// real reason logged server-side. Private/RFC1918 targets are deliberately NOT
+// blocked — an on-prem SMTP relay at 192.168.x.x is the normal case for this
+// product, so a private-range block would break the feature for most installs.
+// With no response oracle the probe learns nothing from a reply; the residual
+// channel is TIMING (a refused port answers faster than a filtered one), which
+// is accepted and noted rather than papered over.
+const SMTP_HOST_RE = /^[a-zA-Z0-9]([a-zA-Z0-9._-]{0,252}[a-zA-Z0-9])?$/;
+
 app.post('/api/settings/test-email', requireSuperAdmin, asyncHandler(async (req, res) => {
   const { to, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from } = req.body;
   if (!to || typeof to !== 'string') {
     return res.status(400).json({ error: 'Recipient address (to) is required' });
   }
-  const override = smtp_host
-    ? { host: smtp_host, port: smtp_port, user: smtp_user, pass: smtp_pass, from: smtp_from }
-    : undefined;
+  let override;
+  if (smtp_host) {
+    // Hostname/IPv4 shape only: letters, digits, dot, dash, underscore. This
+    // also rejects the "host:port", URL, and comma-list forms a scanner would
+    // otherwise smuggle through, and anything nodemailer might read as a
+    // socket path or an alternate transport.
+    if (typeof smtp_host !== 'string' || !SMTP_HOST_RE.test(smtp_host)) {
+      return res.status(400).json({ error: 'Invalid SMTP host' });
+    }
+    const port = parseInt(smtp_port == null || smtp_port === '' ? '587' : smtp_port, 10);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      return res.status(400).json({ error: 'Invalid SMTP port' });
+    }
+    override = { host: smtp_host, port, user: smtp_user, pass: smtp_pass, from: smtp_from };
+  }
   const result = await testEmail(to, pool, override);
   // Audit the recipient + outcome only — never the SMTP credentials.
   await writeAudit(pool, req, 'settings.test_email', {
@@ -3817,7 +3943,13 @@ app.post('/api/settings/test-email', requireSuperAdmin, asyncHandler(async (req,
   if (result.ok) {
     res.json({ ok: true });
   } else {
-    res.status(400).json({ error: result.error || 'Failed to send test email' });
+    // The admin still learns the one thing they need — it worked, or it didn't
+    // — but the target's response text stays on the server.
+    console.error('[test-email] send failed:', result.error);
+    res.status(400).json({
+      error: 'Could not send the test email. Check the SMTP host, port and credentials; '
+           + 'the server log has the full error.',
+    });
   }
 }));
 

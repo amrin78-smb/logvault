@@ -4,7 +4,7 @@ Two surfaces:
 - **Express API** (`api/server.js`, port 3005 internal-only) — the real API, 74 routes. Express has no `dynamic` export concept; force-dynamic check N/A for all of these.
 - **Next.js routes** (`frontend/src/app/api/`) — 1 route, NextAuth only.
 
-Auth model (frontend/src/proxy.ts): every `/api/*` request is proxied to Express with `X-User-Id`/`X-User-Role` stamped from the verified session token. Only 5 EXACT paths bypass the session check: `/api/health`, `/api/stats`, `/api/license-status`, `/api/system/update-available`, `/api/system/last-update-status` — sub-paths (e.g. `/api/stats/summary`) are NOT covered by the `/api/stats` allow-list entry and still require a session. `[auth]` below = requires session; `[admin]`/`[super-admin]` = also gated by `requireAdmin`/`requireSuperAdmin` in api/rbac.js.
+Auth model (frontend/src/proxy.ts): every `/api/*` request is proxied to Express with `X-User-Id`/`X-User-Role` stamped from the verified session token. Only 4 EXACT paths bypass the session check: `/api/health`, `/api/stats`, `/api/license-status`, `/api/system/update-available` — (`/api/system/last-update-status` WAS on this list and was removed 2026-11: it spreads the whole updater status file, i.e. stage/error-code/raw-error-text/rollback-flag, and was readable with no session; do not re-add it) — sub-paths (e.g. `/api/stats/summary`) are NOT covered by the `/api/stats` allow-list entry and still require a session. `[auth]` below = requires session; `[admin]`/`[super-admin]` = also gated by `requireAdmin`/`requireSuperAdmin` in api/rbac.js.
 
 ## Next.js (frontend/src/app/api/)
 GET/POST /api/auth/[...nextauth] [public] [external] — NextAuth handler, exports from @/auth
@@ -44,8 +44,8 @@ PUT /api/alert-rules/:id/notify [admin] [db] — update per-rule email recipient
 POST /api/alerts/rules [admin] [db] — create alert rule
 PATCH /api/alerts/rules/:id [admin] [db] — enable/disable rule
 GET /api/alerts/events [auth] [db] — fired alerts, optional ?hours window
-PATCH /api/alerts/events/:id/acknowledge [auth] [db] — ack one alert
-PATCH /api/alerts/events/acknowledge-all [auth] [db] — bulk ack (all open, or specific ids)
+PATCH /api/alerts/events/:id/acknowledge [admin] [db] — ack one alert. Site-scoped via getAlertSiteFilter (ae.source_host), 400 on a non-numeric id, 404 when the id is outside the caller's sites
+PATCH /api/alerts/events/acknowledge-all [admin] [db] — bulk ack of an EXPLICIT id list. An empty/missing `ids` is a 400, NEVER "all open" (it used to be, unguarded — see api/ackScope.js)
 GET /api/alerts/events/recent-unacked [auth] [db] — top 5 unacked, for AlertBanner
 GET /api/alerts/events/:id/logs [auth] [db] — underlying syslog rows behind a fired alert (correlation-rule lookback window)
 
@@ -84,8 +84,8 @@ GET /api/security/failed-logins-by-country [auth] [db] [external] — geo-mapped
 ## Express — Anomalies (Phase 2 UEBA)
 GET /api/anomalies [auth] [db] — anomaly_events list, filters hours/type/severity/acknowledged
 GET /api/anomalies/summary [auth] [db] — 24h totals + unacked + by-type/severity breakdown
-PATCH /api/anomalies/:id/acknowledge [auth] [db] — ack one anomaly
-PATCH /api/anomalies/acknowledge-all [auth] [db] — bulk ack
+PATCH /api/anomalies/:id/acknowledge [admin] [db] — ack one anomaly. Site-scoped via anomalySiteFilter, 400 on a non-numeric id, 404 when out of scope
+PATCH /api/anomalies/acknowledge-all [admin] [db] — bulk ack of an EXPLICIT id list; empty/missing `ids` is a 400, never "all"
 
 ## Express — UEBA
 GET /api/ueba/top [auth] [db] — top entities by risk score, reads entity_risk
@@ -116,7 +116,7 @@ GET /api/license-status [public] [external] — license state from NocVault hub 
 GET /api/health [public] [db] — liveness + version + logs_last_hour + collector{status,age_seconds,listeners,listeners_down} (staleness-evaluated from the app_settings collector_status heartbeat; ALWAYS HTTP 200 — the collector field degrades to status:unknown rather than changing the status code)
 GET /api/system/update-available [public] [external] — git-commit-hash update check (git transport, not GitHub API)
 GET /api/system/update-status [super-admin] [external] — in-progress update status
-GET /api/system/last-update-status [public] [db=file] — reads logs/last-update-status.json written by Update-LogVault.ps1's Write-StatusJson (BOM-stripped defensively); {exists:false} if the file doesn't exist yet. Feeds UpdateFailureBanner.
+GET /api/system/last-update-status [admin] [db=file] — NOT public (see the auth note at the top); still license-exempt on purpose so an admin can see why an update failed while the licence is disabled. reads logs/last-update-status.json written by Update-LogVault.ps1's Write-StatusJson (BOM-stripped defensively); {exists:false} if the file doesn't exist yet. Feeds UpdateFailureBanner.
 POST /api/system/update [super-admin] [external] — trigger update via detached SYSTEM scheduled task; 409 if logs/update.lock shows one is already running (PID still alive) — mirrors Update-LogVault.ps1's own concurrency-guard lock file
 GET /api/ws-ticket [auth] — RBAC-scoped ticket for the Live Tail WebSocket
 
