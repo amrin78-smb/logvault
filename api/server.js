@@ -59,6 +59,72 @@ app.use((req, res, next) => {
   next();
 });
 
+// ── LOOPBACK-ONLY HTTP SURFACE (defence in depth) ─────────────
+// Every identity this API acts on comes from the X-User-Id / X-User-Role
+// headers that frontend/src/proxy.ts stamps AFTER verifying the next-auth
+// session JWE (see rbac.js). Those headers carry no signature or secret, so
+// any caller that can open a TCP connection to this port is whatever role it
+// cares to claim - including super_admin, which reaches GET /api/settings
+// (smtp_pass and abuseipdb_api_key in cleartext for a super_admin), every
+// requireSuperAdmin route including POST /api/system/update, and an
+// admin-scoped Live Tail ticket from GET /api/ws-ticket.
+//
+// rbac.js's header comment has always ASSERTED "the API is internal-only
+// (port 3005, never firewalled open), so proxy.ts is the sole trusted
+// caller" - and nothing in the code enforced it. It rested entirely on the
+// host firewall: the suite installer opens 3000/3004/514/1514 (plus
+// 3006/3008/3010/3011 for the siblings) and deliberately never opens 3005.
+// So one hand-added "let me curl the API" rule, one disabled firewall
+// profile, or any local / container / VM-neighbour process turned the whole
+// API into an unauthenticated super_admin surface. This middleware makes the
+// assertion true IN PROCESS, so the firewall becomes a second layer instead
+// of the only one.
+//
+// Both siblings instead bind their Express listener to 127.0.0.1
+// (ddivault/api/server.js, spanvault/api/server.js). LOGVAULT CANNOT: the
+// Live Tail WebSocket shares this very http.Server, and the browser dials it
+// DIRECTLY at ws://<host>:3005/ws/live (frontend/src/components/LiveTail.tsx),
+// so a loopback bind would take Live Tail off the air. Gating the Express
+// surface instead closes the hole without touching the WS:
+//   - a WebSocket upgrade never traverses Express middleware at all (Node
+//     emits 'upgrade', not 'request', once an Upgrade header is present), and
+//   - Live Tail does not use header identity anyway - it presents the
+//     HMAC-signed, 30-second, random-per-process ticket that GET
+//     /api/ws-ticket issues through the authenticated proxy.
+//
+// remoteAddress is the real TCP peer, so unlike an X-Forwarded-For check this
+// cannot be spoofed by a header. There is deliberately no allow-list env var:
+// proxy.ts's API_BASE defaults to 127.0.0.1 and the suite sets LV_API_URL
+// nowhere, so every legitimate caller is already loopback. A split-host
+// deployment would need a deliberate feature here, not a quiet exception.
+//
+// Do NOT "simplify" this into a 127.0.0.1 listen() to match the siblings -
+// that is the one change that looks like tidying and silently kills Live Tail.
+function isLoopbackAddress(addr) {
+  if (!addr) return false;
+  // Node reports an IPv4 peer on a dual-stack socket as ::ffff:127.0.0.1.
+  const a = addr.startsWith('::ffff:') ? addr.slice(7) : addr;
+  return a === '::1' || a === '127.0.0.1' || /^127\.\d+\.\d+\.\d+$/.test(a);
+}
+
+let nonLoopbackRefused = 0;
+let nonLoopbackLoggedAt = 0;
+app.use((req, res, next) => {
+  if (isLoopbackAddress(req.socket && req.socket.remoteAddress)) return next();
+  // Aggregate the log line: a port scan must not be able to fill the disk
+  // through this path (same reasoning as the collector's drop counters).
+  nonLoopbackRefused++;
+  const now = Date.now();
+  if (now - nonLoopbackLoggedAt > 60000) {
+    console.warn('[SECURITY] Refused ' + nonLoopbackRefused +
+      ' non-loopback request(s) to the internal API in the last minute; most recent: ' +
+      req.method + ' ' + req.path + ' from ' + req.socket.remoteAddress);
+    nonLoopbackLoggedAt = now;
+    nonLoopbackRefused = 0;
+  }
+  res.status(403).json({ error: 'Forbidden' });
+});
+
 // ── CORS — restrict to frontend origin only ───────────────────
 const allowedOrigin = process.env.LV_APP_URL || 'http://localhost:3004';
 app.use(cors({ origin: allowedOrigin, credentials: true }));
@@ -2780,6 +2846,10 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.37.7': [
+    "Security: the internal API now refuses any request that does not come from this machine. It identifies the signed-in user from headers that the web layer attaches after checking the session, and those headers carry no signature of their own - so anything that could reach that port directly could claim to be an administrator and read settings, including the stored mail password. The port is not opened by the installer, so a correctly set up server was not exposed; this makes that guarantee part of the software rather than something that depends on the firewall staying as it was.",
+    "Live Tail is unaffected: it connects to that same port on purpose and authenticates with its own short-lived signed ticket rather than with those headers.",
+  ],
   '2.37.6': [
     "Hardening: a failed update whose own rollback also failed left behind the last intact copy of the working install - and the next update attempt deleted it before snapshotting its own broken copy. The next attempt now stops and says where that copy is instead.",
   ],

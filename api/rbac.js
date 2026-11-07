@@ -10,8 +10,20 @@
  * User identity reaches this Express API via the X-User-Id / X-User-Role
  * request headers, which are set by the Next.js edge middleware
  * (frontend/src/proxy.ts) AFTER it verifies the NextAuth session token via
- * getToken(). The API is internal-only (port 3005, never firewalled open), so
- * the proxy is the sole trusted caller. We deliberately do NOT decode the
+ * getToken().
+ *
+ * THESE HEADERS ARE UNSIGNED, so the proxy can only be the sole trusted caller
+ * if nothing else can reach this port. This comment used to assert that as a
+ * fact ("internal-only, port 3005, never firewalled open") - and nothing in the
+ * code enforced it; it rested entirely on the host firewall never gaining a
+ * rule for 3005. api/server.js now enforces it in process: a request whose TCP
+ * peer is not loopback is refused with 403 before this middleware ever runs.
+ * See the "LOOPBACK-ONLY HTTP SURFACE" block there, including why LogVault
+ * gates the Express surface rather than binding the listener to 127.0.0.1 the
+ * way DDIVault and SpanVault do (the Live Tail WebSocket shares that listener
+ * and the browser dials it directly).
+ *
+ * We deliberately do NOT decode the
  * NextAuth session cookie here: next-auth v4 JWE-encrypts the JWT, so a plain
  * jsonwebtoken.decode() cannot read it.
  *
