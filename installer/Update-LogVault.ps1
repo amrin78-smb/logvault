@@ -958,8 +958,9 @@ Write-Step "Checking LogVault integrity key"
 
 # ⛔ THIS UPDATER CARRIED NO REFERENCE TO LOG_INTEGRITY_KEY AT ALL. The suite
 # installer (net-vault\installer\Install-NocVault-Suite.ps1) generates one per
-# install and writes it to both .env.local files and the LogVault-Collector service
-# environment, where it keys the tamper-evident HMAC chain over syslog_entries. A
+# install and writes it to secrets.env, the ROOT .env.local and the
+# LogVault-Collector service environment, where it keys the tamper-evident HMAC
+# chain over syslog_entries. A
 # LogVault provisioned BEFORE the installer gained that key - and thereafter only
 # ever updated from here - never gets one: collector.js takes the
 # INTEGRITY_ENABLED=false path, stores NULL prev_hash/entry_hash on every row, and
@@ -1032,8 +1033,18 @@ if (-not $lvIntegrityKey) {
 # left alone: when the key came from there it is the authority and the files are
 # merely brought into line, and when it did not, nothing is pinned that could shadow
 # these files on a later run.
+#
+# ⛔ THE ROOT .env.local ONLY - NOT the frontend's. The ONLY readers of
+# LOG_INTEGRITY_KEY are collector\collector.js and scripts\verify-integrity.js,
+# both of which run from the repo root and load the root file; nothing under
+# frontend\ reads it, and the suite installer does not write it there either (it
+# writes secrets.env, the root .env.local and the LogVault-Collector service
+# env). Copying it into frontend\.env.local would put the HMAC key that the whole
+# tamper-evidence claim rests on into the environment of a process that has no use
+# for it - a wider blast radius for a stolen file, bought for nothing. Parity with
+# the installer means the files the installer actually writes.
 $lvKeyWrites = @()
-foreach ($lvEnvFile in @($rootEnvPath, $frontendEnvPath)) {
+foreach ($lvEnvFile in @($rootEnvPath)) {
     if (-not $lvEnvFile) { continue }
     if (-not (Test-Path -LiteralPath $lvEnvFile)) { continue }
     $lvRaw = ''

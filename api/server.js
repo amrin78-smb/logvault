@@ -2907,6 +2907,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.39.1': [
+    "The integrity key provisioned in 2.39.0 is now written only to the file the collector actually reads, instead of also being copied into the web frontend's configuration where nothing uses it.",
+  ],
   '2.39.0': [
     "The updater now provisions the tamper-evidence key for the log hash chain if this installation does not have one, and never replaces a key that is already in use. An installation provisioned before the key existed, and only ever updated since, had the hash chain silently disabled - so the integrity check had nothing to verify. The key is reported by location only, never by value.",
   ],
