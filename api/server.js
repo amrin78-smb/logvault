@@ -2911,6 +2911,10 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.39.3': [
+    "Fixed: the NetVault asset sync has never worked. Every run failed on its very first database query and no device was ever imported, so log sources were never enriched with their device name, vendor, model or site - and because site membership is what scopes a non-administrator's view, site-restricted users could not see logs that should have been visible to them. The cause was a filter comparing an IP-address column against an empty string, which the database rejects outright for that column type.",
+    "The error this produced said \"Failed to connect to NetVault DB\", which pointed at credentials or networking rather than at the query. Connection failures and query failures are now reported differently.",
+  ],
   '2.39.2': [
     "Fixed: the health check this server publishes took up to 2.8 seconds to answer, because the one-hour log count it reports made PostgreSQL examine every daily partition before planning the query - work that took roughly 1.6 seconds and returned nothing, since the count itself completes in a fraction of a millisecond. The NocVault hub gives each app 3 seconds to answer, so LogVault intermittently showed as \"Unavailable\" on the suite dashboard, and the dashboard's Overall Status read \"Critical\", while LogVault was running perfectly. The check now answers in about 25 milliseconds.",
     "Fixed: the same pattern in the brute-force analysis and in the storage widget's 24-hour and 7-day row counts, which paid the same hidden cost on every load.",

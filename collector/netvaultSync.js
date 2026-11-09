@@ -75,7 +75,16 @@ async function syncFromNetVault(lvPool) {
       LEFT JOIN brands b ON b.id = d.brand_id
       LEFT JOIN sites  s ON s.id = d.site_id
       WHERE d.ip_address IS NOT NULL
-        AND d.ip_address != ''
+        -- ⛔ btrim(...::text), NOT `!= ''`. netvault.devices.ip_address is an
+        -- INET column, so comparing it to the empty string makes PostgreSQL cast
+        -- '' to inet and the WHOLE QUERY dies with
+        --   invalid input syntax for type inet: ""
+        -- Not one device ever synced, on any install: measured on a fresh suite
+        -- install 2026-11-09, 19 eligible devices and 0 rows in known_hosts from
+        -- this sync. The guard was written for a TEXT column and is a no-op on an
+        -- inet one (an inet can never BE empty) - casting to text first keeps it
+        -- harmless if the column type ever changes back.
+        AND btrim(d.ip_address::text) <> ''
         AND d.device_status != 'Decommed'
       ORDER BY d.name
     `);
@@ -149,8 +158,13 @@ async function syncFromNetVault(lvPool) {
     console.log(`[NetVaultSync] Done — ${synced} synced, ${skipped} skipped in ${elapsed}ms`);
 
   } catch (err) {
-    // NetVault DB unreachable — log but don't crash collector
-    console.error('[NetVaultSync] Failed to connect to NetVault DB:', err.message);
+    // ⛔ SAY WHICH IT WAS. This read "Failed to connect to NetVault DB" for
+    // every failure, so a BROKEN QUERY was reported as a connectivity/credentials
+    // problem - and the inet bug above sat behind that wording, sending anyone who
+    // looked at NETVAULT_DB_* env vars that were perfectly fine.
+    const connErr = /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EHOSTUNREACH|password authentication|does not exist|no pg_hba/i.test(err.message || '');
+    if (connErr) console.error('[NetVaultSync] Failed to connect to NetVault DB:', err.message);
+    else         console.error('[NetVaultSync] Asset sync FAILED (reached the database; the sync itself errored):', err.message);
   }
 }
 
