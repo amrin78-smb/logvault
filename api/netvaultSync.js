@@ -45,7 +45,7 @@ async function syncFromNetVault(lvPool) {
     FROM devices d
     LEFT JOIN brands b ON b.id = d.brand_id
     LEFT JOIN sites  s ON s.id = d.site_id
-    -- ⛔ btrim(...::text), NOT `!= ''` - devices.ip_address is INET and comparing
+    -- ⛔ btrim(...::text), NOT a bare != '' comparison - ip_address is INET and comparing
     -- it to '' makes PostgreSQL cast '' to inet, killing the whole query with
     -- "invalid input syntax for type inet". Same bug, same fix, as
     -- collector/netvaultSync.js - see the longer note there.

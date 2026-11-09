@@ -75,7 +75,15 @@ async function syncFromNetVault(lvPool) {
       LEFT JOIN brands b ON b.id = d.brand_id
       LEFT JOIN sites  s ON s.id = d.site_id
       WHERE d.ip_address IS NOT NULL
-        -- ⛔ btrim(...::text), NOT `!= ''`. netvault.devices.ip_address is an
+        -- ⛔ NO BACKTICKS ANYWHERE IN THIS COMMENT. It lives inside a JS
+        -- template literal, so a backtick ENDS the string: a PAIR of them turns
+        -- the following segment into a tagged template, which calls the
+        -- preceding value as a function. It is valid syntax, so node --check
+        -- PASSES it, and the query then dies at runtime with
+        --     "" is not a function
+        -- which names nothing useful. Measured twice here, the second time while
+        -- writing this very comment.
+        -- ⛔ btrim(...::text), NOT a bare != '' comparison. devices.ip_address is an
         -- INET column, so comparing it to the empty string makes PostgreSQL cast
         -- '' to inet and the WHOLE QUERY dies with
         --   invalid input syntax for type inet: ""
