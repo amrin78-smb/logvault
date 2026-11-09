@@ -1105,8 +1105,14 @@ display, never used for filtering/pagination) switched from an exact
 `pg_class.reltuples` (planner statistics, refreshed by autovacuum/`ANALYZE`)
 summed across the partition tree — the same approximate-count trade-off
 Postgres's own `\dt+`/`pg_stat_user_tables` make. `rows_24h`/`rows_7d` stay
-exact `COUNT(*)` — those are already cheap, bounded scans via the
-`received_at` index over only 1-7 days of partitions.
+exact `COUNT(*)`, but **they now pass an explicit cutoff computed in JS, not
+`NOW() - make_interval`** — the scan really is a cheap, bounded 1-7 days via the
+`received_at` index, but that was only ever true of EXECUTION. `now()` is STABLE,
+not constant, so the planner could not prune at plan time and opened all ~99
+partitions on every call (measured 2026-11-09: 1.6-2.0 s of PLANNING for 0.3 ms of
+execution, and no cheaper warm). The sentence that used to live here called these
+"already cheap" and that is exactly why the cost hid for so long — read a cost claim
+as being about execution unless it says otherwise.
 
 `/api/stats/top-destinations` and `/api/reports`' `mitre-coverage`/
 `security-summary` still query raw `syslog_entries` — still true, unchanged

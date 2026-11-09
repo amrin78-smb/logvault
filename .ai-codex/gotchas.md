@@ -104,3 +104,37 @@ from the start: `last-update-status.json` recording `success:false` AND
 `rolledBack:false` is exactly the "ROLLBACK ALSO FAILED" state. They restart the
 services and the TLS front door first, so aborting does not also leave the app
 down on top of the bad state being reported.
+
+### ⛔ `now() - INTERVAL` on a partitioned table costs ~2s of PLANNING per call
+
+`now()` is **STABLE, not constant**, so the planner cannot prune `syslog_entries`'
+daily partitions at plan time: it opens and considers every one of them and leaves
+the executor to discard them (`Subplans Removed: 90` in the plan). Measured on
+production 2026-11-09, ~99 partitions:
+
+| bound | planning | execution |
+|---|---|---|
+| `received_at > now() - INTERVAL '24 hours'` | **1611-1963 ms** | 0.3 ms |
+| the same instant as a constant/parameter | **2.4 ms** | 0.23 ms |
+
+**Warm was no faster than cold** (1963 ms with only 1115 buffers hit) — this is
+planner CPU, not I/O, so it never caches away and no amount of RAM helps. Compute
+the cutoff in JS and pass it as a parameter; most of `api/server.js` already does
+(`const since = new Date(Date.now() - hours * 3600 * 1000)`).
+
+**⛔ And keep it an UNNAMED statement — never add `name:` to such a query.**
+PostgreSQL custom-plans the first 5 executions of a *named* prepared statement and
+then tries a generic plan, which cannot prune either. Measured on one connection:
+`13, 12, 15, 12, 11, **1268**, 12, 13 ms`. node-postgres uses unnamed statements
+unless a `name` is given, so a plain parameter is safe — the trap is only the
+"optimisation" of naming it.
+
+**What it cost us.** `/api/health` still carried the `now()` form and ran
+1.23-2.80 s live, against the NocVault hub's **3 s** probe budget — so a perfectly
+healthy LogVault intermittently rendered "Unavailable" on the launcher and took the
+whole suite's Overall Status to "Critical". The apps were never the problem; the
+hub's probe gave up and had no way to say "slow" rather than "dead". Four call
+sites still had the old shape (`/api/health`, `/api/security/brute-force`'s two
+CTEs, `/api/stats/storage`'s `rows_24h`/`rows_7d`) long after ~20 others were
+fixed and commented — **a fixed instance is not a fixed class; grep for the shape,
+not for the endpoint that was reported.**

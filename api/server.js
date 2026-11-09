@@ -809,10 +809,10 @@ app.get('/api/stats/storage', asyncHandler(async (req, res) => {
         pg_size_pretty(sz.bytes) AS table_size,
         sz.bytes AS table_size_bytes,
         (SELECT COALESCE(SUM(c.reltuples), 0)::bigint FROM pg_partition_tree('syslog_entries') pt JOIN pg_class c ON c.oid = pt.relid) AS total_rows,
-        (SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => 24)) AS rows_24h,
-        (SELECT COUNT(*) FROM syslog_entries WHERE received_at > NOW() - make_interval(days => 7)) AS rows_7d
+        (SELECT COUNT(*) FROM syslog_entries WHERE received_at > $1) AS rows_24h,
+        (SELECT COUNT(*) FROM syslog_entries WHERE received_at > $2) AS rows_7d
       FROM sz
-    `),
+    `, [new Date(Date.now() - 24 * 3600 * 1000), new Date(Date.now() - 7 * 86400 * 1000)]),
     // Reads syslog_stats_rollup (Phase 1) instead of raw syslog_entries — legitimate
     // work either way (not a bug, ~920-1057ms live scanning ~2M rows via index-only
     // scans across 7 partitions), but the rollup already answers this exactly and
@@ -1950,12 +1950,16 @@ app.get('/api/security/brute-force', asyncHandler(async (req, res) => {
   // subcategory already covers, while forcing an expensive 3-way BitmapOr plan on
   // every partition. known_hosts join uses host(ip_address) on the shape-guarded
   // real-source key.
+  // Explicit cutoff, not NOW() - make_interval: syslog_entries has ~99 daily
+  // partitions and only a real parameter value lets the planner prune at plan
+  // time. Measured on production 2026-11-09: 1611-1963ms planning -> 2.4ms.
+  const since = new Date(Date.now() - hours * 3600 * 1000);
   const { rows } = await pool.query(`
     WITH failures AS (
       SELECT COALESCE(structured_data->>'srcip', source_ip::text) AS source_ip,
         MIN(received_at) AS first_fail, MAX(received_at) AS last_fail, COUNT(*) AS fail_count,
         COUNT(DISTINCT structured_data->>'user') AS distinct_users
-      FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $1)
+      FROM syslog_entries WHERE received_at > $1
         AND structured_data->>'subcategory' IN ('login_failed','auth_failed')
       ${sf.clause}
       GROUP BY COALESCE(structured_data->>'srcip', source_ip::text)
@@ -1963,7 +1967,7 @@ app.get('/api/security/brute-force', asyncHandler(async (req, res) => {
     successes AS (
       SELECT COALESCE(structured_data->>'srcip', source_ip::text) AS source_ip,
         MIN(received_at) AS success_time, message AS success_msg
-      FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => $2)
+      FROM syslog_entries WHERE received_at > $2
         AND structured_data->>'subcategory' = 'login_success'
       ${sf.clause}
       GROUP BY COALESCE(structured_data->>'srcip', source_ip::text), message
@@ -1978,7 +1982,7 @@ app.get('/api/security/brute-force', asyncHandler(async (req, res) => {
       ON f.source_ip ~ '^[0-9.]+$' AND host(kh.ip_address) = f.source_ip
     WHERE f.fail_count >= 3
     ORDER BY success_after_failure DESC, f.fail_count DESC LIMIT 50
-  `, [hours, hours, ...sf.params]);
+  `, [since, since, ...sf.params]);
   res.json({ data: rows });
 }));
 
@@ -2907,6 +2911,10 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.39.2': [
+    "Fixed: the health check this server publishes took up to 2.8 seconds to answer, because the one-hour log count it reports made PostgreSQL examine every daily partition before planning the query - work that took roughly 1.6 seconds and returned nothing, since the count itself completes in a fraction of a millisecond. The NocVault hub gives each app 3 seconds to answer, so LogVault intermittently showed as \"Unavailable\" on the suite dashboard, and the dashboard's Overall Status read \"Critical\", while LogVault was running perfectly. The check now answers in about 25 milliseconds.",
+    "Fixed: the same pattern in the brute-force analysis and in the storage widget's 24-hour and 7-day row counts, which paid the same hidden cost on every load.",
+  ],
   '2.39.1': [
     "The integrity key provisioned in 2.39.0 is now written only to the file the collector actually reads, instead of also being copied into the web frontend's configuration where nothing uses it.",
   ],
@@ -4051,8 +4059,29 @@ async function collectorStatus() {
   }
 }
 
+// ⛔ THE ONE-HOUR BOUND IS COMPUTED IN JS AND PASSED AS A PARAMETER. It must
+// NOT go back to an inline `NOW() - make_interval(...)`, however much more
+// readable that looks. `now()` is STABLE, not a constant, so the planner cannot
+// prune syslog_entries' ~99 daily partitions at PLAN time: it opens every one of
+// them and leaves the executor to discard them ("Subplans Removed: 90").
+// Measured on production 2026-11-09: 1611-1963 ms of PLANNING for a query whose
+// execution is 0.3 ms, and a warm run was no faster than a cold one because the
+// cost is planner CPU, not I/O - it never caches away. That put this endpoint at
+// 1.23-2.80 s against the hub's 3 s probe budget, so a perfectly healthy LogVault
+// intermittently rendered as "Unavailable" on the launcher and took the whole
+// suite's Overall Status to "Critical" with it.
+//
+// ⛔ AND IT MUST STAY AN *UNNAMED* STATEMENT - never add `name:` to this query.
+// PostgreSQL custom-plans the first 5 executions of a named prepared statement and
+// then tries a generic plan, which cannot prune either. Measured, same connection:
+// 13, 12, 15, 12, 11, **1268**, 12, 13 ms. node-postgres uses unnamed statements
+// unless a `name` is given, which is why the parameter below is safe.
 app.get('/api/health', asyncHandler(async (req, res) => {
-  const { rows } = await pool.query(`SELECT COUNT(*) AS total FROM syslog_entries WHERE received_at > NOW() - make_interval(hours => 1)`);
+  const since = new Date(Date.now() - 60 * 60 * 1000);
+  const { rows } = await pool.query(
+    `SELECT COUNT(*) AS total FROM syslog_entries WHERE received_at > $1`,
+    [since],
+  );
   res.json({ status: 'ok', version, logs_last_hour: parseInt(rows[0].total), collector: await collectorStatus() });
 }));
 
