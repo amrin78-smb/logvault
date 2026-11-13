@@ -404,17 +404,45 @@ async function testEmail(toAddress, pool, override) {
 /**
  * Which SMTP transport is actually in force, for the Settings UI.
  *
- * Deliberately NARROW: it returns the source and, for a hub transport, only the
- * host/port/secure an admin needs in order to recognise it. It NEVER returns a
- * username or a password, so no caller of this can leak a credential even by
- * accident — `getSmtpSettings` (which does carry them) stays internal to the
- * send path.
+ * Returns the source plus the four facts the Settings transport panel states
+ * about whichever transport is LIVE — server, connection mode, username and
+ * whether the certificate is checked. The same four are reported for a hub
+ * transport and for a legacy local one: an operator reading the panel is asking
+ * the same question in both states, and the suite answers it the same way in
+ * all four apps (ddivault/frontend/src/components/SmtpSettings.tsx is the
+ * canonical panel).
+ *
+ * ⛔ NEVER returns the password, and nothing derived from it. `username` is an
+ * address, not a secret — but it is still operator detail, so the ROUTE
+ * (GET /api/settings) withholds everything but `source` from anyone who is not
+ * a super_admin, exactly as it already does for the hub host/port and for
+ * smtp_pass. `getSmtpSettings` (which does carry the password) stays internal
+ * to the send path.
+ *
+ * Both derived fields are computed with the SAME expression the send path uses,
+ * so the panel cannot claim something buildTransport() does not do:
+ *   secure            — `secureExplicit ? secure : port === 465`. A hub config
+ *                       carries a real stored boolean; a local one has no such
+ *                       column and keeps the historical port===465 derivation.
+ *   allow_self_signed — `!!cfg.allowSelfSigned`, the ONE flag buildTransport()
+ *                       reads before turning TLS verification off. resolveSmtp()
+ *                       never sets it for a local config (app_settings has no
+ *                       such key), so a legacy local transport always verifies —
+ *                       that is a fact about the send path, not a default.
  */
 async function getSmtpStatus(pool) {
   try {
     const cfg = await getSmtpSettings(pool);
-    if (!cfg || cfg.source !== 'hub') return { source: 'local' };
-    return { source: 'hub', host: cfg.host, port: cfg.port, secure: !!cfg.secure };
+    if (!cfg) return { source: 'local' };
+    return {
+      source:            cfg.source === 'hub' ? 'hub' : 'local',
+      // An empty host is "no transport at all", and the panel reads it as such.
+      host:              cfg.host || '',
+      port:              cfg.port,
+      secure:            cfg.secureExplicit ? !!cfg.secure : cfg.port === 465,
+      username:          cfg.user || '',
+      allow_self_signed: !!cfg.allowSelfSigned,
+    };
   } catch (err) {
     console.error('[Email] Failed to resolve the SMTP source:', err.message);
     return { source: 'local' };

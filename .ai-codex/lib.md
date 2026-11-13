@@ -65,7 +65,7 @@ collector/suiteSmtp.js
 
 collector/emailer.js
   sendAlertEmail / shouldSendEmail / testEmail — unchanged contracts
-  getSmtpStatus(pool) -> {source, host?, port?, secure?} — what GET /api/settings reports. Deliberately narrow: NEVER returns a username or password (getSmtpSettings, which does, stays module-private)
+  getSmtpStatus(pool) -> {source, host, port, secure, username, allow_self_signed} — what GET /api/settings reports: the four facts <SmtpTransportNotice> states about the LIVE transport, for a local source as well as a hub one (2.41.2). ⛔ NEVER returns the password or anything derived from it (getSmtpSettings, which does carry it, stays module-private); `username` is not a secret but is gated to super_admins BY THE ROUTE. `secure` and `allow_self_signed` are computed with the SAME expressions buildTransport() uses, so the panel cannot claim something the send path does not do — a local config has neither column, so it keeps the `port === 465` derivation and always verifies certificates
   getSmtpSettings is now hub-aware via suiteSmtp.resolveSmtp; buildTransport() uses cfg.secure VERBATIM when cfg.secureExplicit is set (a hub config) and only then falls back to the historical `port === 465` derivation
 
 ## Frontend (frontend/src/lib/)

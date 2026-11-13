@@ -218,6 +218,25 @@ not for the endpoint that was reported.**
   /api/settings` withholds them from a non-super_admin and returns `{ source }`
   alone, so the hub state renders without naming a host for those roles. Render it
   conditionally; do not assume `status.host` exists whenever `source === 'hub'`.
+  Since 2.41.2 the same applies to the whole four-fact set (`secure`, `username`,
+  `allow_self_signed` too): it is withheld as a SET, and the panel drops its grid
+  rather than printing placeholder rows. **Withheld is not unknown** — never fill
+  a missing fact with a plausible default; a transport panel that guesses
+  "Certificate checking: Enforced" is worse than one that says nothing.
+- **A colour chosen against the page background is not legible on a tint wash.**
+  The transport panels sit on `--tint-info` / `--tint-warn`, and the link colours
+  that read fine on `--bg-card` do not: measured against this stylesheet,
+  `var(--blue)` is 3.03:1 and `var(--primary)` 2.66:1 on the dark warn tint, both
+  under the 4.5:1 body-text floor. Anything placed on a tint panel must inherit
+  that panel's `--tint-*-fg` and be distinguished by weight/underline/size instead
+  (6.16–9.09:1 across both themes). Same trap as `--canvas-light`, from the other
+  direction — and the obvious later "fix" is to reach for a brand colour again.
+- **JSX eats the space around an expression container that can render nothing.**
+  In `SmtpTransportNotice` the fact grid is `null` for a non-super_admin, and the
+  sentences either side of `{facts}` ran together as "suite.Change the server"
+  because JSX strips whitespace between a text line and an expression. The
+  explicit `{' '}` before each `{facts}` is load-bearing. It is invisible in the
+  state everyone tests (a super_admin, where the grid is a block element).
 - **The hub link is derived, never hardcoded.** `getHubUrl()` (`lib/publicUrl.ts`)
   builds it from `window.location`, so it follows whatever hostname the browser
   actually used. The deep link is `/settings?tab=notifications`, which NetVault's

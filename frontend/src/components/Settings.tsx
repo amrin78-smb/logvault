@@ -28,13 +28,21 @@ interface Settings {
   abuseipdb_api_key:         string;
 }
 
-// Returned alongside `data` by GET /api/settings. `host`/`port`/`secure` are
-// only present for a super_admin and only when the source is 'hub'.
+// Returned alongside `data` by GET /api/settings: which mail transport is
+// actually in force, plus the four facts the panel below states about it.
+//
+// ⛔ Everything except `source` is withheld from anyone who is not a
+// super_admin, and it is withheld as a SET — present or absent together. Treat
+// it that way: a half-read of this object would print some facts beside silently
+// missing ones. There is deliberately no password here and nothing derived from
+// one (collector/emailer.js :: getSmtpStatus).
 interface SmtpStatus {
   source: 'hub' | 'local';
   host?:  string;
   port?:  number;
   secure?: boolean;
+  username?: string;
+  allow_self_signed?: boolean;
 }
 
 const CARD  = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 20, boxShadow: 'var(--shadow-sm)' };
@@ -55,9 +63,6 @@ const INPUT_SM = { padding: '9px 12px', borderRadius: 'var(--radius-sm)', border
   boxSizing: 'border-box' as const, maxWidth: 140 };
 const INPUT_MD = { ...INPUT_SM, maxWidth: 220 };
 const SECTION_HEADER = { fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 16 };
-// For a host:port read back to the admin — one mono stack, from the token, never
-// a hardcoded font-family.
-const MONO = { fontFamily: 'var(--font-mono)' };
 // A settings panel paired with a short "what this actually does" explainer,
 // for the handful of sections whose behavior isn't obvious from the form
 // alone. The aside sticks just below the fixed 72px header while its (often
@@ -412,74 +417,182 @@ function UpdateOverlay() {
 //   none     — nothing from the hub and no local row. No alert email can be
 //              sent, and it cannot be fixed from this page.
 //
-// "No transport from the hub" is deliberately not phrased as "NetVault has none
-// configured": collector/suiteSmtp.js also reports 'local' when the hub DB is
-// unreachable, when the hub predates smtp_config, or when its password will not
-// decrypt. The page cannot tell those apart and must not assert the one it
-// guessed. (`status` is null only when the whole GET /api/settings failed, in
-// which case no setting on this page loaded either.)
+// ⛔ ONE SHAPE FOR ALL THREE SATELLITES. The titles, the four facts and the body
+// copy below are shared verbatim with DDIVault and SpanVault — the canonical one is
+// ddivault/frontend/src/components/SmtpSettings.tsx. Only the app name is
+// adapted. The facts are there because prose cannot carry four of them without
+// becoming a paragraph, and because an operator needs all four: which server,
+// which connection mode, whether the relay is authenticated, and whether the
+// certificate is actually checked. Two differently-worded statements of one fact
+// read as two different facts, which is exactly what three hand-written panels
+// produced; do not re-word one app's copy on its own.
 //
-// Declared at module scope on purpose — a component defined inside Settings()
-// is a new type on every render, which remounts its whole subtree.
-function SmtpTransportNotice({ status, localHost, localPort }: {
+// ⛔ THE SETTINGS RAIL ALREADY SAYS MAIL IS MANAGED IN NETVAULT. This panel says
+// WHICH SERVER IS CARRYING YOUR MAIL RIGHT NOW. Do not restate ownership here in
+// a louder voice — that duplicate-voice problem was fixed once already (2.41.1).
+//
+// ⛔ THE COPY SAYS WHAT IS TRUE, NOT WHY. The legacy and none states say "No
+// suite mail server is reaching LogVault" — NOT "NetVault has no suite mail
+// server switched on", which an earlier draft of the shared spec asserted.
+// collector/suiteSmtp.js resolves to 'local' for FOUR different reasons: the hub
+// genuinely has none enabled, the hub DB is unreachable, the hub predates
+// smtp_config, or its password will not decrypt. This page cannot tell them
+// apart, so naming one of them would be a guess printed as a fact — and the
+// three wrong ones all describe a hub that is fine and a link that is broken,
+// which sends an admin to the wrong screen.
+// The wording is still identical in all three apps: one state, one sentence.
+// The warn-once [SuiteSMTP] line in the collector log is what distinguishes the
+// four causes, and that is the right place for it.
+//
+// (`status` is null only when the whole GET /api/settings failed, in which case
+// no setting on this page loaded either.)
+
+// Calm informational panel — tokenized so it flips with the theme.
+const NOTE: React.CSSProperties = {
+  background:   'var(--tint-info)',
+  color:        'var(--tint-info-fg)',
+  border:       '1px solid var(--border)',
+  borderRadius: 'var(--radius-sm)',
+  padding:      '14px 16px',
+  marginBottom: 18,
+  fontSize:     'var(--text-base)',
+  lineHeight:   1.55,
+};
+
+// The same panel on the warn tint — used where the effective transport is a
+// state an administrator should act on (a legacy local row, or nothing at all).
+const NOTE_WARN: React.CSSProperties = { ...NOTE, background: 'var(--tint-warn)', color: 'var(--tint-warn-fg)' };
+
+const NOTE_TITLE: React.CSSProperties = { fontWeight: 700, marginBottom: 6, fontSize: 'var(--text-md)' };
+
+// Read-only fact grid inside a transport panel: label on the left, value right.
+const FACTS: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'max-content 1fr',
+  columnGap: 14,
+  rowGap: 6,
+  margin: '12px 0',
+  fontSize: 'var(--text-base)',
+};
+
+const FACT_LABEL: React.CSSProperties = {
+  // --text-secondary, not --text-muted: measured 4.37:1 on the light --tint-info
+  // wash, just under the 4.5:1 floor. 13px/600 is not WCAG large text, so the
+  // exemption does not apply. Changed in all three apps at once - one app
+  // quietly altering a shared token is how the divergence started.
+  color: 'var(--text-secondary)', fontWeight: 600, whiteSpace: 'nowrap',
+};
+
+const FACT_VALUE: React.CSSProperties = {
+  color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all',
+};
+
+// ⛔ The link INHERITS the panel's own foreground token and is distinguished by
+// weight + underline, never by hue. A link colour is chosen against the page
+// background; these panels sit on the info/warn washes, and a colour picked for
+// one background is not legible on another — the same trap as --canvas-light,
+// from the other direction. Measured against this stylesheet in dark mode:
+// var(--primary) on the warn tint is 2.66:1 and var(--blue) 3.03:1, both under
+// the 4.5:1 body-text floor; inheriting gives 8.89:1 on info and 10.86:1 on warn
+// (6.16 / 4.84 in light). The obvious future "fix" is to reach for a brand
+// colour again — don't.
+const HUB_LINK: React.CSSProperties = {
+  color: 'inherit', fontWeight: 600, textDecoration: 'underline',
+};
+
+// One read-only fact row.
+// ⛔ Module scope, like everything else here — a component declared inside
+// another component is a brand-new type on every render, so React remounts its
+// whole subtree (and anything focused inside it loses focus).
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <>
+      <div style={FACT_LABEL}>{label}</div>
+      <div style={FACT_VALUE}>{children}</div>
+    </>
+  );
+}
+
+// Certificate-checking wording, shared by both configured states so they cannot
+// drift apart. `allowSelfSigned === true` is the ONE rule buildTransport applies
+// (collector/emailer.js).
+function certText(allowSelfSigned: boolean): string {
+  return allowSelfSigned
+    ? 'Not enforced — any certificate is accepted, including an expired or impersonated one'
+    : 'Enforced';
+}
+
+function SmtpTransportNotice({ status, localHost }: {
   status:    SmtpStatus | null;
   localHost: string;
-  localPort: string;
 }) {
   // Always derive the hub origin from the browser's current hostname — never a
   // hardcoded host and never the install-time env bake-in (lib/publicUrl.ts).
-  const hubLink  = getHubUrl() + '/settings?tab=notifications';
+  const hubLink = getHubUrl() + '/settings?tab=notifications';
+  const link = (
+    <a href={hubLink} target="_blank" rel="noopener noreferrer" style={HUB_LINK}>
+      NetVault → Settings → Notifications
+    </a>
+  );
+
   const fromHub  = status?.source === 'hub';
+  // The hub's answer wins whenever the API resolved to it; otherwise a non-empty
+  // local host is the live fallback. `localHost` rather than `status.host`
+  // because a non-super_admin is given `{ source }` alone — it must still be
+  // told that a legacy server is carrying its mail.
   const hasLocal = !!localHost.trim();
 
-  // A non-super_admin gets `{ source }` alone from the API — the host and port
-  // are withheld. Name the server when we have it, stay quiet when we do not.
-  const hubWhere = status?.host
-    ? <> (<span style={MONO}>{status.host}:{status.port}</span>)</>
-    : null;
+  // The four facts, or null when the API withheld them (not a super_admin).
+  // Withheld is NOT unknown: the panel drops the grid rather than printing four
+  // placeholder rows for a reader who is not allowed to see any of them.
+  // ⛔ The `{' '}` before each {facts} below is load-bearing: JSX strips the
+  // whitespace between a text line and an expression container, so with the grid
+  // absent the two sentences would run together as "suite.Change".
+  const facts = status && status.host ? (
+    <div style={FACTS}>
+      <Fact label="Server">{status.host}:{status.port}</Fact>
+      <Fact label="Connection">{status.secure ? 'TLS / SSL' : 'STARTTLS or plain'}</Fact>
+      <Fact label="Username">{status.username || '(none — unauthenticated)'}</Fact>
+      <Fact label="Certificate checking">{certText(!!status.allow_self_signed)}</Fact>
+    </div>
+  ) : null;
 
-  const tint  = fromHub ? 'var(--tint-info)' : 'var(--tint-warn)';
-  const tintFg = fromHub ? 'var(--tint-info-fg)' : 'var(--tint-warn-fg)';
+  if (fromHub) {
+    return (
+      <div style={NOTE}>
+        <div style={NOTE_TITLE}>Sending through the NocVault suite mail server</div>
+        Alerts and digests are delivered through the mail server configured once for the
+        whole NocVault suite.{' '}
+        {facts}
+        Change the server in {link}. LogVault keeps its own sender identity and its own
+        delivery switch, below.
+      </div>
+    );
+  }
 
-  const title = fromHub  ? 'Sending through the NetVault mail server'
-              : hasLocal ? 'Sending through this app\'s own legacy mail server'
-              :            'No mail server is configured';
+  if (hasLocal) {
+    return (
+      <div style={NOTE_WARN}>
+        <div style={NOTE_TITLE}>Sending through a mail server stored in LogVault</div>
+        No suite mail server is reaching LogVault, so it is falling back to the
+        server saved in its own settings by an earlier release.{' '}
+        {facts}
+        These values are <strong>no longer editable here</strong> — a mail server is now
+        configured for the whole suite in {link}. This one keeps working until one is set
+        up there, which then takes over.
+      </div>
+    );
+  }
 
   return (
-    <div style={{ background: tint, border: '1px solid var(--border)',
-      borderRadius: 'var(--radius-sm)', padding: '12px 14px', marginBottom: 18 }}>
-      <div style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: tintFg, marginBottom: 4 }}>
-        {title}
+    <div style={NOTE_WARN}>
+      <div style={NOTE_TITLE}>No mail server configured</div>
+      No suite mail server is reaching LogVault, and LogVault has none of its own. Until
+      one is configured, alerts and digests <strong>will not be delivered</strong> and Send
+      Test Email will fail.
+      <div style={{ marginTop: 10 }}>
+        Set one up in {link}. LogVault cannot be pointed at a mail server from this page.
       </div>
-      <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-        {fromHub ? (
-          <>
-            The mail server is configured once in NetVault for the whole suite{hubWhere}, so
-            there is nothing to enter here. The From address below stays with LogVault, so
-            alerts still arrive as LogVault rather than as a generic suite sender.
-          </>
-        ) : hasLocal ? (
-          <>
-            No mail server is reaching LogVault from NetVault, so LogVault is still sending
-            through the server saved here previously
-            (<span style={MONO}>{localHost}{localPort ? ':' + localPort : ''}</span>). That
-            server is live, but it is no longer editable in LogVault. Turn on the suite mail
-            server in NetVault and it takes over automatically — within five minutes, with no
-            restart.
-          </>
-        ) : (
-          <>
-            No mail server is reaching LogVault from NetVault, and LogVault has no server of
-            its own, so no alert email can be sent. Turn the suite mail server on in NetVault
-            and LogVault picks it up automatically — within five minutes, with no restart.
-          </>
-        )}
-      </div>
-      <a href={hubLink}
-        style={{ display: 'inline-block', marginTop: 10, fontSize: 'var(--text-sm)', fontWeight: 600,
-          color: 'var(--primary)', textDecoration: 'underline' }}>
-        Open NetVault → Settings → Notifications
-      </a>
     </div>
   );
 }
@@ -913,8 +1026,7 @@ export default function Settings() {
 
             <SmtpTransportNotice
               status={smtpStatus}
-              localHost={settings.smtp_host}
-              localPort={settings.smtp_port} />
+              localHost={settings.smtp_host} />
 
             <div style={{ marginBottom: 4 }}>
               <label style={LABEL}>From Address</label>

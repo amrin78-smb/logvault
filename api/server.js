@@ -2911,6 +2911,15 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.41.2': [
+    "The mail-server panel no longer says the suite mail server is switched off when it cannot actually tell. LogVault falls back to its own settings for several reasons - none configured on the hub, the hub unreachable, an older hub, or a password it cannot read - and naming the wrong one would send you to the wrong screen. It now states what is true: no suite mail server is reaching LogVault.",
+    "The labels in that panel were a shade too light to read comfortably against its tinted background, measured just under the accessibility threshold. They are now a step darker.",
+    "The Email Alerts page now states the mail server carrying LogVault's alerts as a short list of facts instead of a sentence: the server and port, whether the connection is TLS/SSL or STARTTLS, the username the relay authenticates with (or that it is unauthenticated), and whether the mail server's certificate is actually checked. The last of those is a real setting that can be turned off centrally, and it was previously impossible to see from LogVault at all.",
+    "Those same four facts are now shown for a mail server still stored in LogVault from an earlier release, not only for the central one - the fallback server is live config and is now described in exactly as much detail as the server that replaced it.",
+    "LogVault, DDIVault and SpanVault now word this panel identically, down to the name of the thing: it is 'the NocVault suite mail server' in all three. Three products describing one mail server three different ways read as three different mail servers.",
+    "The transport facts are shown only to a super administrator, the same line already drawn around the stored mail password; other administrators see which server is in use but not its details.",
+    "Nothing about mail delivery changed - this release only changes what the page tells you about it.",
+  ],
   '2.41.1': [
     "Settings now uses a grouped list down the left side instead of a row of tabs across the top, matching NetVault and the rest of the suite. General and Email Alerts sit under System - the two pages that change how this installation behaves - and Updates and About sit under Software, which only describes the build that is running. On a narrow screen the list folds back into a single wrapping row.",
     "A standing line at the top of that list points out that users, sign-on, licence and the mail server are managed in NetVault, with a link straight there. An administrator looking for one of those four used to find nothing and reasonably conclude LogVault was missing it; they are genuinely kept in one place for the whole suite, and now the page says so.",
@@ -3902,6 +3911,10 @@ app.get('/api/settings', asyncHandler(async (req, res) => {
   if (!req.rbac || !req.rbac.isSuperAdmin) {
     delete data.smtp_pass;
     delete data.abuseipdb_api_key;
+    // The legacy local SMTP username is not a secret, but it is the same kind
+    // of operator detail as the `smtp` block's `username` below — withholding
+    // it there while handing it out here would make that gate decorative.
+    delete data.smtp_user;
   }
 
   // Which SMTP transport is actually in force (suite SMTP centralization,
@@ -3911,10 +3924,14 @@ app.get('/api/settings', asyncHandler(async (req, res) => {
   // and a second request for one string would be a second thing to keep in
   // step with the settings it describes.
   //
-  // getSmtpStatus never returns a username or password, and the hub host/port
-  // are still withheld from non-super_admins — the same line this route
-  // already draws around smtp_pass. The bare source is safe for everyone: it
-  // is the difference between two Settings captions.
+  // getSmtpStatus never returns a password or anything derived from one. It
+  // DOES return the four facts the transport panel states — server, connection
+  // mode, username, certificate checking — for whichever transport is live, and
+  // those are withheld from non-super_admins here, the same line this route
+  // already draws around smtp_pass. The bare source is safe for everyone: it is
+  // the difference between two Settings captions. Strip the detail as a SET —
+  // the panel drops its whole fact grid when it is absent, and a half-populated
+  // object would print facts next to missing ones.
   let smtp = { source: 'local' };
   try {
     smtp = await getSmtpStatus(pool);
