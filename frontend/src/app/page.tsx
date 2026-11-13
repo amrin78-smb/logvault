@@ -514,9 +514,12 @@ export default function Home() {
                 ))}
               </div>
 
-              {/* Section sub-tabs. Underline bar matching Settings.tsx — LogVault builds
-                  this inline rather than via a .settings-tabs class, which only exists in
-                  ddivault. Kept consistent with this app rather than importing a new idiom. */}
+              {/* Section sub-tabs — an inline underline bar, built here rather than via a
+                  .settings-tabs class (that one only exists in ddivault). This used to be
+                  described as "matching Settings.tsx"; it no longer is — Settings moved to
+                  the suite-standard grouped left rail (.settings-layout) in 2.41.1. These
+                  sections stay an underline bar on purpose: they switch VIEWS of one
+                  dashboard, not kinds of setting, and there is nothing to group them by. */}
               <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14, flexWrap: 'wrap' }}>
                 {DASH_SECTIONS.map(sec => (
                   <button key={sec.id} onClick={() => selectDashSection(sec.id)}

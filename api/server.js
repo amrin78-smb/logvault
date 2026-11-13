@@ -2911,6 +2911,12 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.41.1': [
+    "Settings now uses a grouped list down the left side instead of a row of tabs across the top, matching NetVault and the rest of the suite. General and Email Alerts sit under System - the two pages that change how this installation behaves - and Updates and About sit under Software, which only describes the build that is running. On a narrow screen the list folds back into a single wrapping row.",
+    "A standing line at the top of that list points out that users, sign-on, licence and the mail server are managed in NetVault, with a link straight there. An administrator looking for one of those four used to find nothing and reasonably conclude LogVault was missing it; they are genuinely kept in one place for the whole suite, and now the page says so.",
+    "The 'no mail server at all' notice on the Email Alerts page no longer repeats, in different words, what the new line above it already says - it now states what to do about it instead.",
+    "Nothing moved between pages and no setting changed: every tab holds exactly what it held before.",
+  ],
   '2.41.0': [
     "The Email Alerts settings page no longer asks for a mail server. The SMTP host, port, username and password fields have been removed: the mail server is now configured once in NetVault for the whole suite, so three separate products no longer each look like they need their own filled in.",
     "In their place the page states which mail server is actually carrying LogVault's alerts - the one configured in NetVault (named, with a link straight to it), a server saved in LogVault previously that is still in use because NetVault has none turned on, or none at all. A server that is still sending is never hidden just because it can no longer be edited here.",

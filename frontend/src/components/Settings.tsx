@@ -470,8 +470,8 @@ function SmtpTransportNotice({ status, localHost, localPort }: {
         ) : (
           <>
             No mail server is reaching LogVault from NetVault, and LogVault has no server of
-            its own, so no alert email can be sent. The mail server is configured once in
-            NetVault for the whole suite — it cannot be set here.
+            its own, so no alert email can be sent. Turn the suite mail server on in NetVault
+            and LogVault picks it up automatically — within five minutes, with no restart.
           </>
         )}
       </div>
@@ -738,7 +738,33 @@ export default function Settings() {
     setTesting(false);
   };
 
-  const TABS = [{ id: 'system', label: 'General' }, { id: 'email', label: 'Email Alerts' }, { id: 'updates', label: 'Updates' }, { id: 'about', label: 'About' }];
+  const TAB_LABEL: Record<string, string> = {
+    system:  'General',
+    email:   'Email Alerts',
+    updates: 'Updates',
+    about:   'About',
+  };
+
+  // Grouped settings sub-navigation (NocVault suite-standard chrome — the same
+  // .settings-layout rail netvault/ddivault/spanvault use).
+  //
+  // Two groups for four tabs, and the split is conceptual rather than a
+  // halving: SYSTEM holds the tabs that change how this installation BEHAVES
+  // (what the collector enriches, who gets told when an alert fires), SOFTWARE
+  // holds the two that only describe the product itself — which build is
+  // running and whether a newer one exists. Nothing under SOFTWARE configures
+  // LogVault, and nothing under SYSTEM is a fact about the build.
+  //
+  // There is deliberately no role filter here: LogVault gates Settings as a
+  // WHOLE in page.tsx (`tab === 'settings' && isAdmin`) and has no per-tab role
+  // gate, so there is none to carry over and no group can ever come out empty.
+  // If a per-tab gate is ever added it must go on the content block AND here
+  // AND the sessionStorage deep-link handler above — a nav filter alone only
+  // hides the button.
+  const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
+    ['System',   ['system', 'email']],
+    ['Software', ['updates', 'about']],
+  ];
 
   const hasUpdateError = !!updateStatus?.error;
   const upToDate       = !hasUpdateError && !!updateStatus?.up_to_date;
@@ -748,26 +774,42 @@ export default function Settings() {
     <div style={{ width: '100%' }}>
       <PageHeader title="Settings" subtitle="System configuration and email alerts" />
 
-      {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 20, flexWrap: 'wrap' }}>
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => setActiveTab(t.id as any)}
-            style={{ padding: '10px 18px', fontSize: 'var(--text-md)', background: 'none', border: 'none',
-              borderBottom: '2px solid transparent', marginBottom: -1, cursor: 'pointer',
-              color: activeTab === t.id ? 'var(--primary)' : 'var(--text-muted)',
-              fontWeight: activeTab === t.id ? 600 : 500,
-              borderBottomColor: activeTab === t.id ? 'var(--primary)' : 'transparent' }}>
-            {t.label}
-            {t.id === 'updates' && updateAvail && (
-              <span title="Update available"
-                style={{ display: 'inline-block', width: 7, height: 7,
-                  // intentional: 50% keeps the 7x7 update-available status dot a circle
-                  borderRadius: '50%',
-                  background: '#dc2626', marginLeft: 6, verticalAlign: 'middle' }} />
-            )}
-          </button>
-        ))}
-      </div>
+      <div className="settings-layout">
+        <nav className="settings-nav" aria-label="Settings sections">
+          {/* Standing hub pointer. LogVault has no user management, no SSO
+              config, no licence screen and — since 2.41.0 — no mail server
+              field. All four genuinely live on the hub, so without this line an
+              admin hunting one of them reads its absence as "LogVault is
+              missing it" rather than "it is next door". Quiet chrome on
+              purpose: this is a signpost, not a warning. */}
+          <div className="settings-nav-hub">
+            Users, sign-on, licence and mail are managed in{' '}
+            <a href={getHubUrl()}>NetVault →</a>
+          </div>
+
+          {GROUPS.map(([group, tabs]) => (
+            <div className="settings-nav-group" key={group}>
+              <div className="settings-nav-label">{group}</div>
+              {tabs.map(t => (
+                <button key={t} type="button"
+                  className="settings-nav-item"
+                  aria-current={activeTab === t ? 'page' : undefined}
+                  onClick={() => setActiveTab(t as any)}>
+                  <span style={{ flex: 1, minWidth: 0 }}>{TAB_LABEL[t]}</span>
+                  {t === 'updates' && updateAvail && (
+                    <span title="Update available" aria-label="Update available"
+                      style={{ display: 'inline-block', width: 7, height: 7,
+                        // intentional: 50% keeps the 7x7 update-available status dot a circle
+                        borderRadius: '50%',
+                        background: 'var(--red)', flexShrink: 0 }} />
+                  )}
+                </button>
+              ))}
+            </div>
+          ))}
+        </nav>
+
+        <div className="settings-panel">
 
       {activeTab === 'system' && (
         <>
@@ -1353,6 +1395,8 @@ export default function Settings() {
           </div>
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 }

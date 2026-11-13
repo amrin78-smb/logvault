@@ -36,6 +36,12 @@
   --sidebar-width:  240px;
   --header-height:  72px;
 
+  /* 8px spacing rhythm (4px allowed for fine adjustment) — suite-wide scale,
+     values copied from net-vault/app/globals.css. Use the token, never a
+     literal px, so the rhythm stays one knob across the suite. */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+
   /* Type scale (NocVault suite-wide standard — sizes do not change per theme) */
   --text-xs:   11px;   /* table headers, badges, micro-labels */
   --text-sm:   12px;   /* secondary labels, captions */
@@ -497,4 +503,67 @@ option {
   0%   { box-shadow: 0 0 0 0 rgba(200,16,46,0.3); }
   70%  { box-shadow: 0 0 0 8px rgba(200,16,46,0); }
   100% { box-shadow: 0 0 0 0 rgba(200,16,46,0); }
+}
+
+/* ── Settings: grouped left-rail sub-navigation ────────────────
+   The NocVault suite-standard Settings chrome, copied verbatim from
+   net-vault/app/globals.css so all four apps' Settings pages are the same
+   shape. Replaces a horizontal strip of tabs with a grouped left rail: the
+   groups are conceptual (different KINDS of setting), not a cosmetic split.
+   Collapses above the content on narrow screens rather than forcing a
+   two-column layout onto a phone. */
+.settings-layout {
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr);
+  gap: var(--space-8);
+  align-items: start;
+}
+.settings-nav { position: sticky; top: calc(var(--header-height) + 16px); }
+.settings-nav-group { margin-bottom: var(--space-5); }
+.settings-nav-label {
+  font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-muted);
+  padding: 0 10px 6px;
+}
+.settings-nav-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 8px 10px; margin-bottom: 1px;
+  border: none; background: none; cursor: pointer;
+  border-radius: var(--radius-sm);
+  font-family: inherit; font-size: var(--text-md);
+  color: var(--text-secondary); text-align: left;
+}
+.settings-nav-item:hover { background: var(--surface-subtle); color: var(--text-primary); }
+.settings-nav-item[aria-current="page"] {
+  background: var(--primary-light);
+  color: var(--primary);
+  font-weight: 600;
+}
+.settings-nav-count {
+  font-size: var(--text-xs); color: var(--text-muted);
+  background: var(--surface-subtle); border: 1px solid var(--border);
+  border-radius: var(--radius-pill); padding: 1px 7px; flex-shrink: 0;
+}
+.settings-panel { min-width: 0; }
+
+/* The standing hub pointer at the top of the rail. Quiet chrome — a signpost
+   for the admin hunting a setting that lives on the hub, deliberately NOT
+   styled as an alert (no tint, no border, no icon). */
+.settings-nav-hub {
+  font-size: var(--text-sm); color: var(--text-muted);
+  line-height: 1.5; padding: 0 10px; margin-bottom: var(--space-5);
+}
+.settings-nav-hub a { color: var(--primary); font-weight: 600; text-decoration: none; }
+.settings-nav-hub a:hover { text-decoration: underline; }
+
+@media (max-width: 900px) {
+  .settings-layout { grid-template-columns: 1fr; gap: var(--space-5); }
+  .settings-nav { position: static; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .settings-nav-group { margin-bottom: 0; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .settings-nav-label { padding: 0 4px 0 0; }
+  .settings-nav-item { width: auto; }
+  /* The nav is a wrapping flex row here, so the pointer has to claim a whole
+     line of its own — otherwise it sits inline with the first group's buttons
+     and reads as one of them. */
+  .settings-nav-hub { flex: 0 0 100%; padding: 0; margin-bottom: var(--space-3); }
 }
