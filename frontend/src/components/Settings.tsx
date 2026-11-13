@@ -7,10 +7,13 @@ import { PageHeader } from './ui';
 interface Settings {
   dns_server:         string;
   dns_lookup_enabled: string;
+  // READ-ONLY here. The mail SERVER is owned by the NetVault hub (suite SMTP
+  // centralization, net-vault/docs/nocvault-smtp-centralization-plan.md §3), so
+  // these two are kept only to NAME a legacy local transport that is still
+  // carrying mail — never to edit it. smtp_user/smtp_pass are deliberately not
+  // in this shape at all: nothing on this page may read or write them.
   smtp_host:          string;
   smtp_port:          string;
-  smtp_user:          string;
-  smtp_pass:          string;
   smtp_from:          string;
   smtp_enabled:       string;
   email_notify_enabled:      string;
@@ -46,18 +49,15 @@ const INPUT = { width: '100%', padding: '9px 12px', borderRadius: 'var(--radius-
   boxSizing: 'border-box' as const };
 // Short/medium fixed-width variants of INPUT for fields whose values are inherently short
 // (port numbers, IPs, hour-of-day, masked passwords) -- prevents them from stretching to
-// fill an ad hoc grid cell (e.g. the SMTP Port field, previously unbounded, filling a 1fr column).
+// fill an ad hoc grid cell (a bare port or hour field, previously unbounded, filled a 1fr column).
 const INPUT_SM = { padding: '9px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
   background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'var(--text-md)', outline: 'none',
   boxSizing: 'border-box' as const, maxWidth: 140 };
 const INPUT_MD = { ...INPUT_SM, maxWidth: 220 };
 const SECTION_HEADER = { fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 16 };
-// Replaces a two-column `display:'grid'` row that mixes a capped (INPUT_SM/INPUT_MD)
-// field with a normal (INPUT) field. Fields flow at their own width instead of two
-// forced-equal grid columns, so a capped-width field doesn't leave a dead gap before
-// the next field. Apply `{ flex: '0 0 auto' }` to a capped field's wrapper and
-// `{ flex: '1 1 220px' }` to a normal field's wrapper (see call sites below).
-const ROW_COMPACT = { display: 'flex', flexWrap: 'wrap' as const, gap: '16px 32px' };
+// For a host:port read back to the admin — one mono stack, from the token, never
+// a hardcoded font-family.
+const MONO = { fontFamily: 'var(--font-mono)' };
 // A settings panel paired with a short "what this actually does" explainer,
 // for the handful of sections whose behavior isn't obvious from the form
 // alone. The aside sticks just below the fixed 72px header while its (often
@@ -393,11 +393,102 @@ function UpdateOverlay() {
   );
 }
 
+// ── Effective mail transport (read-only) ─────────────────────
+//
+// The mail SERVER is owned by the NetVault hub for the whole suite
+// (net-vault/docs/nocvault-smtp-centralization-plan.md §3). LogVault used to
+// offer a full editable SMTP Host / Port / Username / Password form here; after
+// Phase 2 nothing on this page owns a transport, and leaving the form up made
+// three apps each look like they needed their own mail server filled in.
+//
+// It is replaced by a STATEMENT, not by silence. An admin still has to be able
+// to answer "which server is actually carrying my alerts" without a DB query,
+// and there are three different answers:
+//
+//   hub      — the hub has an enabled transport and it is in force.
+//   fallback — no transport is coming from the hub, but this install still has a
+//              legacy app_settings row with a host in it, and the send path is
+//              STILL USING IT. ⛔ Never hide this one: it is live config.
+//   none     — nothing from the hub and no local row. No alert email can be
+//              sent, and it cannot be fixed from this page.
+//
+// "No transport from the hub" is deliberately not phrased as "NetVault has none
+// configured": collector/suiteSmtp.js also reports 'local' when the hub DB is
+// unreachable, when the hub predates smtp_config, or when its password will not
+// decrypt. The page cannot tell those apart and must not assert the one it
+// guessed. (`status` is null only when the whole GET /api/settings failed, in
+// which case no setting on this page loaded either.)
+//
+// Declared at module scope on purpose — a component defined inside Settings()
+// is a new type on every render, which remounts its whole subtree.
+function SmtpTransportNotice({ status, localHost, localPort }: {
+  status:    SmtpStatus | null;
+  localHost: string;
+  localPort: string;
+}) {
+  // Always derive the hub origin from the browser's current hostname — never a
+  // hardcoded host and never the install-time env bake-in (lib/publicUrl.ts).
+  const hubLink  = getHubUrl() + '/settings?tab=notifications';
+  const fromHub  = status?.source === 'hub';
+  const hasLocal = !!localHost.trim();
+
+  // A non-super_admin gets `{ source }` alone from the API — the host and port
+  // are withheld. Name the server when we have it, stay quiet when we do not.
+  const hubWhere = status?.host
+    ? <> (<span style={MONO}>{status.host}:{status.port}</span>)</>
+    : null;
+
+  const tint  = fromHub ? 'var(--tint-info)' : 'var(--tint-warn)';
+  const tintFg = fromHub ? 'var(--tint-info-fg)' : 'var(--tint-warn-fg)';
+
+  const title = fromHub  ? 'Sending through the NetVault mail server'
+              : hasLocal ? 'Sending through this app\'s own legacy mail server'
+              :            'No mail server is configured';
+
+  return (
+    <div style={{ background: tint, border: '1px solid var(--border)',
+      borderRadius: 'var(--radius-sm)', padding: '12px 14px', marginBottom: 18 }}>
+      <div style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: tintFg, marginBottom: 4 }}>
+        {title}
+      </div>
+      <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+        {fromHub ? (
+          <>
+            The mail server is configured once in NetVault for the whole suite{hubWhere}, so
+            there is nothing to enter here. The From address below stays with LogVault, so
+            alerts still arrive as LogVault rather than as a generic suite sender.
+          </>
+        ) : hasLocal ? (
+          <>
+            No mail server is reaching LogVault from NetVault, so LogVault is still sending
+            through the server saved here previously
+            (<span style={MONO}>{localHost}{localPort ? ':' + localPort : ''}</span>). That
+            server is live, but it is no longer editable in LogVault. Turn on the suite mail
+            server in NetVault and it takes over automatically — within five minutes, with no
+            restart.
+          </>
+        ) : (
+          <>
+            No mail server is reaching LogVault from NetVault, and LogVault has no server of
+            its own, so no alert email can be sent. The mail server is configured once in
+            NetVault for the whole suite — it cannot be set here.
+          </>
+        )}
+      </div>
+      <a href={hubLink}
+        style={{ display: 'inline-block', marginTop: 10, fontSize: 'var(--text-sm)', fontWeight: 600,
+          color: 'var(--primary)', textDecoration: 'underline' }}>
+        Open NetVault → Settings → Notifications
+      </a>
+    </div>
+  );
+}
+
 export default function Settings() {
   const { toast } = useToast();
   const [settings, setSettings]   = useState<Settings>({
     dns_server: '', dns_lookup_enabled: 'true',
-    smtp_host: '', smtp_port: '587', smtp_user: '', smtp_pass: '',
+    smtp_host: '', smtp_port: '587',
     smtp_from: '', smtp_enabled: 'false',
     email_notify_enabled: 'true',
     email_notify_severities: '["0","1","2","3"]',
@@ -416,12 +507,14 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState<'email' | 'system' | 'updates' | 'about'>('system');
   const [testTo,   setTestTo]     = useState('');
   const [testing,  setTesting]    = useState(false);
-  // Which SMTP transport is in force. 'hub' means the NetVault hub supplies
-  // host/port/credentials and the fields on this card are only the fallback.
-  // host/port are present for a super_admin only (the API withholds them
-  // otherwise), so render them conditionally, not unconditionally.
+  // Which SMTP transport is actually in force. 'hub' means the NetVault hub
+  // supplies host/port/credentials; 'local' means it does not, and LogVault is
+  // either falling back to a legacy row in its own app_settings or has no
+  // transport at all. Set for BOTH sources — the page has to be able to tell
+  // "the hub owns it" from "nobody owns it", and a null status would read as
+  // the second. host/port are present for a super_admin only (the API withholds
+  // them otherwise), so render them conditionally, not unconditionally.
   const [smtpStatus, setSmtpStatus] = useState<SmtpStatus | null>(null);
-  const smtpFromHub = smtpStatus?.source === 'hub';
 
   // ── Per-rule alert recipients ──────────────────────────────
   const [rules, setRules] = useState<AlertRule[]>([]);
@@ -556,9 +649,17 @@ export default function Settings() {
       .then(r => r.json())
       .then(d => {
         if (d.data) {
-          setSettings(s => ({ ...s, ...d.data }));
+          // Strip the hub-owned credentials before they reach form state. The
+          // API still returns them to a super_admin (collector/suiteSmtp.js
+          // reads them as the fallback), but this page no longer edits or
+          // posts them, so holding them in a React state object that gets
+          // JSON.stringify'd back to POST /api/settings would be pure risk.
+          const data: Record<string, string> = { ...d.data };
+          delete data.smtp_user;
+          delete data.smtp_pass;
+          setSettings(s => ({ ...s, ...data }));
         }
-        if (d.smtp?.source === 'hub') setSmtpStatus(d.smtp);
+        if (d.smtp) setSmtpStatus(d.smtp);
       }).catch(() => {});
   }, []);
 
@@ -613,24 +714,17 @@ export default function Settings() {
       const r = await fetch('/api/settings/test-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // Sending the form's own SMTP fields makes the API test those UNSAVED
-        // values instead of the stored ones. That is the point when this app
-        // owns the transport — but when the hub owns it, those fields are the
-        // dormant fallback, so sending them would test a server the app is not
-        // actually using and report a pass or a fail for the wrong one. Send
-        // the recipient alone and let the API resolve the live transport.
-        body: JSON.stringify(
-          smtpFromHub
-            ? { to: testTo.trim() }
-            : {
-                to:        testTo.trim(),
-                smtp_host: settings.smtp_host,
-                smtp_port: settings.smtp_port,
-                smtp_user: settings.smtp_user,
-                smtp_pass: settings.smtp_pass,
-                smtp_from: settings.smtp_from,
-              }
-        ),
+        // ONLY the recipient. POST /api/settings/test-email treats a supplied
+        // `smtp_host` as an override of the saved config — that existed so the
+        // page could test SMTP fields the admin had typed but not yet saved.
+        // There are no such fields any more, so sending anything else here
+        // could only test a server that is not the live one. The API resolves
+        // the effective transport (hub, or the local fallback) itself, which is
+        // exactly what this button is meant to exercise.
+        //
+        // Consequence worth knowing: an UNSAVED From address is not used by the
+        // test — save first, then test.
+        body: JSON.stringify({ to: testTo.trim() }),
       });
       if (r.ok) {
         toast(`Test email sent to ${testTo.trim()}`, 'success');
@@ -755,10 +849,10 @@ export default function Settings() {
 
       {activeTab === 'email' && (
         <>
-          {/* SMTP Settings */}
+          {/* SECTION 1 — Mail transport (read-only) + the From identity */}
           <div style={PANEL_NARROW}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <div style={{ ...SECTION_HEADER, marginBottom: 0 }}>SMTP Server</div>
+              <div style={{ ...SECTION_HEADER, marginBottom: 0 }}>Mail Delivery</div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input type="checkbox"
                   checked={settings.smtp_enabled === 'true'}
@@ -770,57 +864,15 @@ export default function Settings() {
               </label>
             </div>
             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 18 }}>
-              Configure an SMTP server to send email notifications when alert rules fire.
-              Emails are only sent for rules that have a notification address set.
+              This switch is LogVault's own: it decides whether LogVault sends alert email at all,
+              whichever mail server is carrying it. Emails are only sent for rules that match the
+              filters below.
             </div>
 
-            {smtpFromHub && (
-              <div style={{ background: 'var(--tint-info)', border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-sm)', padding: '12px 14px', marginBottom: 18 }}>
-                <div style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--tint-info-fg)', marginBottom: 4 }}>
-                  Managed centrally in NetVault
-                </div>
-                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                  LogVault is sending through the suite mail server configured in NetVault
-                  {smtpStatus?.host
-                    ? <> (<span style={{ fontFamily: 'var(--font-mono)' }}>{smtpStatus.host}:{smtpStatus.port}</span>)</>
-                    : null}.
-                  The host, port and credentials below are not in use — they are kept as a fallback
-                  and take over automatically if the central server is turned off.
-                  The From address stays local, so alerts still arrive from LogVault.
-                </div>
-              </div>
-            )}
-
-            <div style={{ ...ROW_COMPACT, marginBottom: 16 }}>
-              <div style={{ flex: '1 1 220px' }}>
-                <label style={LABEL}>SMTP Host</label>
-                <input style={INPUT} value={settings.smtp_host}
-                  onChange={e => setSettings(s => ({ ...s, smtp_host: e.target.value }))}
-                  placeholder="e.g. smtp.gmail.com" />
-              </div>
-              <div style={{ flex: '0 0 auto' }}>
-                <label style={LABEL}>Port</label>
-                <input style={INPUT_SM} value={settings.smtp_port}
-                  onChange={e => setSettings(s => ({ ...s, smtp_port: e.target.value }))}
-                  placeholder="587" />
-              </div>
-            </div>
-
-            <div style={{ ...ROW_COMPACT, marginBottom: 16 }}>
-              <div style={{ flex: '1 1 220px' }}>
-                <label style={LABEL}>Username</label>
-                <input style={INPUT} value={settings.smtp_user}
-                  onChange={e => setSettings(s => ({ ...s, smtp_user: e.target.value }))}
-                  placeholder="user@example.com" autoComplete="off" />
-              </div>
-              <div style={{ flex: '0 0 auto' }}>
-                <label style={LABEL}>Password</label>
-                <input style={INPUT_MD} type="password" value={settings.smtp_pass}
-                  onChange={e => setSettings(s => ({ ...s, smtp_pass: e.target.value }))}
-                  placeholder="••••••••" autoComplete="new-password" />
-              </div>
-            </div>
+            <SmtpTransportNotice
+              status={smtpStatus}
+              localHost={settings.smtp_host}
+              localPort={settings.smtp_port} />
 
             <div style={{ marginBottom: 4 }}>
               <label style={LABEL}>From Address</label>
@@ -830,7 +882,8 @@ export default function Settings() {
             </div>
 
             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 12 }}>
-              Common SMTP servers — Gmail: smtp.gmail.com:587 · Office365: smtp.office365.com:587 · Port 465 uses implicit TLS.
+              The From address is deliberately per-app — it is what makes an alert read as LogVault
+              in a recipient's inbox. Left blank, the mail server's own From address is used.
             </div>
             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 6 }}>
               Settings applied automatically within 5 minutes — no restart needed.
@@ -1086,7 +1139,8 @@ export default function Settings() {
           <div style={PANEL_NARROW}>
             <div style={{ ...SECTION_HEADER, marginBottom: 6 }}>Send Test Email</div>
             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 14 }}>
-              Sends a test message using the settings above (without saving them first).
+              Sends a test message over the mail server currently in use, shown at the top of
+              this tab. It uses the SAVED From address — save first if you have just changed it.
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
               <div style={{ flex: 1, maxWidth: 360 }}>

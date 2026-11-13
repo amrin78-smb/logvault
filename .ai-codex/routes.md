@@ -109,8 +109,8 @@ GET /api/soc/entity-timeline/:type/:value [auth] [db] — daily activity series 
 
 ## Express — Hosts sync / audit / settings / system
 GET /api/settings [auth] [db] — app_settings key/value read. Returns `{ data, smtp }`; `smtp` is `{ source: 'hub'|'local' }` plus `host`/`port`/`secure` for a super_admin when the source is 'hub' (suite SMTP centralization, Phase 2 — collector/suiteSmtp.js). `smtp_pass`/`abuseipdb_api_key`, and the hub host/port, are stripped for non-super_admins
-POST /api/settings [super-admin] [db] — app_settings write
-POST /api/settings/test-email [super-admin] [external] — send test SMTP email with unsaved settings
+POST /api/settings [super-admin] [db] — app_settings write, key allowlist. ⛔ `smtp_host`/`smtp_port`/`smtp_user`/`smtp_pass` are NOT writable (2.41.0): the transport is hub-owned. They are still READ by collector/emailer.js as the fallback and still returned by the GET. `smtp_from` and `smtp_enabled` remain writable — the From identity and the on/off switch are per-app
+POST /api/settings/test-email [super-admin] [external] — send a test email over the EFFECTIVE transport. Callers post only `to`; the `smtp_*` body override is dormant (kept, validated, for a stale cached frontend) since no page has those fields any more
 GET /api/audit [super-admin] [db] — audit_log query (?actor, ?limit)
 GET /api/license-status [public] [external] — license state from NocVault hub (24h server-cached)
 GET /api/health [public] [db] — liveness + version + logs_last_hour + collector{status,age_seconds,listeners,listeners_down} (staleness-evaluated from the app_settings collector_status heartbeat; ALWAYS HTTP 200 — the collector field degrades to status:unknown rather than changing the status code)

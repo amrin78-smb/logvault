@@ -2911,6 +2911,13 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.41.0': [
+    "The Email Alerts settings page no longer asks for a mail server. The SMTP host, port, username and password fields have been removed: the mail server is now configured once in NetVault for the whole suite, so three separate products no longer each look like they need their own filled in.",
+    "In their place the page states which mail server is actually carrying LogVault's alerts - the one configured in NetVault (named, with a link straight to it), a server saved in LogVault previously that is still in use because NetVault has none turned on, or none at all. A server that is still sending is never hidden just because it can no longer be edited here.",
+    "Everything that is genuinely LogVault's stays editable: the From address, the on/off switch for LogVault's own alert email, the recipient list, the severity, category and vendor filters, the minimum risk score, the cooldown and the daily digest. The Test Email button still works and now always tests the mail server actually in use, so save a changed From address before testing it.",
+    "Upgraded the email library to close a published security advisory affecting the previous version. The flaw was never reachable from LogVault, which sends plain HTML alerts with no attachments, but the fix was only available in a major version and is now taken.",
+    "No existing installation changes behaviour on its own and nothing needs to be re-entered: a site with no central mail server keeps sending through exactly the settings it already had.",
+  ],
   '2.40.0': [
     "Email alerts can now use the suite-wide mail server configured once in NetVault, instead of a separate SMTP server being entered here. If NetVault has one turned on, LogVault sends through it automatically; if it does not, LogVault keeps using its own settings exactly as before. Nothing needs to be re-entered and no existing installation changes behaviour on its own.",
     "The From address stays with LogVault, so alerts still arrive as LogVault rather than as a generic suite sender, and who receives mail and which alerts send are entirely unchanged - only the server carrying them can move.",
@@ -3916,9 +3923,25 @@ app.get('/api/settings', asyncHandler(async (req, res) => {
 }));
 
 app.post('/api/settings', requireSuperAdmin, asyncHandler(async (req, res) => {
+  // ⛔ `smtp_host`, `smtp_port`, `smtp_user` and `smtp_pass` are NOT in this
+  // allowlist, and must not be re-added. The mail TRANSPORT is owned by the
+  // NetVault hub for the whole suite (see collector/suiteSmtp.js and
+  // net-vault/docs/nocvault-smtp-centralization-plan.md §3), and the Settings
+  // page no longer offers fields for them — so a write arriving here could only
+  // come from a stale client or a hand-rolled request, and would create a local
+  // transport that silently competes with the hub's.
+  //
+  // They are still READ: collector/emailer.js's getLocalSmtpSettings() reads
+  // those exact four keys as the fallback for an install whose hub has not been
+  // updated yet, and GET /api/settings still returns them (smtp_pass to a
+  // super_admin only) so the page can NAME a legacy transport that is still
+  // carrying mail. Frozen, not deleted.
+  //
+  // `smtp_from` STAYS WRITABLE — the From identity is deliberately per-app, so
+  // an alert reads as LogVault rather than as a generic suite sender.
   const allowed = ['app_name', 'app_subtitle', 'primary_color', 'sidebar_color', 'logo_url',
     'dns_server', 'dns_lookup_enabled',
-    'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'smtp_enabled',
+    'smtp_from', 'smtp_enabled',
     'email_notify_enabled', 'email_notify_severities', 'email_notify_categories',
     'email_notify_vendors', 'email_notify_min_risk', 'email_notify_digest_mode',
     'email_notify_digest_hour', 'email_notify_recipients', 'email_notify_cooldown_mins',
@@ -3939,7 +3962,15 @@ app.post('/api/settings', requireSuperAdmin, asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
-// Send a test email immediately using the provided (unsaved) SMTP settings.
+// Send a test email over the EFFECTIVE transport — the hub's when it has one,
+// otherwise this app's own saved fallback (collector/emailer.js resolves it).
+//
+// The `smtp_*` override below is now DORMANT: it existed so the Settings page
+// could test host/port/credentials an admin had typed but not yet saved, and
+// those fields no longer exist on that page (the transport is hub-owned). No
+// caller sends them. It is kept, with its validation intact, only so an older
+// cached frontend mid-upgrade keeps working rather than silently testing a
+// different server than it shows. Do not build anything new on it.
 //
 // This endpoint takes a host and port from the request body and opens a
 // connection to them, which makes it an INTERNAL PORT SCANNER unless two

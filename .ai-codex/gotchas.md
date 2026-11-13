@@ -185,10 +185,12 @@ not for the endpoint that was reported.**
   `smtp_enabled` still decides whether mail is sent at all — centralizing the
   transport must not change who gets mail or which alerts send. The hub's
   `from_email` is used only when `smtp_from` is blank.
-- **Settings' Test Email must post only `to` when the source is `hub`.** The
-  endpoint treats a supplied `smtp_host` as an override of the SAVED config, so
-  sending the form's fields would test the dormant fallback server and report its
-  result as though it were the live transport's.
+- **Settings' Test Email posts only `to` — always (2.41.0).** The endpoint treats
+  a supplied `smtp_host` as an override of the SAVED config, which existed to test
+  fields typed but not yet saved. Those fields are gone, so the override has no
+  caller; it is kept and still validated only so a stale cached frontend
+  mid-upgrade does not silently test a different server than it shows. A
+  consequence to remember: an UNSAVED From address is not used by a test.
 - **No new env var and no installer change were needed, and that was verified, not
   assumed.** `NEXTAUTH_SECRET` and `NETVAULT_DB_*` are both written into the ROOT
   `.env.local` by `Install-NocVault-Suite.ps1`, and both `collector/collector.js`
@@ -196,3 +198,28 @@ not for the endpoint that was reported.**
   `AppEnvironmentExtra` for `LogVault-Collector`/`LogVault-API` does NOT carry
   `NEXTAUTH_SECRET` — reading only the NSSM blocks (as the Phase 2 plan did) says
   two services need a new env var. They do not; dotenv is the second half.
+
+### Transport fields are READ-ONLY in LogVault (2.41.0)
+
+- ⛔ **`smtp_host`/`smtp_port`/`smtp_user`/`smtp_pass` are FROZEN, not deleted.**
+  They are off the `POST /api/settings` allowlist and have no form fields, but
+  `collector/emailer.js`'s `getLocalSmtpSettings()` still READS all four as the
+  fallback for an install whose hub has not been updated yet, and `GET
+  /api/settings` still returns them (`smtp_pass` to a super_admin only) so the
+  page can NAME a legacy transport that is still carrying mail. Deleting the keys,
+  or dropping them from the GET, breaks the fallback's visibility — write-frozen
+  is the whole design.
+- ⛔ **A live local transport must never be hidden.** `SmtpTransportNotice` has
+  THREE states, and the middle one — hub has nothing, but `app_settings.smtp_host`
+  is non-empty, so mail is still going through that server — is the one a
+  "the hub owns this now" rewrite tends to drop. Removing the form must not
+  remove the answer to "which server is actually sending my alerts".
+- **The hub host/port in that notice can legitimately be absent.** `GET
+  /api/settings` withholds them from a non-super_admin and returns `{ source }`
+  alone, so the hub state renders without naming a host for those roles. Render it
+  conditionally; do not assume `status.host` exists whenever `source === 'hub'`.
+- **The hub link is derived, never hardcoded.** `getHubUrl()` (`lib/publicUrl.ts`)
+  builds it from `window.location`, so it follows whatever hostname the browser
+  actually used. The deep link is `/settings?tab=notifications`, which NetVault's
+  settings page honours via its `?tab=` effect (super_admin-gated there).
+

@@ -76,18 +76,36 @@ when editing an installer script.
 
 ---
 
-## Known Security Debt (scheduled, not yet done)
+## Known Security Debt
 
-Tracked npm-audit finding deliberately deferred (triaged 2026-06-26). NOT fixable with a
-safe `npm audit fix` — needs a breaking change, so schedule as deliberate, tested work.
-**NEVER run `npm audit fix --force`.**
+**Nothing outstanding.** Keep this section — a future deferral is recorded here, with the
+reason and the plan, never left in a commit message. **NEVER run `npm audit fix --force`.**
 
-- **nodemailer → v9 (root).** The current v8 line carries a high advisory
+Closed:
+
+- **nodemailer 8 → 10 (root) — CLOSED 2.41.0.** The v8 line carried a high advisory
   (GHSA-p6gq-j5cr-w38f: the message-level `raw` option bypasses
-  `disableFileAccess`/`disableUrlAccess` → file-read/SSRF). The only fix is the breaking
-  major **9.0.1**. Not currently reachable — SMTP config is admin-only and
-  `collector/emailer.js` never uses the `raw` option — so low risk on the internal LAN.
-  Upgrade to nodemailer 9.x in a maintenance window and re-test the email alert path.
+  `disableFileAccess`/`disableUrlAccess` → file-read/SSRF), fixed only in the breaking
+  major **9.0.1** — but 9.x is ITSELF flagged high (`fixAvailable: 10.5.0`), so this repo
+  went straight to `^10.5.0` rather than closing one advisory and leaving a dozen. The
+  breaking changes across all three majors were checked
+  against this codebase before the bump: 7.0.0 dropped the old SES SDKs (LogVault is SMTP
+  only), 8.0.0 renamed the error code `NoAuth` → `ENOAUTH` (neither string appears here),
+  9.0.0 began verifying TLS when FETCHING REMOTE CONTENT — attachment `href`/`path` URLs,
+  OAuth2 endpoints, proxy CONNECT — none of which this app does (HTML body, no
+  attachments, no OAuth2, no proxy), 9.0.1 is the advisory fix itself, and 10.0.0's only breaking change is
+  **Node.js >= 20** (the server runs 22) plus an internal TypeScript/dual-build migration,
+  which was verified to still import cleanly under Node's type stripping in `node --test`.
+  ⛔ **Resolve the way the SERVER will.** This dev box runs node 24 / npm 11, the server
+  runs node 22 / npm 10, and npm 11 silently overrides peer conflicts npm 10 refuses — a
+  sibling repo's nodemailer bump passed install/test/build here and then failed the
+  production deploy with `ERESOLVE`. Verify any dependency change with
+  `npx -y npm@10 install --dry-run --no-audit --no-fund` and require ZERO `ERESOLVE`
+  lines. Never reach for `--legacy-peer-deps`: the installer runs a plain `npm install` on
+  the customer's machine and will not have the flag. (Checked for 2.41.0: no root
+  dependency declares a nodemailer peer — only `pg` → `pg-native` and `ws` →
+  `bufferutil`/`utf-8-validate` declare peers at all — and both the in-place and a
+  clean-tree npm@10 dry-run reported no ERESOLVE.)
 
 (The frontend Next.js + ws/qs backend advisories were cleared in 2.18.2.)
 
