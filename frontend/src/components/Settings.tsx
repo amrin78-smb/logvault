@@ -531,7 +531,7 @@ function SmtpTransportNotice({ status, localHost }: {
   const hubLink = getHubUrl() + '/settings?tab=notifications';
   const link = (
     <a href={hubLink} target="_blank" rel="noopener noreferrer" style={HUB_LINK}>
-      NetVault → Settings → Notifications
+      NetVault → Settings → Mail server
     </a>
   );
 
@@ -853,7 +853,7 @@ export default function Settings() {
 
   const TAB_LABEL: Record<string, string> = {
     system:  'General',
-    email:   'Email Alerts',
+    email:   'Notifications',
     updates: 'Updates',
     about:   'About',
   };
@@ -874,8 +874,15 @@ export default function Settings() {
   // If a per-tab gate is ever added it must go on the content block AND here
   // AND the sessionStorage deep-link handler above — a nav filter alone only
   // hides the button.
+  // Group vocabulary is suite-standard: System / Alerting / Records / Software,
+  // the same words DDIVault and SpanVault use, so the three rails read as one
+  // product. Alerting holds a single entry here and that is fine — the group
+  // says what KIND of setting it is, and a one-item group is better than filing
+  // notifications under System beside DNS lookup and branding, which is what it
+  // used to do. (LogVault has no Records equivalent; SpanVault's Audit Log is.)
   const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
-    ['System',   ['system', 'email']],
+    ['System',   ['system']],
+    ['Alerting', ['email']],
     ['Software', ['updates', 'about']],
   ];
 
