@@ -465,7 +465,21 @@ export default function Home() {
         {/* Main content column — banners live INSIDE here so they span only the
             content width (not the full screen over the sidebar), matching the suite.
             The tab content below them keeps the 16px padding. */}
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+        {/* ⛔ NO `overflow` HERE. This wrapper exists only to constrain the alert
+            and update banners to the content width (99b004e); the scrolling was
+            incidental and it BROKE STICKY POSITIONING for every descendant.
+            An `overflow` value makes this element the sticky scrollport, and its
+            parent sets `minHeight` with no `height`, so it stretches to content
+            height and never scrolls - and a sticky child of a scrollport that
+            never scrolls never offsets. Measured in Chromium 2026-11-14: the
+            Settings rail computed `top: 88px` correctly and still travelled
+            160 -> -840 on a 1000px window scroll, i.e. straight off the screen,
+            which is the one thing the grouped rail exists to prevent.
+            The WINDOW is this app's scroller - the sidebar immediately above
+            relies on it too (`position: sticky; top: 72`). Anything needing its
+            own scroll region must bound its height the way SpanVault's
+            .sv-shell/.sv-body/.sv-content chain does, not add an overflow here. */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           <LicenseBanner />
           <AlertBanner />
           <UpdatedNotice />

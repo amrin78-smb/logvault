@@ -2911,6 +2911,10 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.41.4': [
+    "Fixed: the link to NetVault at the top of the settings menu was brand red on a dark background, measured at about 3:1 against the 4.5:1 readability threshold. It now uses the normal text colour with an underline.",
+    "Fixed: the new settings menu scrolled off the top of the page instead of staying put. A wrapper around the page content carried a scrolling style that was only ever meant to keep the alert banners at the content width, and it silently stopped anything inside it from being able to stick.",
+  ],
   '2.41.3': [
     "The settings menu now uses the same words in every application. The page that holds email recipients and alert rules is called Notifications everywhere - two of the four used to call it Email Alerts - and the sections are System, Alerting, Records and Software across the suite rather than a different set per app.",
     "NetVault's equivalent page is now called Mail server, because that is what it is: the mail server for the whole suite, and nothing else. It holds no recipients, no filters and no rules - those stay in each application. Calling it Notifications sent people there looking for settings that were never on it.",
