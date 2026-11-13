@@ -138,3 +138,61 @@ sites still had the old shape (`/api/health`, `/api/security/brute-force`'s two
 CTEs, `/api/stats/storage`'s `rows_24h`/`rows_7d`) long after ~20 others were
 fixed and commented — **a fixed instance is not a fixed class; grep for the shape,
 not for the endpoint that was reported.**
+
+---
+
+## Suite SMTP centralization (Phase 2, 2.40.0) — `collector/suiteSmtp.js`
+
+- ⛔ **This module must never throw, and specifically must NOT throw at module load
+  when `NEXTAUTH_SECRET` is absent — even though `ddivault/collector/credStore.js`,
+  which its decrypt is copied from, does exactly that and is right to.** credStore
+  guards WRITES: failing loud stops it encrypting a real credential under a known
+  fallback key. This module only READS, and it is required (via
+  `collector/emailer.js`) by `collector/collector.js`. A load-time throw here does
+  not disable email — it stops the collector starting, i.e. stops syslog ingestion,
+  over a mail setting. The reasoning is written out at the top of the file because
+  "add the missing guard" is the obvious-looking change a future reader will want
+  to make.
+- **`42P01 undefined_table` is a NORMAL state, not an incident.** `smtp_config`
+  arrives in a NetVault release; a suite where the hub has not been updated yet
+  answers the query with it. It must read as "no hub config, use local" and warn
+  with calm wording, once.
+- **Warn ONCE per process, never per call and never per email.** `getSmtpSettings`
+  is called 2-3 times per alert email and the collector can send many; a per-call
+  warn would be the loudest line in the log. The warn-once `Set` is keyed by
+  failure reason and is only cleared by the `_resetCache()` test seam.
+- **Cache the NEGATIVE result too.** "Looked and found no hub transport" is a real
+  answer worth 5 minutes. `hubCacheAt === 0` means "never looked" and is the only
+  thing that distinguishes the two — do not collapse it into a `hubCache === null`
+  check, or every email re-queries a hub that has nothing to say.
+- ⛔ **The pool needs its own `'error'` listener.** node-postgres emits `error` on a
+  pool whose IDLE client dies (a Postgres restart, an idle-session timeout). An
+  `error` event with no listener is rethrown as an uncaught exception — in the API
+  that is `process.exit(1)`, in the collector it is ingestion down, from a
+  background socket event unrelated to any call this module made. `nvPool` in
+  `collector/netvaultSync.js` and `api/netvaultSync.js` still lack one.
+- **`pool.query()` can throw SYNCHRONOUSLY, before any network I/O.** With
+  `NETVAULT_DB_PASS` unset, pg throws `SASL: ... client password must be a string`
+  out of the call itself rather than rejecting. An `await` inside `try` catches
+  both, which is why the query sits in one — don't refactor it into a `.catch()`
+  chain.
+- **`secure` from the hub is a real stored boolean and must be used verbatim.**
+  `buildTransport()` only falls back to the historical `port === 465` derivation
+  for a LOCAL config, flagged by `cfg.secureExplicit`. Derivation has no correct
+  answer for the common on-premises case — a relay on 25 or 2525 speaking STARTTLS.
+- **The From identity stays local, deliberately.** The hub owns the transport only.
+  `smtp_from` still decides what a recipient sees, and LogVault's own
+  `smtp_enabled` still decides whether mail is sent at all — centralizing the
+  transport must not change who gets mail or which alerts send. The hub's
+  `from_email` is used only when `smtp_from` is blank.
+- **Settings' Test Email must post only `to` when the source is `hub`.** The
+  endpoint treats a supplied `smtp_host` as an override of the SAVED config, so
+  sending the form's fields would test the dormant fallback server and report its
+  result as though it were the live transport's.
+- **No new env var and no installer change were needed, and that was verified, not
+  assumed.** `NEXTAUTH_SECRET` and `NETVAULT_DB_*` are both written into the ROOT
+  `.env.local` by `Install-NocVault-Suite.ps1`, and both `collector/collector.js`
+  and `api/server.js` `dotenv.config()` that file by explicit path. The NSSM
+  `AppEnvironmentExtra` for `LogVault-Collector`/`LogVault-API` does NOT carry
+  `NEXTAUTH_SECRET` — reading only the NSSM blocks (as the Phase 2 plan did) says
+  two services need a new env var. They do not; dotenv is the second half.

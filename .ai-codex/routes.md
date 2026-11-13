@@ -108,7 +108,7 @@ GET /api/soc/killchain/:alertId [auth] [db] — underlying syslog entries behind
 GET /api/soc/entity-timeline/:type/:value [auth] [db] — daily activity series (syslog_entity_activity_rollup) + anomalies for one entity over ?days=14; :type in device|user|srcip
 
 ## Express — Hosts sync / audit / settings / system
-GET /api/settings [auth] [db] — app_settings key/value read
+GET /api/settings [auth] [db] — app_settings key/value read. Returns `{ data, smtp }`; `smtp` is `{ source: 'hub'|'local' }` plus `host`/`port`/`secure` for a super_admin when the source is 'hub' (suite SMTP centralization, Phase 2 — collector/suiteSmtp.js). `smtp_pass`/`abuseipdb_api_key`, and the hub host/port, are stripped for non-super_admins
 POST /api/settings [super-admin] [db] — app_settings write
 POST /api/settings/test-email [super-admin] [external] — send test SMTP email with unsaved settings
 GET /api/audit [super-admin] [db] — audit_log query (?actor, ?limit)

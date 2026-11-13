@@ -6,19 +6,31 @@
  * SMTP config is read from the app_settings table and reloaded
  * every 5 minutes — no collector restart needed.
  *
+ * TRANSPORT PRECEDENCE (suite SMTP centralization, Phase 2): when the NocVault
+ * hub has an ENABLED SMTP transport, host/port/secure/username/password come
+ * from there instead of from this app's own app_settings — see
+ * collector/suiteSmtp.js. The From identity, the `smtp_enabled` master switch,
+ * the recipient lists and every `email_notify_*` filter stay LOCAL and
+ * unchanged, so centralizing the transport cannot change who gets mail or which
+ * alerts send. With no hub transport (or any failure reading it) this behaves
+ * exactly as it did before.
+ *
  * Silently does nothing when SMTP is not configured or disabled.
  * The SMTP password is never logged or included in error messages.
  */
 
 const nodemailer = require('nodemailer');
+const { resolveSmtp } = require('./suiteSmtp');
 
 // SMTP settings cache — reloaded every 5 minutes
 let smtpSettings      = null;
 let smtpSettingsAt    = 0;
 const SMTP_SETTINGS_TTL = 5 * 60 * 1000; // 5 minutes
 
-// Load SMTP settings from app_settings, cached for 5 minutes.
-async function getSmtpSettings(pool) {
+// Load THIS APP'S OWN SMTP settings from app_settings, cached for 5 minutes.
+// This is the fallback config and the source of the From identity; the active
+// transport is decided by getSmtpSettings() below.
+async function getLocalSmtpSettings(pool) {
   const now = Date.now();
   if (smtpSettings && now - smtpSettingsAt < SMTP_SETTINGS_TTL) return smtpSettings;
   try {
@@ -40,6 +52,19 @@ async function getSmtpSettings(pool) {
     console.error('[Email] Failed to load SMTP settings:', err.message);
   }
   return smtpSettings;
+}
+
+// The one place SMTP config is resolved for sending — used by sendAlertEmail,
+// testEmail and shouldSendEmail. Returns the local config merged with the hub
+// transport when the hub has one, plus a `source` of 'hub' | 'local'.
+// resolveSmtp() never throws and falls back to the local config on every
+// failure, so this is no more fallible than the plain app_settings read it
+// wraps.
+async function getSmtpSettings(pool) {
+  const local = await getLocalSmtpSettings(pool);
+  if (!local) return local;   // never loaded and the query failed — unchanged behaviour
+  const { source, cfg } = await resolveSmtp(local);
+  return { ...cfg, source };
 }
 
 // Notification-preference settings cache — reloaded every 5 minutes.
@@ -107,12 +132,23 @@ function buildTransport(cfg) {
   if (!cfg || !cfg.host) return null;
   const options = {
     host:   cfg.host,
+    // `secureExplicit` is set only by a config that came from the hub, which
+    // stores a REAL `secure` boolean. Prefer it over the port===465 guess:
+    // derivation has no correct answer for the most common on-premises case, a
+    // relay on 25 or 2525 speaking STARTTLS. A local config has no such column,
+    // so it keeps the historical derivation — this is not a behaviour change for
+    // any install that is not using the hub transport.
     port:   cfg.port,
-    secure: cfg.port === 465, // implicit TLS on 465, STARTTLS otherwise
+    secure: cfg.secureExplicit ? !!cfg.secure : cfg.port === 465,
   };
   // Only attach auth when a username is configured
   if (cfg.user) {
     options.auth = { user: cfg.user, pass: cfg.pass };
+  }
+  // TLS verification stays ON unless the hub admin explicitly ticked
+  // "allow self-signed" on the central transport. Never default this off.
+  if (cfg.allowSelfSigned) {
+    options.tls = { rejectUnauthorized: false };
   }
   return nodemailer.createTransport(options);
 }
@@ -365,4 +401,24 @@ async function testEmail(toAddress, pool, override) {
   }
 }
 
-module.exports = { sendAlertEmail, testEmail, shouldSendEmail };
+/**
+ * Which SMTP transport is actually in force, for the Settings UI.
+ *
+ * Deliberately NARROW: it returns the source and, for a hub transport, only the
+ * host/port/secure an admin needs in order to recognise it. It NEVER returns a
+ * username or a password, so no caller of this can leak a credential even by
+ * accident — `getSmtpSettings` (which does carry them) stays internal to the
+ * send path.
+ */
+async function getSmtpStatus(pool) {
+  try {
+    const cfg = await getSmtpSettings(pool);
+    if (!cfg || cfg.source !== 'hub') return { source: 'local' };
+    return { source: 'hub', host: cfg.host, port: cfg.port, secure: !!cfg.secure };
+  } catch (err) {
+    console.error('[Email] Failed to resolve the SMTP source:', err.message);
+    return { source: 'local' };
+  }
+}
+
+module.exports = { sendAlertEmail, testEmail, shouldSendEmail, getSmtpStatus };

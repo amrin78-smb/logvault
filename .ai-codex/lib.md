@@ -56,6 +56,18 @@ collector/safeRegex.js
   isQuarantined / quarantineReport / compile / _resetState
   Required by BOTH api/server.js (write gate) and collector/collector.js (hot path). Does not import anything. [SENSITIVE]
 
+collector/suiteSmtp.js
+  resolveSmtp(localCfg) -> {source:'hub'|'local', cfg} — the suite SMTP transport resolver (Phase 2 of net-vault/docs/nocvault-smtp-centralization-plan.md). Reads netvault.smtp_config over the NETVAULT_DB_* pool this app already has, caches 5 min (negative results too), and merges: host/port/secure/username/password from the HUB, From identity + the smtp_enabled master switch from LOCAL. NEVER THROWS and NEVER REJECTS — falls back to localCfg and warns ONCE per process on: 42P01 undefined_table (a hub not yet updated — expected in the field), any other query/connection error, NEXTAUTH_SECRET missing while a password is stored, and a password that fails to decrypt
+  getHubSmtp() -> hubCfg|null — the cached hub read on its own; null means "no usable hub transport", for any reason
+  decryptSecret(encrypted, secret) -> string|null — AES-256-GCM `ivHex:tagHex:cipherHex`, key = sha256(secret). **CONTRACT: byte-identical to ddivault/collector/credStore.js and net-vault/lib/credStore.ts** — change one, change all three. tests/suiteSmtp.test.js pins a fixed vector produced by ddivault's credStore
+  _resetCache() — test seam (clears the cache AND the warn-once set); CACHE_TTL
+  ⛔ Does NOT throw at module load when NEXTAUTH_SECRET is absent, unlike the credStore it copies — it is required by collector/collector.js, so a load-time throw would stop syslog ingestion over a mail setting. The reasoning is written out at the top of the file; do not "fix" it back [SENSITIVE]
+
+collector/emailer.js
+  sendAlertEmail / shouldSendEmail / testEmail — unchanged contracts
+  getSmtpStatus(pool) -> {source, host?, port?, secure?} — what GET /api/settings reports. Deliberately narrow: NEVER returns a username or password (getSmtpSettings, which does, stays module-private)
+  getSmtpSettings is now hub-aware via suiteSmtp.resolveSmtp; buildTransport() uses cfg.secure VERBATIM when cfg.secureExplicit is set (a hub config) and only then falls back to the historical `port === 465` derivation
+
 ## Frontend (frontend/src/lib/)
 
 publicUrl.ts

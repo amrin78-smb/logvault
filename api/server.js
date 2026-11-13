@@ -12,7 +12,7 @@ const crypto   = require('crypto');
 const { Pool } = require('pg');
 const http     = require('http');
 const { WebSocketServer } = require('ws');
-const { testEmail } = require('../collector/emailer');
+const { testEmail, getSmtpStatus } = require('../collector/emailer');
 const { rbacMiddleware, requireSuperAdmin, requireAdmin, getSiteFilter, getStatsSiteFilter, getAlertSiteFilter, getRollupSiteFilter } = require('./rbac');
 const { getLicense, getLicenseState } = require('./licenseCheck');
 const { writeAudit } = require('./auditLog');
@@ -2911,6 +2911,13 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.40.0': [
+    "Email alerts can now use the suite-wide mail server configured once in NetVault, instead of a separate SMTP server being entered here. If NetVault has one turned on, LogVault sends through it automatically; if it does not, LogVault keeps using its own settings exactly as before. Nothing needs to be re-entered and no existing installation changes behaviour on its own.",
+    "The From address stays with LogVault, so alerts still arrive as LogVault rather than as a generic suite sender, and who receives mail and which alerts send are entirely unchanged - only the server carrying them can move.",
+    "The Email Alerts settings page now says which of the two is in use, and the local SMTP fields are labelled as the fallback when the central server is active.",
+    "A central mail server reached over an encrypted-on-connect port other than 465 now works. LogVault used to decide encryption from the port number alone, which has no correct answer for a relay on port 25 or 2525.",
+    "If NetVault is an older version, is unreachable, or its mail password cannot be read, LogVault falls back to its own settings and logs one line - email keeps working and log collection is never affected.",
+  ],
   '2.39.3': [
     "Fixed: the NetVault asset sync has never worked. Every run failed on its very first database query and no device was ever imported, so log sources were never enriched with their device name, vendor, model or site - and because site membership is what scopes a non-administrator's view, site-restricted users could not see logs that should have been visible to them. The cause was a filter comparing an IP-address column against an empty string, which the database rejects outright for that column type.",
     "The error this produced said \"Failed to connect to NetVault DB\", which pointed at credentials or networking rather than at the query. Connection failures and query failures are now reported differently.",
@@ -3883,7 +3890,29 @@ app.get('/api/settings', asyncHandler(async (req, res) => {
     delete data.smtp_pass;
     delete data.abuseipdb_api_key;
   }
-  res.json({ data });
+
+  // Which SMTP transport is actually in force (suite SMTP centralization,
+  // Phase 2). The Settings page needs this to say whether the local SMTP
+  // fields below it are live config or a fallback. Extends this existing
+  // endpoint rather than adding a route: the UI already fetches it on mount,
+  // and a second request for one string would be a second thing to keep in
+  // step with the settings it describes.
+  //
+  // getSmtpStatus never returns a username or password, and the hub host/port
+  // are still withheld from non-super_admins — the same line this route
+  // already draws around smtp_pass. The bare source is safe for everyone: it
+  // is the difference between two Settings captions.
+  let smtp = { source: 'local' };
+  try {
+    smtp = await getSmtpStatus(pool);
+  } catch (_err) {
+    // getSmtpStatus already swallows everything; a settings read must never
+    // 500 because the hub DB blinked.
+  }
+  if (!req.rbac || !req.rbac.isSuperAdmin) {
+    smtp = { source: smtp.source };
+  }
+  res.json({ data, smtp });
 }));
 
 app.post('/api/settings', requireSuperAdmin, asyncHandler(async (req, res) => {

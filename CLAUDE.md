@@ -1666,6 +1666,20 @@ $env:PGPASSWORD = "<set-in-NSSM-env>"
 | `collector_rate_limit_pps` | 0 | Max packets/sec per source IP. `0` = unlimited (sentinel). Only applies when `collector_rate_limit_enabled` is true |
 | `abuseipdb_api_key` | (empty) | AbuseIPDB API key for threat scoring of external IPs. Empty = GeoIP only (ip-api.com, no key). Read by the collector via the 5-min DNS-settings cache; never logged. |
 
+> **SMTP transport precedence (suite centralization, Phase 2 — 2.40.0).** The `smtp_host` /
+> `smtp_port` / `smtp_user` / `smtp_pass` keys above are the **fallback**, not necessarily the
+> live transport. `collector/suiteSmtp.js` reads `netvault.smtp_config` (over the
+> `NETVAULT_DB_*` pool this app already has) and, when the hub has an **enabled** row with a
+> host, supplies host/port/secure/username/password from there instead — cached 5 minutes like
+> every other dynamic setting. `smtp_from`, `smtp_enabled` and every `email_notify_*` key stay
+> local and unchanged, so the hub can only change WHICH SERVER carries the mail, never who gets
+> it or which alerts send. Every failure to read the hub (no `smtp_config` table on an
+> un-updated hub, an unreachable DB, a missing `NEXTAUTH_SECRET`, an undecryptable password)
+> falls back to the local config and warns **once** — the module can never throw, because the
+> collector requires it and a throw there would stop syslog ingestion. No new env var: both
+> processes already dotenv-load the root `.env.local`, which the suite installer writes with
+> `NEXTAUTH_SECRET` and `NETVAULT_DB_*`. See `.ai-codex/gotchas.md`.
+
 > **Collector ingestion hardening (default-permissive).** The allow-list and rate-limit
 > above are off by default so they never drop live traffic until an operator opts in. Both
 > reload via the 5-min dynamic-settings cache (no restart). The collector logs a 60-second

@@ -39,7 +39,7 @@ Every file has `'use client'` at the top — this app has no server components b
 (c) KillChainTimeline  alertId, onClose — modal; fetches /api/soc/killchain/:alertId; groups events into MITRE tactic phases (mitre.tsx)
 (c) EntityProfile  hours, openExplorer — SIEM Phase 3 UEBA entity explorer (entities tab); /api/ueba/top + /api/ueba/entity/:type/:value + /api/soc/entity-timeline
 (c) ThreatMap  hours, openExplorer — SIEM Phase 3 world attack map (threatmap tab); /api/stats/geo + bundled COUNTRY_CENTROIDS (bubbles) + bundled worldLand.json (continent outlines, Natural Earth 110m), inline SVG equirectangular, no map dep
-(c) Settings  (no props — self-contained, largest component file)
+(c) Settings  (no props — self-contained, largest component file). Reads `smtp` off GET /api/settings: when `source === 'hub'` the SMTP card shows a "Managed centrally in NetVault" note and the Test Email button posts ONLY `to` (sending the form's own smtp_* fields would test the dormant fallback server instead of the live transport). The local fields, including From, stay editable — they are the fallback
 (c) SeverityChart  summary, onSeverityClick?, compact?
 (c) StorageWidget  (no props — self-fetching)
 (c) ThemeProvider  children — from ThemeContext.tsx
