@@ -1235,13 +1235,30 @@ Write-Step "Installing root dependencies"
 $currentStage = 'npm-install-root'
 
 Set-Location $AppDir
-npm install 2>&1 | Out-File -FilePath "$LogDir\npm-install-root.log" -Encoding utf8
+# ⛔ npm ci, NOT npm install. Two load-bearing reasons:
+#   1. Reproducibility. npm install is free to resolve newer transitive versions
+#      that still satisfy package.json's semver ranges, so two updates to the SAME
+#      NocVault tag can ship different dependency trees - and the one that breaks
+#      is the customer's, weeks later, with nothing to diff. npm ci installs
+#      package-lock.json exactly and fails loudly if the lock and package.json
+#      disagree. All four repos track their locks (root + frontend).
+#   2. npm install REWRITES the tracked package-lock.json on every run. That write
+#      is precisely why this script can never use 'git pull' - a dirty tree
+#      refuses the merge - and must 'git reset --hard' instead. npm ci never
+#      writes the lock, so it removes the cause rather than working around it.
+# ⛔ And it costs nothing here, contrary to the old rationale ("the updaters keep
+# npm install to stay incremental and preserve node_modules"): the snapshot step
+# above has ALREADY renamed node_modules to node_modules.lastgood before this
+# line runs, so npm was installing into an empty directory either way. The
+# incremental saving was imaginary. A failure is covered - Fail-Update restores
+# the .lastgood snapshots.
+npm ci 2>&1 | Out-File -FilePath "$LogDir\npm-install-root.log" -Encoding utf8
 
 if ($LASTEXITCODE -ne 0) {
     # Root deps failing to install is exactly the class of failure the rollback
     # exists for - previously this was a bare exit 1 leaving services stopped on a
     # broken root node_modules with no recovery attempt.
-    Fail-Update -Stage 'npm-install-root' -Message "npm install (root) failed (exit $LASTEXITCODE) - see $LogDir\npm-install-root.log"
+    Fail-Update -Stage 'npm-install-root' -Message "npm ci (root) failed (exit $LASTEXITCODE) - see $LogDir\npm-install-root.log"
 }
 Write-OK "Root dependencies installed"
 
@@ -1250,10 +1267,11 @@ Write-Step "Installing frontend dependencies"
 $currentStage = 'npm-install-frontend'
 
 Set-Location $FrontendDir
-npm install 2>&1 | Out-File -FilePath "$LogDir\npm-install-frontend.log" -Encoding utf8
+# npm ci, not npm install - see the note at the root install above.
+npm ci 2>&1 | Out-File -FilePath "$LogDir\npm-install-frontend.log" -Encoding utf8
 
 if ($LASTEXITCODE -ne 0) {
-    Fail-Update -Stage 'npm-install-frontend' -Message "npm install (frontend) failed (exit $LASTEXITCODE) - see $LogDir\npm-install-frontend.log"
+    Fail-Update -Stage 'npm-install-frontend' -Message "npm ci (frontend) failed (exit $LASTEXITCODE) - see $LogDir\npm-install-frontend.log"
 }
 Write-OK "Frontend dependencies installed"
 

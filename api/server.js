@@ -2911,6 +2911,9 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.41.6': [
+    "An update now installs the exact dependency versions this release was built and tested against. Before, an update could resolve newer compatible versions instead, so two servers on the same NocVault release could end up running subtly different software with no way to tell them apart. This takes effect from your next update onwards, because an update always runs the previous release's own update script."
+  ],
   '2.41.5': [
     "Fixed: when a burst of alerts went out at once, each email looked up the suite mail server separately. On a cold start those lookups competed with each other, timed out, and were each read as \"there is no suite mail server\" - which was then remembered for five minutes, so the burst produced the fallback it would have been blamed on. One lookup is now shared by everything sending at that moment.",
     "Fixed: the mail server's address and port were still returned to an ordinary administrator, although the same four facts are deliberately limited to a super administrator everywhere else on that page. The page now says whether an older local mail server is still carrying your mail without naming it.",
