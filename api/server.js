@@ -2911,6 +2911,12 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.41.5': [
+    "Fixed: when a burst of alerts went out at once, each email looked up the suite mail server separately. On a cold start those lookups competed with each other, timed out, and were each read as \"there is no suite mail server\" - which was then remembered for five minutes, so the burst produced the fallback it would have been blamed on. One lookup is now shared by everything sending at that moment.",
+    "Fixed: the mail server's address and port were still returned to an ordinary administrator, although the same four facts are deliberately limited to a super administrator everywhere else on that page. The page now says whether an older local mail server is still carrying your mail without naming it.",
+    "Fixed: a dropped idle database connection could stop the log collector outright - the whole of log ingestion - with nothing in the log to connect it to a PostgreSQL restart or maintenance window. Two connection pools in the collector were missing the handler that makes such a drop a logged line instead of a crash.",
+    "Fixed: on the mail server panel, the sentence explaining that certificate checking is switched off could break mid-word.",
+  ],
   '2.41.4': [
     "Fixed: the link to NetVault at the top of the settings menu was brand red on a dark background, measured at about 3:1 against the 4.5:1 readability threshold. It now uses the normal text colour with an underline.",
     "Fixed: the new settings menu scrolled off the top of the page instead of staying put. A wrapper around the page content carried a scrolling style that was only ever meant to keep the alert banners at the content width, and it silently stopped anything inside it from being able to stick.",
@@ -3916,6 +3922,13 @@ app.get('/api/settings', asyncHandler(async (req, res) => {
   // Never expose secrets (SMTP password, AbuseIPDB API key) to anyone but a
   // super_admin (the only role that can edit them). Settings writes are already
   // super_admin-gated.
+  // Whether a legacy local mail server is still configured at all. Computed
+  // BEFORE the deletions below, and handed to every admin as a BOOLEAN: the
+  // Settings panel needs it to tell "the old local server is still carrying our
+  // mail" from "nothing is configured anywhere", and that distinction does not
+  // require naming the server.
+  const localConfigured = !!String(data.smtp_host || '').trim();
+
   if (!req.rbac || !req.rbac.isSuperAdmin) {
     delete data.smtp_pass;
     delete data.abuseipdb_api_key;
@@ -3923,6 +3936,15 @@ app.get('/api/settings', asyncHandler(async (req, res) => {
     // of operator detail as the `smtp` block's `username` below — withholding
     // it there while handing it out here would make that gate decorative.
     delete data.smtp_user;
+    // ⛔ ...AND THE SAME IS TRUE OF THE HOST AND PORT, which is what the line
+    // above missed. The `smtp` block below strips host/port/username/cert-mode
+    // as a SET for exactly this reader, so leaving `smtp_host` and `smtp_port`
+    // in `data` handed back two of the four facts the gate one paragraph down
+    // exists to withhold — and the Settings page was reading the host from here
+    // rather than from the gated block, which is how it stayed unnoticed. It
+    // now takes `local_configured` instead and needs neither value.
+    delete data.smtp_host;
+    delete data.smtp_port;
   }
 
   // Which SMTP transport is actually in force (suite SMTP centralization,
@@ -3950,6 +3972,9 @@ app.get('/api/settings', asyncHandler(async (req, res) => {
   if (!req.rbac || !req.rbac.isSuperAdmin) {
     smtp = { source: smtp.source };
   }
+  // On both paths: it is not one of the four facts, and the panel's wording
+  // depends on it for every admin who can open the page.
+  smtp.local_configured = localConfigured;
   res.json({ data, smtp });
 }));
 

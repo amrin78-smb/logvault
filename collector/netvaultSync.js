@@ -20,6 +20,15 @@ const nvPool = new Pool({
   idleTimeoutMillis: 30000,
 });
 
+// ⛔ MANDATORY — see the identical note in collector.js. This module is required
+// BY the collector and runs in its process, so an unhandled 'error' from an idle
+// client here kills LogVault's syslog receiver. And this pool points at a
+// DIFFERENT database than the collector's own: a NetVault maintenance window
+// that the collector itself would never notice is enough to drop these clients.
+nvPool.on('error', (err) => {
+  console.error('[NetVaultSync] idle client error (the pool will replace it):', err && err.message);
+});
+
 // Brand name → syslog vendor mapping
 const BRAND_TO_VENDOR = {
   'cisco':              'cisco',

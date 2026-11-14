@@ -60,6 +60,11 @@ const ALGORITHM = 'aes-256-gcm';
 
 let hubCache   = null;   // the last resolved hub config, or null for "no hub config"
 let hubCacheAt = 0;
+// ⛔ ONE LOOKUP AT A TIME, SHARED BY EVERY CONCURRENT CALLER. See the long note
+// on getHubSmtp() — the TTL cache bounds how OFTEN we ask, this bounds how many
+// ask at once, and only the second one survives a burst of alert emails.
+let hubInflight   = null;
+let hubGeneration = 0;
 let nvPool     = null;   // created lazily — see getPool()
 let lastSource = null;   // for the one-line log when the active source changes
 
@@ -156,6 +161,37 @@ async function getHubSmtp() {
   // cacheable answer and must not re-query for 5 minutes.
   if (hubCacheAt !== 0 && now - hubCacheAt < CACHE_TTL) return hubCache;
 
+  // ── The cache does not bound CONCURRENCY, only frequency ────────────────
+  // It is written once an answer exists, so every send that starts inside the
+  // same cold window opens its own lookup. A correlation rule firing on a burst
+  // of syslog does exactly that, and this pool is deliberately small with a
+  // short connect timeout: the lookups then fail on contention, each returns
+  // null, each null reads as "the hub offers no mail server", and the last one
+  // to land writes that into the cache for the next five minutes. The burst
+  // manufactured the fallback it would then be blamed on.
+  //
+  // Callers arriving while a lookup is open therefore await the SAME promise. A
+  // rejection is deliberately NOT cached (the `.then` never runs), so an
+  // unforeseen throw cannot freeze the answer either.
+  if (hubInflight) return hubInflight;
+  const gen = hubGeneration;
+  const p = readHubRow()
+    .then((hub) => {
+      // A _resetCache() (or a save) that landed mid-flight wins: this answer is
+      // handed to whoever was waiting but must not become the cached one.
+      if (gen === hubGeneration) { hubCache = hub; hubCacheAt = Date.now(); }
+      return hub;
+    })
+    .finally(() => { if (hubInflight === p) hubInflight = null; });
+  hubInflight = p;
+  return p;
+}
+
+/**
+ * The actual read. Returns the hub transport or null; never throws, never
+ * rejects — every failure path returns null after warning once.
+ */
+async function readHubRow() {
   let row = null;
   try {
     const { rows } = await getPool().query(
@@ -178,14 +214,12 @@ async function getHubSmtp() {
       warnOnce('query',
         `Could not read the hub SMTP config (${(err && err.message) || 'unknown error'}) — using this app\'s own SMTP settings.`);
     }
-    hubCache = null; hubCacheAt = now;
     return null;
   }
 
   // No row, disabled, or no host => the hub is not offering a transport. Not a
   // failure and not worth a warning — it is the default state of the feature.
   if (!row || row.enabled !== true || !row.host || !String(row.host).trim()) {
-    hubCache = null; hubCacheAt = now;
     return null;
   }
 
@@ -199,7 +233,6 @@ async function getHubSmtp() {
     if (!secret) {
       warnOnce('no_secret',
         'NEXTAUTH_SECRET is not set in this process, so the hub SMTP password cannot be decrypted — using this app\'s own SMTP settings.');
-      hubCache = null; hubCacheAt = now;
       return null;
     }
     // FALLBACK 4 — the password does not decrypt under this secret (the hub was
@@ -208,13 +241,12 @@ async function getHubSmtp() {
     if (plain === null) {
       warnOnce('decrypt',
         'The hub SMTP password could not be decrypted with this install\'s NEXTAUTH_SECRET — using this app\'s own SMTP settings.');
-      hubCache = null; hubCacheAt = now;
       return null;
     }
     password = plain;
   }
 
-  hubCache = {
+  return {
     host:            String(row.host).trim(),
     port:            parseInt(row.port, 10) || 587,
     secure:          row.secure === true,
@@ -223,8 +255,6 @@ async function getHubSmtp() {
     fromEmail:       row.from_email || '',
     allowSelfSigned: row.allow_self_signed === true,
   };
-  hubCacheAt = now;
-  return hubCache;
 }
 
 /**
@@ -295,6 +325,10 @@ async function resolveSmtp(localCfg) {
 function _resetCache() {
   hubCache = null;
   hubCacheAt = 0;
+  // Bumping the generation is what stops a lookup already in the air from
+  // writing its stale answer over the next one.
+  hubInflight = null;
+  hubGeneration += 1;
   lastSource = null;
   warned.clear();
 }

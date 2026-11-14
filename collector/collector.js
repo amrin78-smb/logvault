@@ -294,6 +294,28 @@ const pool = new Pool({
   idleTimeoutMillis: 30000,
 });
 
+// ⛔ AN 'error' LISTENER ON A pg Pool IS MANDATORY, NOT OPTIONAL HYGIENE.
+//
+// A pooled client sitting IDLE can be dropped by the server at any time — a
+// Postgres restart, a `pg_terminate_backend`, an idle_session_timeout, a
+// firewall reaping the socket. The pool emits 'error' for it, and an 'error'
+// event with no listener is a process-level throw in Node. There is no
+// surrounding try/catch, because nothing was awaiting that client: the throw
+// comes from the event loop, not from a call site.
+//
+// That is this whole process — LogVault's syslog receiver. It would have died
+// of a Postgres restart with no connection to the restart in the logs, and NSSM
+// would bring it back with an empty in-memory buffer. `api/server.js` and
+// `collector/suiteSmtp.js` both carry this listener; the collector, the one
+// process whose death is actually an outage, did not.
+//
+// Deliberately only a log line: a dropped idle client needs no action. The pool
+// discards it and the next query gets a fresh one, which is exactly the
+// behaviour this listener preserves by not letting the process die first.
+pool.on('error', (err) => {
+  console.error('[DB] idle client error (the pool will replace it):', err && err.message);
+});
+
 // ── Tamper-evident hash chain (integrity) ─────────────────────
 // HMAC-SHA256 chain over immutable fields of each entry. The chain links
 // each row to the previous via prev_hash, so any insert/edit/delete of an

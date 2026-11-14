@@ -38,6 +38,12 @@ interface Settings {
 // one (collector/emailer.js :: getSmtpStatus).
 interface SmtpStatus {
   source: 'hub' | 'local';
+  // Whether a legacy `app_settings.smtp_host` exists at all. A BOOLEAN, sent to
+  // every admin: it is what separates "the old local server is still carrying
+  // our mail" from "nothing is configured anywhere", and it names no server.
+  local_configured?: boolean;
+  // The four facts. Present only for a super_admin — the API strips them as a
+  // SET, so `host` being absent means WITHHELD, not unknown.
   host?:  string;
   port?:  number;
   secure?: boolean;
@@ -484,7 +490,18 @@ const FACT_LABEL: React.CSSProperties = {
 };
 
 const FACT_VALUE: React.CSSProperties = {
-  color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all',
+  // ⛔ `overflow-wrap: anywhere`, NOT `word-break: break-all`. These four facts
+  // are a MIX: two are unbreakable tokens that must wrap mid-string on a narrow
+  // panel (a long mail-server hostname, a username), and two are prose — the
+  // connection mode, and "Certificate checking", whose value is a whole sentence
+  // ending "...including an expired or impersonated one". `break-all` breaks at
+  // the last character that fits REGARDLESS of word boundaries, so it chopped
+  // that sentence mid-word, which on the warning that certificate checking is
+  // off is precisely the line that must not look like a rendering glitch.
+  // `anywhere` prefers word boundaries and only breaks inside a word when a
+  // single word genuinely cannot fit — the hostname case — so both kinds of
+  // value come out right. Changed in all three apps at once.
+  color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', overflowWrap: 'anywhere',
 };
 
 // ⛔ The link INHERITS the panel's own foreground token and is distinguished by
@@ -522,9 +539,8 @@ function certText(allowSelfSigned: boolean): string {
     : 'Enforced';
 }
 
-function SmtpTransportNotice({ status, localHost }: {
-  status:    SmtpStatus | null;
-  localHost: string;
+function SmtpTransportNotice({ status }: {
+  status: SmtpStatus | null;
 }) {
   // Always derive the hub origin from the browser's current hostname — never a
   // hardcoded host and never the install-time env bake-in (lib/publicUrl.ts).
@@ -536,11 +552,12 @@ function SmtpTransportNotice({ status, localHost }: {
   );
 
   const fromHub  = status?.source === 'hub';
-  // The hub's answer wins whenever the API resolved to it; otherwise a non-empty
-  // local host is the live fallback. `localHost` rather than `status.host`
-  // because a non-super_admin is given `{ source }` alone — it must still be
-  // told that a legacy server is carrying its mail.
-  const hasLocal = !!localHost.trim();
+  // The hub's answer wins whenever the API resolved to it; otherwise a legacy
+  // local server is the live fallback. A SERVER-SIDE BOOLEAN, not `status.host`
+  // and no longer the `smtp_host` setting either: a non-super_admin is given
+  // `{ source, local_configured }` and must still be told that a legacy server
+  // is carrying its mail — without being told which one.
+  const hasLocal = status?.local_configured === true;
 
   // The four facts, or null when the API withheld them (not a super_admin).
   // Withheld is NOT unknown: the panel drops the grid rather than printing four
@@ -1031,9 +1048,7 @@ export default function Settings() {
               filters below.
             </div>
 
-            <SmtpTransportNotice
-              status={smtpStatus}
-              localHost={settings.smtp_host} />
+            <SmtpTransportNotice status={smtpStatus} />
 
             <div style={{ marginBottom: 4 }}>
               <label style={LABEL}>From Address</label>
