@@ -242,3 +242,35 @@ not for the endpoint that was reported.**
   actually used. The deep link is `/settings?tab=notifications`, which NetVault's
   settings page honours via its `?tab=` effect (super_admin-gated there).
 
+
+## ⛔ LogVault sees exactly ONE distinct MAC — OUI vendor lookup buys nothing here (measured 2026-11-16)
+
+A suite-wide brief scheduled MAC-vendor resolution for LogVault on the grounds that it has
+"no MAC-vendor resolution at all". True, but the reason is an absence of MACs, not an
+absence of the feature.
+
+Measured against the production database, over **5,124,599** stored events
+(2026-08-17 → 2026-09-06):
+
+- `structured_data ? 'srcmac'` — **2,067,783** rows. The FortiGate KV parser already
+  extracts it; no parser change is needed to *have* the MAC.
+- `count(DISTINCT structured_data->>'srcmac')` — **1**. One value:
+  `4c:d5:87:f2:8f:80`, the upstream router (Hewlett Packard Enterprise).
+
+⛔ **ONE MAC IS THE CEILING, NOT A SAMPLING ARTEFACT.** The firewall sends allowed-traffic
+and VPN session logs only, and in a traffic log `srcmac` is the **last-hop** address —
+the router the FortiGate received the frame from — not the originating host. Broadening
+log coverage adds events, not MAC cardinality. The port-security / MAC-flap / dot1x
+events that *would* carry many distinct client MACs exist only in
+`installer/seeds/logvault-seed.js`; the real firewall does not send them. Do not read the
+seed generator as evidence of what production contains.
+
+⛔ **TWO FIELDS ARE DROPPED ON THE FLOOR, AND THEY ARE THE INTERESTING ONES.**
+`structured_data ? 'mastersrcmac'` and `? 'srchwvendor'` are both **0**, though both are
+present in `raw_message`. FortiGate ships its *own* vendor guess in `srchwvendor` — so if
+vendor-by-MAC is ever wanted here, the first question is whether to trust the feed or the
+firewall when they disagree, and today we keep neither. Extracting them is cheap and
+sensible on its own merits; justify it as parser completeness, not as OUI work.
+
+⛔ **AND NOTHING IS ARRIVING.** Ingestion stopped 2026-09-06 — see the ingestion-outage
+note. Until that is fixed, any lookup added here resolves one historical MAC.
