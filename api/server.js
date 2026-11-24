@@ -2911,6 +2911,11 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.41.8': [
+    "Fixed: the console address you set in NetVault's settings did not reach LogVault. The address was written to LogVault's configuration correctly, and LogVault kept using the one recorded when it was last built - so a refused sign-in could still send you to the server's raw network address over an unencrypted connection, which your browser then warns about because the certificate is issued to the site name.",
+    "The address is now read when LogVault starts rather than being fixed when it is built, so changing it in settings and restarting is enough. The other three applications were already correct; LogVault was the only one that did not pick the change up.",
+    "No action is needed beyond this update. If you changed the console address and LogVault seemed to ignore it, set it once more after updating and it will take effect.",
+  ],
   '2.41.7': [
     "Fixed: a sign-in prompt raised by LogVault itself sent the browser to an address only the server can reach, so the page simply failed to load instead of showing the NocVault login. Clicking through from NetVault was unaffected - this hit anyone whose session expired while LogVault was open, or who opened a LogVault link directly.",
     "LogVault now works out the login address from the address you are actually using, the same way the rest of the application already did, so it follows your own hostname and whether you are on HTTPS rather than whatever was recorded when it was installed.",

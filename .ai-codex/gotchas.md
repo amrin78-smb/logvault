@@ -489,3 +489,25 @@ callbackUrl; and the predicate itself unit-tested in both directions.
 still lands on the launcher rather than back where they were. That is now
 inconsistent with this gate, and it is a UX change rather than part of the 2.41.7
 redirect fix — decide it on its own merits.
+
+## ⛔ Never put NEXTAUTH_URL (or any runtime-settable key) in next.config.js `env:`
+
+Everything listed in `env:` is **inlined into the bundle at build time**. That silently
+defeats every runtime way of setting the value: the hub's `Settings → Console address`
+writes both env files, the service restarts, and the built code still carries whatever
+the value was when the frontend was last compiled. There is no error — the files are
+right and the app disagrees with them.
+
+**Measured on production 2026-11-24.** The hub's console-address save fixed netvault,
+ddivault and spanvault; LogVault alone kept answering `/api/auth/error` with the old
+address. LogVault was the only app of the four with this inline, which is exactly why it
+was the only one that did not take. Fixed in **2.41.8** by deleting the entry.
+
+Nothing client-side needed it. The only readers are `src/proxy.ts` (edge) and
+`src/auth.ts` (server) — both read `process.env` at runtime — plus next-auth's own
+internals, which is the reader the inline was actually breaking.
+
+⛔ `NEXT_PUBLIC_*` entries in that same block are a DIFFERENT CASE and must stay: those
+are read by the browser and are *meant* to be inlined. The test is not "is it in
+`env:`", it is "is this value allowed to change without a rebuild". If yes, it cannot be
+inlined.

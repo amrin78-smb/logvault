@@ -19,7 +19,22 @@ const nextConfig = {
   // are installed independently by the updater.
   outputFileTracingRoot: __dirname,
   env: {
-    NEXTAUTH_URL: process.env.NEXTAUTH_URL,
+    // ⛔ NEXTAUTH_URL MUST NOT BE LISTED HERE. Everything in `env` is INLINED
+    // INTO THE BUNDLE AT BUILD TIME, which silently defeats every runtime way of
+    // setting it: the hub's Settings -> Console address writes both env files,
+    // the service restarts, and the built code still carries whatever the value
+    // was when the frontend was last compiled.
+    //
+    // Measured on production 2026-11-24: the hub's console-address save fixed
+    // netvault, ddivault and spanvault, and LogVault alone kept answering
+    // /api/auth/error with the old address -- the files were right, the bundle
+    // was not. LogVault was the only app with this inline, which is exactly why
+    // it was the only one that did not take.
+    //
+    // Nothing client-side needs it. The only readers are src/proxy.ts (edge) and
+    // src/auth.ts (server), both of which read process.env at RUNTIME, plus
+    // next-auth's own internals -- which is the reader this inline was breaking.
+    // NEXT_PUBLIC_* below are a different case: those are MEANT to be inlined.
     // Suite-standard hub URL var. Falls back to the legacy NETVAULT name so SSO
     // keeps working during the NSSM env migration if only the old var is set.
     NEXT_PUBLIC_NOCVAULT_HUB_URL:
