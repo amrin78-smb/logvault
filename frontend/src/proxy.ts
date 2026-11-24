@@ -30,6 +30,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { resolveOrigin } from '@/lib/publicUrl';
+// The post-login return path, shared with app/auth/signin/route.ts so this gate
+// and NextAuth's sign-in redirect cannot drift apart — plus the session-cookie
+// presence predicate behind the loop guard in the page branch below.
+import { HUB_SSO_CALLBACK_PATH, hasSessionCookie } from '@/lib/authRedirect';
 
 const API_BASE = process.env.LV_API_URL || 'http://127.0.0.1:3005';
 // Legacy static fallback — kept ONLY for the rare case a request doesn't carry
@@ -119,7 +123,42 @@ export default async function proxy(req: NextRequest) {
   const token = await getToken({ req, ...TOKEN_OPTS });
   if (!token) {
     const hub = resolveOrigin(req, 3000, HUB_FALLBACK);
-    return NextResponse.redirect(`${hub}/login`);
+    // Carry the hub's own SSO re-entry path so signing in returns the user to
+    // LogVault instead of the launcher. The hub honours it because it is
+    // relative and starts with neither /sso nor /login (see the filter in
+    // net-vault app/(auth)/login/page.tsx).
+    //
+    // ⛔ BUT ONLY FOR A VISITOR WITH NO SESSION COOKIE AT ALL, AND THAT
+    // CONDITION IS LOAD-BEARING. getToken() also returns null when a cookie
+    // EXISTS and cannot be READ: `secureCookie` above is derived from
+    // NEXTAUTH_URL's protocol, so an http NEXTAUTH_URL on an https deployment
+    // -- or a rotated NEXTAUTH_SECRET -- makes every valid session unreadable.
+    // Sending those users back with a callbackUrl loops: the hub mints a
+    // token, /sso sets a cookie, this gate still cannot read it, back to the
+    // hub, forever. Nothing on either side counts hops, so the browser spins
+    // until ERR_TOO_MANY_REDIRECTS, which is far harder to diagnose than the
+    // launcher. Omitting the callbackUrl makes the hub fall back to /launcher,
+    // so a misconfiguration STOPS VISIBLY instead of spinning.
+    // ⛔ "PRESENT" MEANS THE COOKIE *OR ANY OF ITS CHUNKS*, so this is a
+    // prefix test and not `cookies.has(name)`. next-auth splits a session
+    // cookie over 4096 bytes into `<name>.0`, `<name>.1`, … and getToken()
+    // reassembles from that set, so a chunked session is one getToken() can
+    // read and `has('<name>')` cannot SEE — and a chunked session that is ALSO
+    // unreadable would land straight back in the loop above. The predicate is
+    // exact-or-`<name>.` (never a bare startsWith, which would count somebody
+    // else's `<name>foo`) and lives in @/lib/authRedirect so it is unit-tested
+    // and identical to the siblings' guards.
+    //
+    // LogVault's real exposure here is chunking plus a rotated NEXTAUTH_SECRET.
+    // The `__Secure-` form the helper also matches is insurance only: auth.ts
+    // overrides the cookie NAME with a literal, so next-auth never writes the
+    // prefixed name on this app (see the helper's own comment).
+    const cookieNames = req.cookies.getAll().map((c) => c.name);
+    if (hasSessionCookie(cookieNames, TOKEN_OPTS.cookieName)) {
+      return NextResponse.redirect(`${hub}/login`);
+    }
+    const callback = encodeURIComponent(HUB_SSO_CALLBACK_PATH);
+    return NextResponse.redirect(`${hub}/login?callbackUrl=${callback}`);
   }
   // Per-user app-access enforcement: a valid session whose allowed-apps claim
   // omits logvault is bounced to the hub launcher with a denied banner. The
@@ -135,8 +174,16 @@ export const config = {
   matcher: [
     // Non-auth API calls → proxy to Express (exclude /api/auth/*).
     '/api/((?!auth(?:/|$)).+)',
-    // Page routes → auth guard (exclude api, sso landing, next internals and
-    // public static assets).
+    // Page routes → auth guard (exclude api, sso landing, the auth bounce
+    // routes, next internals and public static assets).
+    //
+    // `auth/signin` and `auth/error` MUST stay excluded. They are
+    // authOptions.pages.signIn / .error (src/app/auth/*/route.ts): local,
+    // request-aware 307s to the hub's login page. The guard below answers "no
+    // session" with exactly that redirect, so gating the redirect target itself
+    // is an infinite loop — the browser would be sent to /auth/signin, be found
+    // unauthenticated there, and be sent to /auth/signin again. They disclose
+    // nothing: both only re-derive the hub origin from the request and bounce.
     //
     // `flags` MUST stay excluded. Anything this matcher catches goes through
     // the auth guard and comes back as app HTML, so /flags/sg.svg returned a
@@ -148,6 +195,6 @@ export const config = {
     // no per-request JWT verification, and next.config.js's /flags/ 
     // Cache-Control rule actually applies (a middleware-rendered response
     // carries the page's headers, not the static file's).
-    '/((?!api|sso|_next/static|_next/image|favicon.ico|flags/).*)',
+    '/((?!api|sso|auth/signin|auth/error|_next/static|_next/image|favicon.ico|flags/).*)',
   ],
 };

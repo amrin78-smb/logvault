@@ -74,10 +74,22 @@ publicUrl.ts
   resolveOrigin(req, port, legacyFallback) — derive origin URL from request, with legacy env-var fallback
   getHubUrl() — NocVault hub URL for cross-app nav (Launcher link, SSO redirect) — reflects CURRENT window.location, not a module-level constant, so always call at use-time not import-time
 
+authRedirect.ts
+  SIGNIN_PATH / ERROR_PATH — '/auth/signin' / '/auth/error'. The values of authOptions.pages.signIn/.error AND the paths excluded from proxy.ts's page matcher; imported by auth.ts so the two cannot drift
+  HUB_SSO_CALLBACK_PATH — '/api/sso/logvault', the CONSTANT post-login destination sent to the hub. ⛔ A constant, not NextAuth's appended callbackUrl: nothing client-supplied enters the redirect, so a foreign host cannot appear BY CONSTRUCTION. It is also the only shape the hub honours (its login page requires a same-origin RELATIVE target) and the verbatim value the hub's own issuer uses — a contract with net-vault app/api/sso/logvault/route.ts [SENSITIVE]
+  hubLoginLocation(req) — the full Location for a sign-in/error bounce: resolveOrigin(req, 3000, NOCVAULT_HUB_URL) + '/login?callbackUrl=%2Fapi%2Fsso%2Flogvault' + an optional sanitised error. Same call, same explicit port and same legacy fallback as proxy.ts's page guard
+  safeErrorCode(raw) — NextAuth error code or null ([A-Za-z0-9_-]{1,64}). The ONE value carried from the query string, and safe only because it is a closed-charset identifier rather than a URL
+  buildHubLoginUrl(hubOrigin, {error}) — the pure composition, no request needed
+  isSessionCookieName(name, base) — does `name` name this session cookie or one of its chunks: `name === base || name.startsWith(base + '.')`. ⛔ NOT a bare startsWith (that counts `<base>foo`, somebody else's cookie) and NOT an exact match (that misses next-auth's `<base>.0`/`.1` chunks, which getToken() reads). Same shape as spanvault lib/hubSignin.ts and ddivault's inline guard — keep the three identical
+  hasSessionCookie(cookieNames, base) — is a session cookie PRESENT (readable or not) in a cookie list, checking `base` and the `__Secure-` form. Used by proxy.ts's page gate to tell "never signed in" from "signed in but undecodable" — two cases getToken() reports identically as null and which need opposite answers (see gotchas.md, "The page gate's callbackUrl is CONDITIONAL")
+  ⛔ Exists because NextAuth v4 evaluates authOptions.pages ONCE at module load, so a hub URL stored there can never follow the request. See routes.md and gotchas.md (2.41.7)
+  ⛔ Had resolveSelfOrigin()/safeCallbackUrl() in an earlier draft — DELETED. They derived this app's own origin from proxy headers (with x-forwarded-port's precedence inverted, see gotchas.md) to re-base a callbackUrl the hub discards anyway. Do not reintroduce
+
 ## Frontend auth config (frontend/src/auth.ts, not in lib/ but same role)
 
 auth.ts
   authOptions — NextAuth config: SSO/credentials providers, JWT session strategy, apps claim (per-user app-access) [SENSITIVE]
+  pages.signIn/.error — SIGNIN_PATH/ERROR_PATH from @/lib/authRedirect. ⛔ LOCAL and RELATIVE, never an absolute URL and never built from NOCVAULT_HUB_URL
 
 ## Version source of truth
 

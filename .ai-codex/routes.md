@@ -3,11 +3,35 @@
 Two surfaces:
 - **Express API** (`api/server.js`, port 3005 internal-only) — the real API, 74 routes. Express has no `dynamic` export concept; force-dynamic check N/A for all of these.
 - **Next.js routes** (`frontend/src/app/api/`) — 1 route, NextAuth only.
+- **Next.js auth bounce routes** (`frontend/src/app/auth/`) — 2 route handlers, no data, no DB: the request-aware redirect to the hub's login page that `authOptions.pages` points at.
 
-Auth model (frontend/src/proxy.ts): every `/api/*` request is proxied to Express with `X-User-Id`/`X-User-Role` stamped from the verified session token. Only 4 EXACT paths bypass the session check: `/api/health`, `/api/stats`, `/api/license-status`, `/api/system/update-available` — (`/api/system/last-update-status` WAS on this list and was removed 2026-11: it spreads the whole updater status file, i.e. stage/error-code/raw-error-text/rollback-flag, and was readable with no session; do not re-add it) — sub-paths (e.g. `/api/stats/summary`) are NOT covered by the `/api/stats` allow-list entry and still require a session. `[auth]` below = requires session; `[admin]`/`[super-admin]` = also gated by `requireAdmin`/`requireSuperAdmin` in api/rbac.js.
+Auth model (frontend/src/proxy.ts): every `/api/*` request is proxied to Express with `X-User-Id`/`X-User-Role` stamped from the verified session token. A page request with no readable session is redirected to `${resolveOrigin(req, 3000, NOCVAULT_HUB_URL)}/login`, carrying `?callbackUrl=%2Fapi%2Fsso%2Flogvault` **only when the request has no session cookie at all** — a cookie that exists but cannot be decoded means a misconfiguration, and returning those users loops forever (see gotchas.md, "The page gate's callbackUrl is CONDITIONAL"). Only 4 EXACT paths bypass the session check: `/api/health`, `/api/stats`, `/api/license-status`, `/api/system/update-available` — (`/api/system/last-update-status` WAS on this list and was removed 2026-11: it spreads the whole updater status file, i.e. stage/error-code/raw-error-text/rollback-flag, and was readable with no session; do not re-add it) — sub-paths (e.g. `/api/stats/summary`) are NOT covered by the `/api/stats` allow-list entry and still require a session. `[auth]` below = requires session; `[admin]`/`[super-admin]` = also gated by `requireAdmin`/`requireSuperAdmin` in api/rbac.js.
 
 ## Next.js (frontend/src/app/api/)
 GET/POST /api/auth/[...nextauth] [public] [external] — NextAuth handler, exports from @/auth
+
+## Next.js auth bounce (frontend/src/app/auth/)
+GET/HEAD /auth/signin [public] [force-dynamic] — `authOptions.pages.signIn`. 307 to `${resolveOrigin(req, 3000, NOCVAULT_HUB_URL)}/login?callbackUrl=%2Fapi%2Fsso%2Flogvault`. Logic in @/lib/authRedirect
+GET/HEAD /auth/error  [public] [force-dynamic] — `authOptions.pages.error`. Same bounce plus the sanitised `?error=<code>` NextAuth sends it (it never sends a callbackUrl)
+
+⛔ The `callbackUrl` is a CONSTANT (`HUB_SSO_CALLBACK_PATH`), never NextAuth's
+appended one — nothing from the query string reaches the redirect except a
+closed-charset error code, so no client value can steer the browser. It is also
+the only shape the hub's login page honours, and its spelling is a contract with
+net-vault's own issuer. See lib.md and gotchas.md.
+
+⛔ Both are EXCLUDED from the page-route matcher in `frontend/src/proxy.ts`
+(`auth/signin|auth/error` in the negative lookahead) and must stay excluded:
+that matcher's guard answers "no session" WITH this redirect, so gating the
+redirect target is an infinite loop. The exclusion is per-path, not `auth/`, so
+any other `/auth/*` path added later is still gated.
+
+⛔ `pages.signIn`/`pages.error` must stay LOCAL and RELATIVE. NextAuth v4
+evaluates `pages` once at module load and only string-concatenates the value, so
+anything built from an env var there cannot follow the request. Both used to be
+`${NOCVAULT_HUB_URL}/login`, and NOCVAULT_HUB_URL is deliberately the hub's
+SERVER-SIDE loopback — so production answered `GET /api/auth/signin` with a 302
+to `http://127.0.0.1:13000/login?...` **to the browser**. Fixed in 2.41.7.
 
 ## Express — Dashboard stats (api/server.js)
 GET /api/stats/summary [auth] [db] — severity breakdown, reads syslog_stats_rollup

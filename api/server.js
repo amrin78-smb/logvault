@@ -2911,6 +2911,12 @@ async function remoteVersion(localVersion) {
 // these as a bullet list in the Settings UI — there is no CHANGELOG.md. When
 // bumping the version, add a matching entry here with 3-5 bullets.
 const releaseNotes = {
+  '2.41.7': [
+    "Fixed: a sign-in prompt raised by LogVault itself sent the browser to an address only the server can reach, so the page simply failed to load instead of showing the NocVault login. Clicking through from NetVault was unaffected - this hit anyone whose session expired while LogVault was open, or who opened a LogVault link directly.",
+    "LogVault now works out the login address from the address you are actually using, the same way the rest of the application already did, so it follows your own hostname and whether you are on HTTPS rather than whatever was recorded when it was installed.",
+    "Opening a LogVault page while signed out now returns you to LogVault after you sign in, instead of leaving you on the suite launcher to find it again. If a sign-in cannot be completed because of a configuration problem on the server, you are taken to the launcher rather than being sent round in circles.",
+    "A refused sign-in is now passed to the login page as a refusal rather than arriving as a plain request to sign in, so the login page can tell you to contact an administrator in the cases it recognises.",
+  ],
   '2.41.6': [
     "An update now installs the exact dependency versions this release was built and tested against. Before, an update could resolve newer compatible versions instead, so two servers on the same NocVault release could end up running subtly different software with no way to tell them apart. This takes effect from your next update onwards, because an update always runs the previous release's own update script."
   ],

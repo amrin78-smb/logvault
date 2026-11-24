@@ -1,6 +1,7 @@
 import NextAuth, { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { Pool } from 'pg';
+import { SIGNIN_PATH, ERROR_PATH } from '@/lib/authRedirect';
 
 // Fail fast if the shared SSO secret is not provided by the environment
 // (NSSM AppEnvironmentExtra in prod, .env.local in dev). Never fall back to a
@@ -117,9 +118,39 @@ export const authOptions: NextAuthOptions = {
   },
 
   pages: {
-    // Redirect to NetVault hub for login — no separate LogVault login page
-    signIn: `${process.env.NOCVAULT_HUB_URL || 'http://localhost:3000'}/login`,
-    error:  `${process.env.NOCVAULT_HUB_URL || 'http://localhost:3000'}/login`,
+    // Bounce to the NetVault hub for login — no separate LogVault login page.
+    //
+    // ⛔ THESE MUST STAY LOCAL AND RELATIVE. NextAuth v4 evaluates `pages` ONCE
+    // at module load and then only string-concatenates the stored value, so
+    // anything built from an env var here can never follow the request. Both
+    // entries used to read `${NOCVAULT_HUB_URL}/login`, and NOCVAULT_HUB_URL is
+    // DELIBERATELY the hub's SERVER-SIDE LOOPBACK (net-vault 1.60.1, so a
+    // server-to-server hub call doesn't fail ERR_TLS_CERT_ALTNAME_INVALID
+    // against a certificate that names the site and not the IP). Production
+    // consequently answered, to a BROWSER:
+    //   GET /api/auth/signin -> 302 http://127.0.0.1:13000/login?callbackUrl=…
+    // which no browser can follow, while LogVault's own page gate (proxy.ts)
+    // produced the right public hostname all along because it calls
+    // resolveOrigin() per request.
+    //
+    // A relative value is resolved by NextAuth against its own origin, so the
+    // browser stays on LogVault; the two route handlers below then do the
+    // cross-origin hop per request via resolveOrigin(). Do NOT "simplify" this
+    // back to an absolute URL, and do NOT change NOCVAULT_HUB_URL — it is still
+    // correct for every server-side call, and is still the legacy fallback
+    // inside authRedirect.ts for a request with no usable Host.
+    //
+    // Separate paths, not one shared bounce: NextAuth sends signIn a
+    // callbackUrl and error an error code, and collapsing them lost the
+    // distinction in logs. See frontend/src/app/auth/{signin,error}/route.ts.
+    //
+    // Neither route forwards NextAuth's appended callbackUrl. Both send the
+    // hub a CONSTANT post-login path (the hub's own SSO issuer for LogVault),
+    // so no client-supplied value enters the redirect — see
+    // HUB_SSO_CALLBACK_PATH in @/lib/authRedirect for why that is both safer
+    // and the only thing the hub's login page will actually honour.
+    signIn: SIGNIN_PATH,
+    error:  ERROR_PATH,
   },
 
   session: {

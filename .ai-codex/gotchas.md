@@ -274,3 +274,218 @@ sensible on its own merits; justify it as parser completeness, not as OUI work.
 
 ⛔ **AND NOTHING IS ARRIVING.** Ingestion stopped 2026-09-06 — see the ingestion-outage
 note. Until that is fixed, any lookup added here resolves one historical MAC.
+
+
+## ⛔ NextAuth `pages` is evaluated ONCE at module load — a hub URL there cannot follow the request (2.41.7)
+
+Measured live on production before the fix:
+
+```
+GET /api/auth/signin
+-> 302 Location: http://127.0.0.1:13000/login?callbackUrl=https%3A%2F%2F<host>%3A3004
+```
+
+That `Location` goes to a **browser**, and `http://127.0.0.1:13000` is the
+**hub's server-side loopback** — unreachable from a browser, so the sign-in
+prompt simply failed to load. `frontend/src/auth.ts` pinned both pages:
+
+```ts
+pages: {
+  signIn: `${process.env.NOCVAULT_HUB_URL || 'http://localhost:3000'}/login`,
+  error:  `${process.env.NOCVAULT_HUB_URL || 'http://localhost:3000'}/login`,
+}
+```
+
+- ⛔ **`authOptions.pages` is read once, at module load, and NextAuth only
+  string-concatenates it.** `next-auth/core/index.js` does literally
+  ``redirect: `${pages.signIn}?callbackUrl=…` `` and
+  ``redirect: `${pages.error}?error=…` ``. There is no request in scope, so no
+  value stored there can ever be request-aware — not with a getter, not with a
+  template. This is why the page gate in `proxy.ts` was correct all along
+  (`resolveOrigin(req, 3000, …)` per request) while `pages` was not: the two
+  look like the same decision and are not.
+- ⛔ **`NOCVAULT_HUB_URL` is NOT the bug and must not be "fixed".** It is
+  deliberately the hub's loopback (net-vault 1.60.1): a server-to-server hub
+  call routed through the public TLS front door fails
+  `ERR_TLS_CERT_ALTNAME_INVALID`, because the production certificate names the
+  site and not the IP. It is correct for every server-side call and wrong only
+  for a browser redirect. It remains the legacy fallback in `authRedirect.ts`
+  for a request with no usable `Host`, exactly as `proxy.ts` passes it.
+- ⛔ **`publicUrl.ts` / `resolveOrigin` must NOT be synced with NetVault's
+  richer version.** Every satellite call site passes an explicit `3000`, which
+  wins over the carried sources; the satellites are correct as-is and were
+  verified live. Nothing in this repo derives a port from headers at all —
+  ⛔ **and the deleted draft that did got the ordering BACKWARDS** (it read
+  `x-forwarded-port` first). That is a real bug, not a style choice: see
+  "`x-forwarded-port` is the LAST port source" below before writing any such
+  code. This bullet used to recommend that ordering, and recommending it was
+  the mistake.
+
+**The shape of the fix** (reusable for any satellite with the same pin): point
+`pages` at LOCAL RELATIVE paths and let a route handler do the cross-origin hop.
+
+- `pages.signIn = '/auth/signin'`, `pages.error = '/auth/error'`. NextAuth
+  writes a relative value to the `Location` header verbatim
+  (`next-auth/next/index.js`), and the browser resolves it against the host it
+  is already on — so the first hop stays on LogVault.
+- `frontend/src/app/auth/{signin,error}/route.ts` then 307 to
+  `hubLoginLocation(req)` (`@/lib/authRedirect`).
+- ⛔ **Both paths MUST be excluded from `proxy.ts`'s page-route matcher**
+  (`auth/signin|auth/error` in the negative lookahead). That matcher's guard
+  answers "no session" *with this redirect*; gating the redirect target is an
+  infinite loop. LogVault has no `middleware.ts` — the gate lives in
+  `proxy.ts`, which is the file to check.
+- ⛔ **`export const dynamic = 'force-dynamic'` on both routes.** A statically
+  evaluated route handler bakes ONE host into the redirect at build time, which
+  is the same bug moved from an env var to the build.
+- ⛔ **NextAuth's appended `callbackUrl` is NOT forwarded, and that is the
+  point.** Both routes send the hub a CONSTANT post-login path —
+  `HUB_SSO_CALLBACK_PATH = '/api/sso/logvault'`, the hub's own SSO issuer for
+  this app — so no client-supplied value enters the redirect and a foreign host
+  cannot appear in the output BY CONSTRUCTION. That is a stronger property than
+  sanitising an incoming value, and it is also the only thing the hub will act
+  on: its login page honours only a same-origin RELATIVE target
+  (`net-vault app/(auth)/login/page.tsx` requires `startsWith('/')` and rejects
+  `//`, `/sso`, `/login`), so an absolute LogVault URL is discarded there and
+  falls back to `/launcher`. `/api/sso/logvault` clears that guard and completes
+  the loop: hub login → issuer → signed token → LogVault's `/sso` page.
+  ⛔ The spelling is a CONTRACT with the other repository — it is the verbatim
+  value the hub's issuer uses when IT finds no session
+  (`new URL('/login?callbackUrl=%2Fapi%2Fsso%2Flogvault', ownOrigin)` in
+  `net-vault app/api/sso/logvault/route.ts`). Check that file before changing a
+  character. The error code IS still forwarded (short closed-charset
+  identifier, cannot name a host or a scheme; the hub acts on `AccessDenied`).
+
+  ⛔ **An earlier draft re-based the incoming callbackUrl on LogVault's own
+  request-derived origin, and that is why the next entry exists.** It needed a
+  sanitiser, it needed this app's own public port derived from proxy headers,
+  it got that port's precedence backwards — and the hub threw the result away
+  regardless. Deleted, along with `resolveSelfOrigin()`/`safeCallbackUrl()`.
+  Don't reintroduce it.
+
+**LogVault was the LAST satellite still carrying this pin.** DDIVault and
+SpanVault had already been fixed, independently and with the same shape — both
+use `pages.signIn: '/auth/signin'` with an `app/auth/signin/route.ts`
+(`ddivault/frontend/src/app/auth/signin/route.ts`,
+`spanvault/frontend/src/lib/hubSignin.ts`). The path and the structure here match
+them deliberately; check those files before changing this one.
+
+One divergence: neither sibling sets `pages.error` at all. LogVault pinned both,
+so both are fixed — leaving `pages.error` unset would hand the browser NextAuth's
+own built-in error page, which is a UI LogVault does not have.
+
+
+## ⛔ `x-forwarded-port` is the LAST port source, not the first — Next.js fills it in itself
+
+The canonical precedence for deriving a port in a redirect origin, as
+`net-vault/lib/publicUrl.ts` implements and documents it, is:
+
+1. an **explicit port the caller passed** (every satellite `resolveOrigin` call
+   site passes one — `3000` for the hub);
+2. the **port carried on the host actually being used** (`x-forwarded-host`, or
+   `host` when the forwarded host was not trusted);
+3. **`x-forwarded-port`** — last.
+
+⛔ **GETTING 2 AND 3 THE WRONG WAY ROUND IS A REAL BUG THAT PASSES EVERY TEST
+YOU WOULD THINK TO WRITE.** `x-forwarded-port` is not only set by a terminator:
+**Next.js populates it itself, with the port it is listening on, when the header
+is absent.** So a `forwardedPort || hostPort` ordering lets the app's own local
+listening port beat the real public port carried on the host — and what comes
+out is a redirect to the dev/internal port. The DDIVault agent hit exactly this
+on a live run while building the sibling fix.
+
+It is **latent on production**, because the TLS terminator does set the header
+per-app and correctly (`forwardedHeaders()` in
+`netvault/installer/terminator/tlsTerminator.ts`). It is wrong everywhere else:
+dev, a direct hit that bypasses the terminator, or any deployment without one.
+
+⛔ **Source 3 is not belt-and-braces — it is the `TLS_PUBLIC_HOST` case.**
+Keeping the inbound port works only while the forwarded host CARRIES one, and it
+carries one only while `TLS_PUBLIC_HOST` is unset (the terminator then echoes the
+browser's own `Host`, `…:3000`). Setting that variable pins `x-forwarded-host` to
+a bare hostname, at which point `x-forwarded-port` is the only remaining answer.
+Both sources are needed; the ORDER is what matters.
+
+**This trap is recorded here although LogVault no longer has the code.** The
+sign-in bounce (2.41.7) briefly derived LogVault's own origin this way, with the
+precedence inverted, to re-base a `callbackUrl` — and both the derivation and the
+re-basing were then deleted in favour of a constant path (see the entry above).
+Nothing in this repo reads `x-forwarded-port` today. The next person who needs
+this app's own public origin will reach for the same two headers, so the lesson
+outlives the code: **read `net-vault/lib/publicUrl.ts` first, and do not invent a
+third copy of this ordering.**
+
+
+## ⛔ The page gate's `callbackUrl` is CONDITIONAL, and the condition is the loop guard
+
+`frontend/src/proxy.ts`'s page-route guard sends a sessionless visitor to
+`${hub}/login?callbackUrl=%2Fapi%2Fsso%2Flogvault` so signing in returns them to
+LogVault instead of the launcher — **but only when the request carries no session
+cookie at all.**
+
+⛔ **`getToken()` returns null for TWO different situations and they need opposite
+answers.** "No cookie" means a visitor who has not signed in: return them. "A
+cookie exists and cannot be READ" means a misconfiguration — `secureCookie` in
+`TOKEN_OPTS` is derived from `NEXTAUTH_URL`'s protocol, so an `http`
+`NEXTAUTH_URL` on an https deployment makes every valid session unreadable, and a
+rotated `NEXTAUTH_SECRET` does the same. Returning THOSE users with a callbackUrl
+is an unbounded loop: the hub mints a token → `/sso` sets a cookie → this gate
+still cannot read it → back to the hub. **Nothing on either side counts hops**,
+so the browser spins until `ERR_TOO_MANY_REDIRECTS` — far harder to diagnose than
+the launcher. With no callbackUrl the hub falls back to `/launcher`, so the
+misconfiguration **stops visibly**. Routine expiry does not loop (a fresh,
+readable cookie is written), which is exactly why this only ever bites during a
+misconfiguration — the case where a loop costs the most.
+
+⛔ **"PRESENT" MEANS THE COOKIE *OR ANY OF ITS CHUNKS*, SO THE TEST IS A PREFIX
+MATCH AND NOT `cookies.has(name)`.** next-auth SPLITS a session cookie over 4096
+bytes into `<name>.0`, `<name>.1`, … (`SessionStore`/`#chunk()` in
+`next-auth/core/lib/cookie.js`) and `getToken()` reassembles from exactly that
+set — so a chunked session is one `getToken()` CAN read and
+`cookies.has('nexvault.session-token')` CANNOT SEE. A guard that asks about the
+unsuffixed name alone misses a chunked-and-unreadable session and puts it
+straight back in the loop.
+
+⛔ **AND THE PREFIX IS `name === base || name.startsWith(base + '.')` — NEVER A
+BARE `startsWith(base)`.** `nexvault.session-tokenfoo` is somebody else's cookie;
+a bare prefix test would count it as a session of ours and silently suppress the
+callbackUrl for a visitor who has never signed in. Exact-or-`<base>.` is as wide
+as next-auth's own reader (`SessionStore` collects by the same prefix) and no
+wider. The predicate lives in `frontend/src/lib/authRedirect.ts`
+(`isSessionCookieName`/`hasSessionCookie`) so it is unit-tested rather than
+asserted through a source regex, and so it is **the same shape as the two
+siblings** (spanvault `lib/hubSignin.ts`, ddivault's inline guard) —
+deliberately: three different shapes across three repos is exactly how the
+`x-forwarded-port` precedence bug below happened.
+
+⛔ **`__Secure-<name>` IS INSURANCE AND IS NOT LIVE HERE.** next-auth spreads
+`authOptions.cookies` OVER `defaultCookies(useSecureCookies)`, and
+`frontend/src/auth.ts` overrides `cookies.sessionToken.name` with the literal
+`nexvault.session-token` — so the prefixed form, which exists only in those
+defaults, is never written on this app; `secure: true` changes the cookie's FLAGS
+and never its NAME. LogVault's real exposure is **chunking plus a rotated
+`NEXTAUTH_SECRET`**. The prefixed name is matched anyway because removing that
+override — the obvious "simplify" — makes it live immediately, and a test pins
+the override's continued existence (SpanVault pins the mirror image: that it has
+NO `cookies:` block at all).
+
+⛔ **KNOWN LIMIT — the guard cannot fire when the cookie was never STORED.** If
+`NEXTAUTH_URL` is `https://` on a plain-http install, `secure: true` makes the
+browser refuse to store the cookie at all, so no session cookie is ever present,
+the guard sees a first-time visitor, and sign-in simply never completes. That is
+a different and much louder failure than the loop — it breaks sign-in outright
+rather than spinning — and a redirect hop counter on either side is the only
+complete answer to the whole class. Deliberately out of scope; recorded so the
+limit is known rather than rediscovered.
+
+Pinned by `tests/authRedirect.test.js`: no cookie → callbackUrl; the cookie and
+each chunk form (`.0`/`.1`/`.7`) and both `__Secure-` forms → no callbackUrl; an
+unrelated cookie → callbackUrl; a LOOKALIKE (`<name>foo`, `<name>-2`) →
+callbackUrl; and the predicate itself unit-tested in both directions.
+
+**Out of scope, deliberately (noted so it is not mistaken for an oversight):**
+`frontend/src/components/IdleTimeout.tsx` still sends
+`${getHubUrl()}/login?reason=timeout` with NO callbackUrl, so a timed-out user
+still lands on the launcher rather than back where they were. That is now
+inconsistent with this gate, and it is a UX change rather than part of the 2.41.7
+redirect fix — decide it on its own merits.
